@@ -19,6 +19,8 @@
 #define TOPOTOOLBOX_VERSION_MINOR 0
 #define TOPOTOOLBOX_VERSION_PATCH 0
 
+#include <stddef.h>
+
 /*
   has_topotoolbox()
 
@@ -28,4 +30,7 @@
 TOPOTOOLBOX_API
 int has_topotoolbox(void);
 
-#endif
+void fillsinks(float *output, float *dem, ptrdiff_t nrows, ptrdiff_t ncols);
+
+#endif  // TOPOTOOLBOX_H
+
