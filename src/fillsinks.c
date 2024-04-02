@@ -1,3 +1,5 @@
+#define TOPOTOOLBOX_BUILD
+
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -18,6 +20,7 @@
 
   Sinks are filled using grayscale morphological reconstruction.
 */
+TOPOTOOLBOX_API
 void fillsinks(float *output, float *dem, ptrdiff_t nrows, ptrdiff_t ncols) {
   for (ptrdiff_t col = 0; col < ncols; col++) {
     for (ptrdiff_t row = 0; row < nrows; row++) {
