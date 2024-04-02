@@ -30,7 +30,7 @@
 TOPOTOOLBOX_API
 int has_topotoolbox(void);
 
+TOPOTOOLBOX_API
 void fillsinks(float *output, float *dem, ptrdiff_t nrows, ptrdiff_t ncols);
 
 #endif  // TOPOTOOLBOX_H
-
