@@ -10,6 +10,15 @@ env:
   BUILD_TYPE: Release
 
 jobs:
+  format-check:
+    name: Format check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run clang-format style check for C/C++ programs
+        uses: jidicula/clang-format-action@v4.11.0
+        with:
+          clang-format-version: '14'
   build:
     runs-on: ${{ matrix.os }}
     strategy:
