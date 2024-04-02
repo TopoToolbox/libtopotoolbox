@@ -56,7 +56,7 @@ ptrdiff_t forward_scan(float *marker, float *mask, ptrdiff_t nrows,
     // maximum height of the neighborhood and the mask at the current
     // pixel.
 
-    double z = max_height < mask[p] ? max_height : mask[p];
+    float z = max_height < mask[p] ? max_height : mask[p];
 
     if (z != marker[p]) {
       // Increment count only if we change the current pixel
@@ -121,7 +121,7 @@ ptrdiff_t backward_scan(float *marker, float *mask, ptrdiff_t nrows,
     // maximum height of the neighborhood and the mask at the current
     // pixel.
 
-    double z = max_height < mask[p] ? max_height : mask[p];
+    float z = max_height < mask[p] ? max_height : mask[p];
     if (z != marker[p]) {
       // Increment count only if we change the current pixel
       count++;
