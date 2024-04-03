@@ -157,7 +157,8 @@ void reconstruct(float *marker, float *mask, ptrdiff_t nrows, ptrdiff_t ncols) {
   ptrdiff_t n = ncols * nrows;
 
   const int32_t max_iterations = 1000;
-  for (int32_t iteration = 0; iteration < max_iterations && n > 0; iteration++) {
+  for (int32_t iteration = 0; iteration < max_iterations && n > 0;
+       iteration++) {
     n = forward_scan(marker, mask, nrows, ncols);
     n += backward_scan(marker, mask, nrows, ncols);
   }
