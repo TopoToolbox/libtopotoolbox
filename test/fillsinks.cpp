@@ -35,17 +35,17 @@ float pcg4d(uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
   z += x * y;
   w += y * z;
 
-  return (float)(w >> 8) * 0x1.0p-24;
+  return (float)(w >> 8) / (1 << 24);
 }
 
-int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint64_t seed) {
+int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
   // Initialize a random DEM
   float *dem = new float[nrows * ncols];
   float *output = new float[nrows * ncols];
 
-  for (ptrdiff_t col = 0; col < ncols; col++) {
-    for (ptrdiff_t row = 0; row < nrows; row++) {
-      dem[col * nrows + row] = 100.0 * pcg4d(row, col, seed, 1);
+  for (uint32_t col = 0; col < ncols; col++) {
+    for (uint32_t row = 0; row < nrows; row++) {
+      dem[col * nrows + row] = 100.0f * pcg4d(row, col, seed, 1);
     }
   }
 
@@ -94,7 +94,7 @@ int main(int argc, char *argv[]) {
   ptrdiff_t nrows = 100;
   ptrdiff_t ncols = 200;
 
-  for (uint64_t test = 0; test < 100; test++) {
+  for (uint32_t test = 0; test < 100; test++) {
     int32_t result = random_dem_test(nrows, ncols, test);
     if (result < 0) {
       return result;
