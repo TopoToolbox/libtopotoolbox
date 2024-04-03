@@ -1,6 +1,7 @@
 #include "reconstruct.h"
 
 #include <stddef.h>
+#include <stdint.h>
 
 /*
   Perform a partial reconstruction by scanning in the forward
@@ -154,8 +155,9 @@ ptrdiff_t backward_scan(float *marker, float *mask, ptrdiff_t nrows,
  */
 void reconstruct(float *marker, float *mask, ptrdiff_t nrows, ptrdiff_t ncols) {
   ptrdiff_t n = ncols * nrows;
-  ptrdiff_t iterations = 0;
-  while ((n > 0) && iterations < 1000) {
+
+  const int32_t max_iterations = 1000;
+  for (int32_t iteration = 0; iteration < max_iterations && n > 0; iteration++) {
     n = forward_scan(marker, mask, nrows, ncols);
     n += backward_scan(marker, mask, nrows, ncols);
   }
