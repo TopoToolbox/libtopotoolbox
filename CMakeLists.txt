@@ -6,7 +6,10 @@ project(
   LANGUAGES C CXX
 )
 
-enable_testing()
+include(CTest)
 
 add_subdirectory(src)
-add_subdirectory(test)
+
+if (BUILD_TESTING)
+  add_subdirectory(test)
+endif()
