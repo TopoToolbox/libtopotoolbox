@@ -29,7 +29,7 @@ void fillsinks(float *output, float *dem, ptrdiff_t nrows, ptrdiff_t ncols) {
 
       // Set the boundary pixels of the output equal to the DEM and
       // the interior pixels equal to -INFINITY.
-      if ((row == 0 || row == (nrows - 1)) &&
+      if ((row == 0 || row == (nrows - 1)) ||
           (col == 0 || col == (ncols - 1))) {
         output[col * nrows + row] = dem[col * nrows + row];
       } else {
