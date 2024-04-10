@@ -1,7 +1,9 @@
 #ifndef TOPOTOOLBOX_H
 #define TOPOTOOLBOX_H
 
-#if defined(TOPOTOOLBOX_BUILD)
+#ifdef TOPOTOOLBOX_STATICLIB
+#define TOPOTOOLBOX_API
+#elif defined(TOPOTOOLBOX_BUILD)
 #if defined(_WIN32)
 #define TOPOTOOLBOX_API __declspec(dllexport)
 #else

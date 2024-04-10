@@ -1,0 +1,6 @@
+@PACKAGE_INIT@
+
+include(${CMAKE_CURRENT_LIST_DIR}/topotoolbox-targets.cmake)
+set_and_check(TopoToolbox_INCLUDE_DIR "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@")
+set(TopoToolbox_LIBRARIES topotoolbox)
+check_required_components(topotoolbox)

@@ -1,7 +1,19 @@
-add_library(topotoolbox SHARED
+add_library(topotoolbox
   topotoolbox.c
   fillsinks.c
   morphology/reconstruct.c
 )
 
-target_include_directories(topotoolbox PUBLIC ../include)
+target_include_directories(
+  topotoolbox
+  PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME}>
+)
+
+if (BUILD_SHARED_LIBS)
+else()
+  target_compile_options(topotoolbox PUBLIC -DTOPOTOOLBOX_STATICLIB)
+endif()
+
+set_target_properties(topotoolbox PROPERTIES PUBLIC_HEADER ${CMAKE_SOURCE_DIR}/include/topotoolbox.h)
