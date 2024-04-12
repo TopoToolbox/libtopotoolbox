@@ -7,7 +7,7 @@ add_library(topotoolbox
 target_include_directories(
   topotoolbox
   PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+  $<BUILD_INTERFACE:${topotoolbox_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME}>
 )
 
@@ -16,4 +16,4 @@ else()
   target_compile_options(topotoolbox PUBLIC -DTOPOTOOLBOX_STATICLIB)
 endif()
 
-set_target_properties(topotoolbox PROPERTIES PUBLIC_HEADER ${CMAKE_SOURCE_DIR}/include/topotoolbox.h)
+set_target_properties(topotoolbox PROPERTIES PUBLIC_HEADER ${topotoolbox_SOURCE_DIR}/include/topotoolbox.h)
