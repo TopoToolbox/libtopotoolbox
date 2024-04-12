@@ -52,6 +52,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
           -DCMAKE_C_COMPILER=${{matrix.c_compiler}}
           -DCMAKE_CXX_COMPILER=${{matrix.cpp_compiler}}
+          -DTT_BUILD_TESTS=ON
       - name: Build
         run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
       - name: Test
