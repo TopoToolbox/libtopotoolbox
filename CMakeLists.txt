@@ -14,6 +14,8 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
+OPTION(TT_BUILD_TESTS "Build libtopotoolbox tests" OFF)
+
 include(CTest)
 include(GNUInstallDirs)
 
@@ -26,7 +28,7 @@ endif()
 
 add_subdirectory(src)
 
-if (BUILD_TESTING)
+if (TT_BUILD_TESTS)
   add_subdirectory(test)
 endif()
 
