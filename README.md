@@ -25,10 +25,17 @@ call
 > cmake --build build
 ```
 
-## Running the tests
+## Building and running the tests
 
-Once the build has completed, run the tests by moving into the build
-directory and running the CTest executable that comes with CMake.
+libtopotoolbox includes a test suite that can be built alongside the
+library. Turn on the `TT_BUILD_TESTS` option to build the tests as well:
+
+```
+> cmake -B build -DTT_BUILD_TESTS=ON
+> cmake --build build
+```
+
+Tests can then be run with
 
 ```
 > cd build
