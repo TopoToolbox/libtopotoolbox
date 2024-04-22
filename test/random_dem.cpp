@@ -41,7 +41,6 @@ float pcg4d(uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
 int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
   // Initialize a random DEM
   float *dem = new float[nrows * ncols];
-  float *output = new float[nrows * ncols];
 
   for (uint32_t col = 0; col < ncols; col++) {
     for (uint32_t row = 0; row < nrows; row++) {
@@ -49,16 +48,25 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
     }
   }
 
-  fillsinks(output, dem, nrows, ncols);
+  // Allocate output for fillsinks
+  float *filled_dem = new float[nrows * ncols];
 
+  // Allocate output for identify flats
+  int32_t *flats = new int32_t[nrows * ncols];
+
+  fillsinks(filled_dem, dem, nrows, ncols);
+  identifyflats(flats, filled_dem, nrows, ncols);
+
+  // Test properties of filled DEM and identified flats
   ptrdiff_t col_offset[8] = {-1, -1, -1, 0, 1, 1, 1, 0};
   ptrdiff_t row_offset[8] = {1, 0, -1, -1, -1, 0, 1, 1};
 
   for (ptrdiff_t col = 1; col < ncols - 1; col++) {
     for (ptrdiff_t row = 1; row < nrows - 1; row++) {
-      // Each pixel of the filled raster should be >= the DEM
-      float z = output[col * nrows + row];
+      float z = filled_dem[col * nrows + row];
+      int32_t flat = flats[col * nrows + row];
 
+      // Each pixel of the filled raster should be >= the DEM
       if (z < dem[col * nrows + row]) {
         std::cout << "Pixel (" << row << ", " << col << ") is below the DEM"
                   << std::endl;
@@ -69,19 +77,62 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
 
       // No pixel of the filled raster should be surrounded by
       // neighbors that are higher than it
-      int32_t count = 0;
+      int32_t sink_neighbor_count = 0;
+
+      // No flat pixel should have a neighbor that is lower than it
+      int32_t flat_neighbor_count = 0;
+
+      // Every sill pixel should have at least one neighbor lower than it
+      int32_t sill_neighbor_count = 0;
+
+      // Every sill pixel should border a flat
+      int32_t sill_neighboring_flats = 0;
+
       for (ptrdiff_t neighbor = 0; neighbor < 8; neighbor++) {
         ptrdiff_t neighbor_row = row + row_offset[neighbor];
         ptrdiff_t neighbor_col = col + col_offset[neighbor];
 
-        if (z < output[neighbor_col * nrows + neighbor_row]) {
-          count++;
+        float neighbor_height = filled_dem[neighbor_col * nrows + neighbor_row];
+        int32_t neighboring_flat = flats[neighbor_col * nrows + neighbor_row];
+
+        if (z < neighbor_height) {
+          sink_neighbor_count++;
+        }
+
+        if ((flat == 1) && (z > neighbor_height)) {
+          flat_neighbor_count++;
+        }
+
+        if ((flat == 2) && (z > neighbor_height)) {
+          sill_neighbor_count++;
+        }
+
+        if ((flat == 2) && (neighboring_flat == 1)) {
+          sill_neighboring_flats++;
         }
       }
 
-      if (count == 8) {
+      if (sink_neighbor_count == 8) {
         std::cout << "Pixel (" << row << ", " << col << ") is a sink"
                   << std::endl;
+        return -1;
+      }
+
+      if ((flat == 2) && (flat_neighbor_count > 0)) {
+        std::cout << "Pixel (" << row << ", " << col
+                  << ") is a flat but has a lower neighbor" << std::endl;
+        return -1;
+      }
+
+      if ((flat == 2) && (sill_neighbor_count == 0)) {
+        std::cout << "Pixel (" << row << ", " << col
+                  << ") is a sill but has no lower neighbor" << std::endl;
+        return -1;
+      }
+
+      if ((flat == 2) && (sill_neighboring_flats == 0)) {
+        std::cout << "Pixel (" << row << ", " << col
+                  << ") is a sill but does not border a flat" << std::endl;
         return -1;
       }
     }

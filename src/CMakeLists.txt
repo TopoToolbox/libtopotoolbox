@@ -1,6 +1,7 @@
 add_library(topotoolbox
   topotoolbox.c
   fillsinks.c
+  identifyflats.c
   morphology/reconstruct.c
 )
 
