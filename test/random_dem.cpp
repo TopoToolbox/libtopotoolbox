@@ -87,9 +87,13 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
       // Number of neighbors that are sills
       int32_t neighboring_sills = 0;
 
-      // Number of neighboring flats that have the same elevation as the current
-      // pixel
+      // Number of neighboring flats that have the same elevation as
+      // the current pixel
       int32_t equal_neighboring_flats = 0;
+
+      // Number of neighboring sills that have the same elevation as
+      // the current pixel
+      int32_t equal_neighboring_sills = 0;
 
       for (ptrdiff_t neighbor = 0; neighbor < 8; neighbor++) {
         ptrdiff_t neighbor_row = row + row_offset[neighbor];
@@ -106,7 +110,7 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
           down_neighbor_count++;
         }
 
-        if (neighboring_flat == 1) {
+        if (neighboring_flat & 1) {
           neighboring_flats++;
 
           if (z == neighbor_height) {
@@ -114,8 +118,11 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
           }
         }
 
-        if (neighboring_flat == 2) {
+        if (neighboring_flat & 2) {
           neighboring_sills++;
+          if (z == neighbor_height) {
+            equal_neighboring_sills++;
+          }
         }
       }
 
@@ -129,7 +136,7 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
 
       // Every pixel with no lower neighbors and fewer than 8
       // up_neighbors should be labeled a flat
-      if (up_neighbor_count < 8 && down_neighbor_count == 0 && flat != 1) {
+      if (up_neighbor_count < 8 && down_neighbor_count == 0 && !(flat & 1)) {
         std::cout << "Pixel (" << row << ", " << col
                   << ") is has no lower neighbors but is not labeled a flat"
                   << std::endl;
@@ -139,7 +146,8 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
       // Every pixel that has a lower neighbor, borders a flat, and
       // has the same elevation as a flat that it touches should be
       // labeled a sill.
-      if (equal_neighboring_flats > 0 && down_neighbor_count > 0 && flat != 2) {
+      if (equal_neighboring_flats > 0 && down_neighbor_count > 0 &&
+          !(flat & 2)) {
         std::cout << "Pixel (" << row << ", " << col
                   << ") neighbors a flat and has lower neighbors but is not "
                      "labeled a sill"
@@ -147,22 +155,32 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
         return -1;
       }
 
+      // Every pixel that is a flat and borders a sill of the same
+      // height should be labeled a presill
+      if ((flat & 1) && (equal_neighboring_sills > 0) && !(flat & 4)) {
+        std::cout
+            << "Pixel (" << row << ", " << col
+            << ") is a flat that neighbors a sill but is not labeled a presill"
+            << std::endl;
+        return -1;
+      }
+
       // No flat should border a lower pixel
-      if ((flat == 1) && (down_neighbor_count > 0)) {
+      if ((flat & 1) && (down_neighbor_count > 0)) {
         std::cout << "Pixel (" << row << ", " << col
                   << ") is a flat but has a lower neighbor" << std::endl;
         return -1;
       }
 
       // Every sill pixel should have at least one neighbor lower than it
-      if ((flat == 2) && (down_neighbor_count == 0)) {
+      if ((flat & 2) && (down_neighbor_count == 0)) {
         std::cout << "Pixel (" << row << ", " << col
                   << ") is a sill but has no lower neighbor" << std::endl;
         return -1;
       }
 
       // Every sill pixel should border a flat
-      if ((flat == 2) && (neighboring_flats == 0)) {
+      if ((flat & 2) && (neighboring_flats == 0)) {
         std::cout << "Pixel (" << row << ", " << col
                   << ") is a sill but does not border a flat" << std::endl;
         return -1;

@@ -9,10 +9,24 @@
   Identify flat regions and sills in a digital elevation model.
 
   The arrays pointed to by `output` and `dem` should represent
-  two-dimensional arrays of size (nrows, ncols). Pixels that are part
-  of flat regions are labeled with a value of 1 in `output` while the
-  pixels that are sills over which flat regions spill into
-  lower-elevation regions are labeled with a value of 2.
+  two-dimensional arrays of size (nrows, ncols). The output is a
+  bitfield where
+
+  Bit 0 is set if the pixel is a flat
+  Bit 1 is set if the pixel is a sill
+  Bit 2 is set if the pixel is a presill (i.e. a flat neighboring a sill)
+
+  To test if pixel p is a flat, use
+
+  output[p] & 1
+
+  To test if pixel p is a sill, use
+
+  output[p] & 2
+
+  To test if pixel p is a presill, use
+
+  output[p] & 4
  */
 TOPOTOOLBOX_API
 void identifyflats(int32_t *output, float *dem, ptrdiff_t nrows,
@@ -50,7 +64,7 @@ void identifyflats(int32_t *output, float *dem, ptrdiff_t nrows,
 
       if (dem_height == min_height) {
         // Pixel is a flat
-        output[col * nrows + row] = 1;
+        output[col * nrows + row] |= 1;
       }
     }
   }
@@ -61,7 +75,7 @@ void identifyflats(int32_t *output, float *dem, ptrdiff_t nrows,
   // 3. has the same elevation as a flat that it touches
   for (ptrdiff_t col = 0; col < ncols; col++) {
     for (ptrdiff_t row = 0; row < nrows; row++) {
-      if (output[col * nrows + row] == 1) {
+      if (output[col * nrows + row] & 1) {
         // Pixel is a flat, skip it
         continue;
       }
@@ -78,7 +92,7 @@ void identifyflats(int32_t *output, float *dem, ptrdiff_t nrows,
           continue;
         }
 
-        if (output[neighbor_col * nrows + neighbor_row] != 1) {
+        if (!(output[neighbor_col * nrows + neighbor_row] & 1)) {
           // Neighbor is not a flat, skip it
           continue;
         }
@@ -87,7 +101,10 @@ void identifyflats(int32_t *output, float *dem, ptrdiff_t nrows,
         if (neighbor_height == dem_height) {
           // flat neighbor has a height equal to that of the current pixel.
           // Current pixel is a sill
-          output[col * nrows + row] = 2;
+          output[col * nrows + row] |= 2;
+
+          // Neighboring pixel is a presill
+          output[neighbor_col * nrows + neighbor_row] |= 4;
           continue;
         }
       }
