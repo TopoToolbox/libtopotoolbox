@@ -75,18 +75,21 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
         return -1;
       }
 
-      // No pixel of the filled raster should be surrounded by
-      // neighbors that are higher than it
-      int32_t sink_neighbor_count = 0;
+      // Number of neighbors lower than the current pixel
+      int32_t down_neighbor_count = 0;
 
-      // No flat pixel should have a neighbor that is lower than it
-      int32_t flat_neighbor_count = 0;
+      // Number of neighbors higher than the current pixel
+      int32_t up_neighbor_count = 0;
 
-      // Every sill pixel should have at least one neighbor lower than it
-      int32_t sill_neighbor_count = 0;
+      // Number of neighbors that are flats
+      int32_t neighboring_flats = 0;
 
-      // Every sill pixel should border a flat
-      int32_t sill_neighboring_flats = 0;
+      // Number of neighbors that are sills
+      int32_t neighboring_sills = 0;
+
+      // Number of neighboring flats that have the same elevation as the current
+      // pixel
+      int32_t equal_neighboring_flats = 0;
 
       for (ptrdiff_t neighbor = 0; neighbor < 8; neighbor++) {
         ptrdiff_t neighbor_row = row + row_offset[neighbor];
@@ -96,41 +99,70 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
         int32_t neighboring_flat = flats[neighbor_col * nrows + neighbor_row];
 
         if (z < neighbor_height) {
-          sink_neighbor_count++;
+          up_neighbor_count++;
         }
 
-        if ((flat == 1) && (z > neighbor_height)) {
-          flat_neighbor_count++;
+        if (z > neighbor_height) {
+          down_neighbor_count++;
         }
 
-        if ((flat == 2) && (z > neighbor_height)) {
-          sill_neighbor_count++;
+        if (neighboring_flat == 1) {
+          neighboring_flats++;
+
+          if (z == neighbor_height) {
+            equal_neighboring_flats++;
+          }
         }
 
-        if ((flat == 2) && (neighboring_flat == 1)) {
-          sill_neighboring_flats++;
+        if (neighboring_flat == 2) {
+          neighboring_sills++;
         }
       }
 
-      if (sink_neighbor_count == 8) {
+      // No pixel of the filled raster should be surrounded by
+      // neighbors that are higher than it
+      if (up_neighbor_count == 8) {
         std::cout << "Pixel (" << row << ", " << col << ") is a sink"
                   << std::endl;
         return -1;
       }
 
-      if ((flat == 2) && (flat_neighbor_count > 0)) {
+      // Every pixel with no lower neighbors and fewer than 8
+      // up_neighbors should be labeled a flat
+      if (up_neighbor_count < 8 && down_neighbor_count == 0 && flat != 1) {
+        std::cout << "Pixel (" << row << ", " << col
+                  << ") is has no lower neighbors but is not labeled a flat"
+                  << std::endl;
+        return -1;
+      }
+
+      // Every pixel that has a lower neighbor, borders a flat, and
+      // has the same elevation as a flat that it touches should be
+      // labeled a sill.
+      if (equal_neighboring_flats > 0 && down_neighbor_count > 0 && flat != 2) {
+        std::cout << "Pixel (" << row << ", " << col
+                  << ") neighbors a flat and has lower neighbors but is not "
+                     "labeled a sill"
+                  << std::endl;
+        return -1;
+      }
+
+      // No flat should border a lower pixel
+      if ((flat == 1) && (down_neighbor_count > 0)) {
         std::cout << "Pixel (" << row << ", " << col
                   << ") is a flat but has a lower neighbor" << std::endl;
         return -1;
       }
 
-      if ((flat == 2) && (sill_neighbor_count == 0)) {
+      // Every sill pixel should have at least one neighbor lower than it
+      if ((flat == 2) && (down_neighbor_count == 0)) {
         std::cout << "Pixel (" << row << ", " << col
                   << ") is a sill but has no lower neighbor" << std::endl;
         return -1;
       }
 
-      if ((flat == 2) && (sill_neighboring_flats == 0)) {
+      // Every sill pixel should border a flat
+      if ((flat == 2) && (neighboring_flats == 0)) {
         std::cout << "Pixel (" << row << ", " << col
                   << ") is a sill but does not border a flat" << std::endl;
         return -1;
