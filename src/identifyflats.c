@@ -29,10 +29,12 @@
   output[p] & 4
  */
 TOPOTOOLBOX_API
-void identifyflats(int32_t *output, float *dem, ptrdiff_t nrows,
-                   ptrdiff_t ncols) {
+ptrdiff_t identifyflats(int32_t *output, float *dem, ptrdiff_t nrows,
+                        ptrdiff_t ncols) {
   ptrdiff_t col_offset[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
   ptrdiff_t row_offset[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
+
+  ptrdiff_t count_flats = 0;
 
   // A flat is a pixel whose elevation is equal to the minimum
   // elevation of all of its neighbors.
@@ -65,6 +67,7 @@ void identifyflats(int32_t *output, float *dem, ptrdiff_t nrows,
       if (dem_height == min_height) {
         // Pixel is a flat
         output[col * nrows + row] |= 1;
+        count_flats++;
       }
     }
   }
@@ -110,4 +113,5 @@ void identifyflats(int32_t *output, float *dem, ptrdiff_t nrows,
       }
     }
   }
+  return count_flats;
 }

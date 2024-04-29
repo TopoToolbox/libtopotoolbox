@@ -37,7 +37,7 @@ TOPOTOOLBOX_API
 void fillsinks(float *output, float *dem, ptrdiff_t nrows, ptrdiff_t ncols);
 
 TOPOTOOLBOX_API
-void identifyflats(int32_t *output, float *dem, ptrdiff_t nrows,
-                   ptrdiff_t ncols);
+ptrdiff_t identifyflats(int32_t *output, float *dem, ptrdiff_t nrows,
+                        ptrdiff_t ncols);
 
 #endif  // TOPOTOOLBOX_H

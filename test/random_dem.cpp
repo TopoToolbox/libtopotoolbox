@@ -55,7 +55,10 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
   int32_t *flats = new int32_t[nrows * ncols];
 
   fillsinks(filled_dem, dem, nrows, ncols);
-  identifyflats(flats, filled_dem, nrows, ncols);
+  ptrdiff_t count_flats = identifyflats(flats, filled_dem, nrows, ncols);
+
+  // Number of flats identified in the test
+  ptrdiff_t test_count_flats = 0;
 
   // Test properties of filled DEM and identified flats
   ptrdiff_t col_offset[8] = {-1, -1, -1, 0, 1, 1, 1, 0};
@@ -130,6 +133,11 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
         return -1;
       }
 
+      if (up_neighbor_count < 8 && down_neighbor_count == 0) {
+        // This pixel is a flat
+        test_count_flats++;
+      }
+
       // Every pixel with no lower neighbors and fewer than 8
       // up_neighbors should be labeled a flat
       if (up_neighbor_count < 8 && down_neighbor_count == 0 && !(flat & 1)) {
@@ -182,6 +190,13 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
         return -1;
       }
     }
+  }
+
+  if (test_count_flats != count_flats) {
+    std::cout << "Number of flats identified in the test is not equal to the "
+                 "number of flats computed by identifyflats"
+              << std::endl;
+    return -1;
   }
 
   return 0;
