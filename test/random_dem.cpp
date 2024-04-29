@@ -84,9 +84,6 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
       // Number of neighbors that are flats
       int32_t neighboring_flats = 0;
 
-      // Number of neighbors that are sills
-      int32_t neighboring_sills = 0;
-
       // Number of neighboring flats that have the same elevation as
       // the current pixel
       int32_t equal_neighboring_flats = 0;
@@ -119,7 +116,6 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
         }
 
         if (neighboring_flat & 2) {
-          neighboring_sills++;
           if (z == neighbor_height) {
             equal_neighboring_sills++;
           }
