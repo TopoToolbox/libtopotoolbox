@@ -64,10 +64,13 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
   ptrdiff_t col_offset[8] = {-1, -1, -1, 0, 1, 1, 1, 0};
   ptrdiff_t row_offset[8] = {1, 0, -1, -1, -1, 0, 1, 1};
 
-  for (ptrdiff_t col = 1; col < ncols - 1; col++) {
-    for (ptrdiff_t row = 1; row < nrows - 1; row++) {
+  for (ptrdiff_t col = 0; col < ncols; col++) {
+    for (ptrdiff_t row = 0; row < nrows; row++) {
       float z = filled_dem[col * nrows + row];
       int32_t flat = flats[col * nrows + row];
+
+      int32_t current_pixel_on_border =
+          row == 0 || row == nrows - 1 || col == 0 || col == ncols - 1;
 
       // Each pixel of the filled raster should be >= the DEM
       if (z < dem[col * nrows + row]) {
@@ -99,6 +102,10 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
         ptrdiff_t neighbor_row = row + row_offset[neighbor];
         ptrdiff_t neighbor_col = col + col_offset[neighbor];
 
+        if (neighbor_row < 0 || neighbor_row >= nrows || neighbor_col < 0 ||
+            neighbor_col >= ncols) {
+          continue;
+        }
         float neighbor_height = filled_dem[neighbor_col * nrows + neighbor_row];
         int32_t neighboring_flat = flats[neighbor_col * nrows + neighbor_row];
 
@@ -133,14 +140,16 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
         return -1;
       }
 
-      if (up_neighbor_count < 8 && down_neighbor_count == 0) {
+      if (!current_pixel_on_border && up_neighbor_count < 8 &&
+          down_neighbor_count == 0) {
         // This pixel is a flat
         test_count_flats++;
       }
 
       // Every pixel with no lower neighbors and fewer than 8
       // up_neighbors should be labeled a flat
-      if (up_neighbor_count < 8 && down_neighbor_count == 0 && !(flat & 1)) {
+      if (!current_pixel_on_border && up_neighbor_count < 8 &&
+          down_neighbor_count == 0 && !(flat & 1)) {
         std::cout << "Pixel (" << row << ", " << col
                   << ") is has no lower neighbors but is not labeled a flat"
                   << std::endl;
@@ -176,8 +185,10 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
         return -1;
       }
 
-      // Every sill pixel should have at least one neighbor lower than it
-      if ((flat & 2) && (down_neighbor_count == 0)) {
+      // Every sill pixel should have at least one neighbor lower than it,
+      // unless it is on a border
+      if (!current_pixel_on_border && (flat & 2) &&
+          (down_neighbor_count == 0)) {
         std::cout << "Pixel (" << row << ", " << col
                   << ") is a sill but has no lower neighbor" << std::endl;
         return -1;
