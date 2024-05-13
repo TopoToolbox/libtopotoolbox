@@ -161,9 +161,9 @@ static labeldepth unify(ptrdiff_t *labels, float *weights, ptrdiff_t pixel1,
   labels.
  */
 TOPOTOOLBOX_API
-void compute_costs(float *costs, ptrdiff_t *conncomps, int32_t *flats,
-                   float *original_dem, float *filled_dem, ptrdiff_t nrows,
-                   ptrdiff_t ncols) {
+void gwdt_computecosts(float *costs, ptrdiff_t *conncomps, int32_t *flats,
+                       float *original_dem, float *filled_dem, ptrdiff_t nrows,
+                       ptrdiff_t ncols) {
   // flats, original_dem and filled_dem are passed as input
   //
   // conncomps and costs are outputs

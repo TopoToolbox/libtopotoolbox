@@ -62,7 +62,7 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
   // Run flow routing algorithms
   fillsinks(filled_dem, dem, nrows, ncols);
   ptrdiff_t count_flats = identifyflats(flats, filled_dem, nrows, ncols);
-  compute_costs(costs, conncomps, flats, dem, filled_dem, nrows, ncols);
+  gwdt_computecosts(costs, conncomps, flats, dem, filled_dem, nrows, ncols);
 
   // Number of flats identified in the test
   ptrdiff_t test_count_flats = 0;

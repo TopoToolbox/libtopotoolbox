@@ -41,8 +41,8 @@ ptrdiff_t identifyflats(int32_t *output, float *dem, ptrdiff_t nrows,
                         ptrdiff_t ncols);
 
 TOPOTOOLBOX_API
-void compute_costs(float *costs, ptrdiff_t *conncomps, int32_t *flats,
-                   float *original_dem, float *filled_dem, ptrdiff_t nrows,
-                   ptrdiff_t ncols);
+void gwdt_computecosts(float *costs, ptrdiff_t *conncomps, int32_t *flats,
+                       float *original_dem, float *filled_dem, ptrdiff_t nrows,
+                       ptrdiff_t ncols);
 
 #endif  // TOPOTOOLBOX_H
