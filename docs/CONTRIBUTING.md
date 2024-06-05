@@ -12,7 +12,7 @@ libtopotoolbox in higher-level languages such as Python
 ([topotoolbox](https://github/TopoToolbox/topotoolbox)). If you are
 interested mainly in using TopoToolbox for your work, studies or
 research, you might find the documentation at
-https://topotoolbox.github.io more useful.
+<https://topotoolbox.github.io> more useful.
 
 We use git as a version control system and GitHub's Issues and Pull
 Requests to manage contributions to libtopotoolbox. If you need some
