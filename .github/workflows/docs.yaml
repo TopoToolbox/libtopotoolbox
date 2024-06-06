@@ -13,7 +13,10 @@ jobs:
       - name: Install doxygen
         run: |
           sudo apt update
-          sudo apt install doxygen python3-sphinx python3-breathe python3-myst-parser python3-sphinx-book-theme
+          sudo apt install doxygen
+      - name: Install Python build dependencies
+        run: |
+          pip install sphinx breathe myst-parser sphinx-book-theme          
       - name: Configure
         run: >
           cmake -B ${{github.workspace}}/build -DTT_BUILD_DOCS=ON
