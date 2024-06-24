@@ -18,6 +18,7 @@ set(CMAKE_C_EXTENSIONS OFF)
 
 OPTION(TT_BUILD_TESTS "Build libtopotoolbox tests" OFF)
 OPTION(TT_BUILD_DOCS "Build libtopotoolbox documentation" OFF)
+OPTION(TT_INSTALL "Install libtopotoolbox" OFF)
 
 include(CTest)
 include(GNUInstallDirs)
@@ -39,35 +40,38 @@ if (TT_BUILD_DOCS)
   add_subdirectory(docs)
 endif()
 
+if (TT_INSTALL)
+  # Only set up the install targets if TT_INSTALL is set
+  
+  # CMake package configuration
+  include(CMakePackageConfigHelpers)
+  configure_package_config_file(
+    cmake/TopoToolboxConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/TopoToolboxConfig.cmake
+    PATH_VARS CMAKE_INSTALL_INCLUDEDIR
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
+  )
 
-# CMake package configuration
-include(CMakePackageConfigHelpers)
-configure_package_config_file(
-  cmake/TopoToolboxConfig.cmake.in
-  ${CMAKE_CURRENT_BINARY_DIR}/TopoToolboxConfig.cmake
-  PATH_VARS CMAKE_INSTALL_INCLUDEDIR
-  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
-)
+  write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/TopoToolboxConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+  )
 
-write_basic_package_version_file(
-  ${CMAKE_CURRENT_BINARY_DIR}/TopoToolboxConfigVersion.cmake
-  VERSION ${PROJECT_VERSION}
-  COMPATIBILITY SameMajorVersion
-)
+  # Install library
+  install(TARGETS topotoolbox EXPORT topotoolbox-targets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}/${PROJECT_NAME}
+    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME})
 
-# Install library
-install(TARGETS topotoolbox EXPORT topotoolbox-targets
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}/${PROJECT_NAME}
-  PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME})
+  install(EXPORT topotoolbox-targets
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
+  )
 
-install(EXPORT topotoolbox-targets
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
-)
-
-install(FILES
-  ${CMAKE_CURRENT_BINARY_DIR}/TopoToolboxConfig.cmake
-  ${CMAKE_CURRENT_BINARY_DIR}/TopoToolboxConfigVersion.cmake
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
-)
+  install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/TopoToolboxConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/TopoToolboxConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
+  )
+endif()
