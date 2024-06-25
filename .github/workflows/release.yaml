@@ -1,8 +1,8 @@
 name: Create release
 
 on:
-  push:
-    branches: ["release-test"]
+  schedule:
+    - cron: '35 9 * * 2'
 
 jobs:
   release:
