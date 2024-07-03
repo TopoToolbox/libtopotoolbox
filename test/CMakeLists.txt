@@ -7,8 +7,9 @@ set_tests_properties(versioninfo PROPERTIES ENVIRONMENT_MODIFICATION
 
 add_executable(random_dem random_dem.cpp utils.c)
 if (MSVC)
-  target_compile_options(random_dem PRIVATE "$<$<CONFIG:DEBUG>:/fsanitize=address>")
-  target_link_options(random_dem PRIVATE "$<$<CONFIG:DEBUG>:/fsanitize=address>")
+  # ASan disabled on Windows because of linking errors on GitHub Actions.
+  #target_compile_options(random_dem PRIVATE "$<$<CONFIG:DEBUG>:/fsanitize=address>")
+  #target_link_options(random_dem PRIVATE "$<$<CONFIG:DEBUG>:/fsanitize=address>")
 else()
   target_compile_options(random_dem PRIVATE "$<$<CONFIG:DEBUG>:-fsanitize=address>")
   target_link_options(random_dem PRIVATE "$<$<CONFIG:DEBUG>:-fsanitize=address>")
@@ -20,8 +21,8 @@ set_tests_properties(random_dem PROPERTIES ENVIRONMENT_MODIFICATION
 
 add_executable(excesstopography excesstopography.cpp utils.c)
 if (MSVC)
-  target_compile_options(excesstopography PRIVATE "$<$<CONFIG:DEBUG>:/fsanitize=address>")
-  target_link_options(excesstopography PRIVATE "$<$<CONFIG:DEBUG>:/fsanitize=address>")
+  #target_compile_options(excesstopography PRIVATE "$<$<CONFIG:DEBUG>:/fsanitize=address>")
+  #target_link_options(excesstopography PRIVATE "$<$<CONFIG:DEBUG>:/fsanitize=address>")
 else()
   target_compile_options(excesstopography PRIVATE "$<$<CONFIG:DEBUG>:-fsanitize=address>")
   target_link_options(excesstopography PRIVATE "$<$<CONFIG:DEBUG>:-fsanitize=address>")
@@ -33,8 +34,8 @@ set_tests_properties(excesstopography PROPERTIES ENVIRONMENT_MODIFICATION
 
 add_executable(gwdt gwdt.cpp utils.c)
 if (MSVC)
-  target_compile_options(gwdt PRIVATE "$<$<CONFIG:DEBUG>:/fsanitize=address>")
-  target_link_options(gwdt PRIVATE "$<$<CONFIG:DEBUG>:/fsanitize=address>")
+  #target_compile_options(gwdt PRIVATE "$<$<CONFIG:DEBUG>:/fsanitize=address>")
+  #target_link_options(gwdt PRIVATE "$<$<CONFIG:DEBUG>:/fsanitize=address>")
 else()
   target_compile_options(gwdt PRIVATE "$<$<CONFIG:DEBUG>:-fsanitize=address>")
   target_link_options(gwdt PRIVATE "$<$<CONFIG:DEBUG>:-fsanitize=address>")
