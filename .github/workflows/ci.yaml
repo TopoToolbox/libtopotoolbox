@@ -36,6 +36,10 @@ jobs:
             cpp_compiler: clang++
           - c_compiler: cl
             cpp_compiler: cl
+          - os: ubuntu-latest
+            build_type: Debug
+            c_compiler: clang
+            sanitize: ON
         exclude:
           - os: windows-latest
             c_compiler: gcc
@@ -47,10 +51,11 @@ jobs:
             c_compiler: gcc
           - os: ubuntu-latest
             c_compiler: cl
-          - c_compiler: cl
-            sanitize: ON
-          - c_compiler: gcc
-            sanitize: ON
+          - sanitize: ON
+          - os: ubuntu-latest
+            build_type: Debug
+            c_compiler: clang
+            sanitize: OFF
     steps:
       - uses: actions/checkout@v4
       - name: Configure
