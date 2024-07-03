@@ -12,6 +12,14 @@ extern "C" {
 
 int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
   float *dem = new float[nrows * ncols];
+  float *filled_dem = new float[nrows * ncols];
+  int32_t *flats = new int32_t[nrows * ncols];
+  ptrdiff_t *conncomps = new ptrdiff_t[nrows * ncols];
+  float *costs = new float[nrows * ncols];
+  float *dist = new float[nrows * ncols];
+  ptrdiff_t *heap = new ptrdiff_t[nrows * ncols];
+  ptrdiff_t *back = new ptrdiff_t[nrows * ncols];
+  ptrdiff_t *prev = new ptrdiff_t[nrows * ncols];
 
   for (uint32_t col = 0; col < ncols; col++) {
     for (uint32_t row = 0; row < nrows; row++) {
@@ -19,20 +27,9 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
     }
   }
 
-  float *filled_dem = new float[nrows * ncols];
-  int32_t *flats = new int32_t[nrows * ncols];
-
-  ptrdiff_t *conncomps = new ptrdiff_t[nrows * ncols];
-  float *costs = new float[nrows * ncols];
-
   fillsinks(filled_dem, dem, nrows, ncols);
   identifyflats(flats, filled_dem, nrows, ncols);
   gwdt_computecosts(costs, conncomps, flats, dem, filled_dem, nrows, ncols);
-
-  float *dist = new float[nrows * ncols];
-  ptrdiff_t *heap = new ptrdiff_t[nrows * ncols];
-  ptrdiff_t *back = new ptrdiff_t[nrows * ncols];
-  ptrdiff_t *prev = new ptrdiff_t[nrows * ncols];
 
   gwdt(dist, prev, costs, flats, heap, back, nrows, ncols);
 
@@ -87,6 +84,16 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
       }
     }
   }
+
+  delete[] dem;
+  delete[] filled_dem;
+  delete[] flats;
+  delete[] conncomps;
+  delete[] costs;
+  delete[] dist;
+  delete[] heap;
+  delete[] back;
+  delete[] prev;
 
   return 0;
 }

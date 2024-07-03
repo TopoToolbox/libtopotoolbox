@@ -119,6 +119,18 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, ptrdiff_t nlayers,
     }
   }
 
+  delete[] dem;
+  delete[] fmm_excess;
+  delete[] fsm_excess;
+  delete[] fmm_excess3d;
+  delete[] lithstack;
+  delete[] threshold_slopes3d;
+  delete[] heap;
+  delete[] heap3d;
+  delete[] back;
+  delete[] back3d;
+  delete[] threshold;
+
   return 0;
 }
 
@@ -160,6 +172,12 @@ int32_t eikonal_numerics_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t test) {
       }
     }
   }
+
+  delete[] dem;
+  delete[] excess;
+  delete[] heap;
+  delete[] back;
+  delete[] threshold;
 
   return 0;
 }

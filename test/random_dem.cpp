@@ -9,24 +9,26 @@ extern "C" {
 }
 
 int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
-  // Initialize a random DEM
+  // Allocate variables
+
+  // Input DEM
   float *dem = new float[nrows * ncols];
+
+  // Output for fillsinks
+  float *filled_dem = new float[nrows * ncols];
+
+  // Output for identifyflats
+  int32_t *flats = new int32_t[nrows * ncols];
+
+  // Outputs for compute_costs
+  ptrdiff_t *conncomps = new ptrdiff_t[nrows * ncols];
+  float *costs = new float[nrows * ncols];
 
   for (uint32_t col = 0; col < ncols; col++) {
     for (uint32_t row = 0; row < nrows; row++) {
       dem[col * nrows + row] = 100.0f * pcg4d(row, col, seed, 1);
     }
   }
-
-  // Allocate output for fillsinks
-  float *filled_dem = new float[nrows * ncols];
-
-  // Allocate output for identify flats
-  int32_t *flats = new int32_t[nrows * ncols];
-
-  // Allocate output for compute_costs
-  ptrdiff_t *conncomps = new ptrdiff_t[nrows * ncols];
-  float *costs = new float[nrows * ncols];
 
   // Run flow routing algorithms
   fillsinks(filled_dem, dem, nrows, ncols);
@@ -226,6 +228,12 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t seed) {
               << std::endl;
     return -1;
   }
+
+  delete[] dem;
+  delete[] filled_dem;
+  delete[] flats;
+  delete[] conncomps;
+  delete[] costs;
 
   return 0;
 }
