@@ -59,4 +59,4 @@ jobs:
       - name: Build
         run: cmake --build ${{github.workspace}}/build --config ${{matrix.build_type}}
       - name: Test
-        run: ctest --test-dir ${{github.workspace}}/build -C ${{matrix.build_type}}
+        run: ctest --test-dir ${{github.workspace}}/build -C ${{matrix.build_type}} --output-on-failure
