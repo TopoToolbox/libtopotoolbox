@@ -28,13 +28,11 @@ jobs:
         c_compiler: [gcc, clang, cl]
         build_shared: [true, false]
         build_type: [Debug, Release]
-        sanitize: OFF
         include:
           - c_compiler: gcc
             cpp_compiler: g++
           - c_compiler: clang
             cpp_compiler: clang++
-            sanitize: ON
           - c_compiler: cl
             cpp_compiler: cl
         exclude:
