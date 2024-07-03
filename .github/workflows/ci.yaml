@@ -28,6 +28,7 @@ jobs:
         c_compiler: [gcc, clang, cl]
         build_shared: [true, false]
         build_type: [Debug, Release]
+        sanitize: [ON, OFF]
         include:
           - c_compiler: gcc
             cpp_compiler: g++
@@ -46,6 +47,10 @@ jobs:
             c_compiler: gcc
           - os: ubuntu-latest
             c_compiler: cl
+          - c_compiler: cl
+            sanitize: ON
+          - c_compiler: gcc
+            sanitize: ON
     steps:
       - uses: actions/checkout@v4
       - name: Configure
