@@ -1,3 +1,5 @@
+#undef NDEBUG
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -28,6 +30,30 @@ float upwind_gradient(float *u, ptrdiff_t row, ptrdiff_t col, float cellsize,
   float g = sqrtf(ns_gradient * ns_gradient + ew_gradient * ew_gradient);
 
   return g;
+}
+
+int32_t test_excess_ge(float *excess, float *dem, ptrdiff_t nrows,
+                       ptrdiff_t ncols) {
+  for (ptrdiff_t j = 0; j < ncols; j++) {
+    for (ptrdiff_t i = 0; i < nrows; i++) {
+      assert(excess[i + j * nrows] <= dem[i + j*nrows]);
+    }
+  }
+  return 0;
+}
+
+int32_t test_upwind_gradient(float *excess, float *threshold, float cellsize,
+                             ptrdiff_t nrows, ptrdiff_t ncols) {
+  for (ptrdiff_t j = 0; j < ncols; j++) {
+    for (ptrdiff_t i = 0; i < nrows; i++) {
+      if ((i > 0) && (i < nrows - 1) && (j > 0) && (j < ncols - 1)) {
+        assert(upwind_gradient(excess, i, j, cellsize, nrows, ncols) -
+                   threshold[j * nrows + i] <
+               1e-4);
+      }
+    }
+  }
+  return 0;
 }
 
 int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, ptrdiff_t nlayers,
@@ -68,56 +94,20 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, ptrdiff_t nlayers,
   }
 
   excesstopography_fsm2d(fsm_excess, dem, threshold, cellsize, nrows, ncols);
+
+  test_excess_ge(fsm_excess,dem,nrows,ncols);
+  test_upwind_gradient(fsm_excess, threshold, cellsize, nrows, ncols);
+
   excesstopography_fmm2d(fmm_excess, heap, back, dem, threshold, cellsize,
                          nrows, ncols);
+
+  test_excess_ge(fmm_excess,dem,nrows,ncols);
+  test_upwind_gradient(fmm_excess, threshold, cellsize, nrows, ncols);
+
   excesstopography_fmm3d(fmm_excess3d, heap3d, back3d, dem, lithstack,
                          threshold_slopes3d, cellsize, nrows, ncols, nlayers);
-  for (ptrdiff_t col = 0; col < ncols; col++) {
-    for (ptrdiff_t row = 0; row < nrows; row++) {
-      ptrdiff_t idx = col * nrows + row;
 
-      if (fmm_excess[idx] > dem[idx]) {
-        std::cout << "Seed (" << seed << "): Pixel (" << row << ", " << col
-                  << ") excess topography is greater than DEM" << std::endl;
-        return -1;
-      };
-
-      if (fsm_excess[idx] > dem[idx]) {
-        std::cout << "Seed (" << seed << "): Pixel (" << row << ", " << col
-                  << ") FSM excess topography is greater than DEM" << std::endl;
-        return -1;
-      }
-
-      if (fmm_excess[idx] > dem[idx]) {
-        std::cout << "Seed (" << seed << "): Pixel (" << row << ", " << col
-                  << ") 3D excess topograhy is greater than DEM" << std::endl;
-      }
-
-      // Test the upwind gradient
-      if (col > 0 && col < ncols - 1 && row > 0 && row < nrows - 1) {
-        float g = upwind_gradient(fmm_excess, row, col, cellsize, nrows, ncols);
-
-        if ((g - threshold[col * nrows + row]) > 1e-4) {
-          std::cout << "Seed (" << seed << "): Pixel (" << row << ", " << col
-                    << ") discrete gradient " << g
-                    << " is greater than threshold" << std::endl;
-          return -1;
-        };
-      }
-
-      // Test the FSM upwind gradient
-      if (col > 0 && col < ncols - 1 && row > 0 && row < nrows - 1) {
-        float g = upwind_gradient(fsm_excess, row, col, cellsize, nrows, ncols);
-
-        if ((g - threshold[col * nrows + row]) > 1e-4) {
-          std::cout << "Seed (" << seed << "): Pixel (" << row << ", " << col
-                    << ") FSM discrete gradient " << g
-                    << " is greater than threshold" << std::endl;
-          return -1;
-        };
-      }
-    }
-  }
+  test_excess_ge(fmm_excess3d, dem, nrows, ncols);  
 
   delete[] dem;
   delete[] fmm_excess;
@@ -165,11 +155,7 @@ int32_t eikonal_numerics_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t test) {
 
   for (ptrdiff_t j = 0; j < ncols; j++) {
     for (ptrdiff_t i = 0; i < nrows; i++) {
-      if (excess[i + j * ncols] == INFINITY) {
-        std::cout << "Pixel (" << i << ", " << j << ") is infinite"
-                  << std::endl;
-        return -1;
-      }
+      assert(excess[i + j * nrows] != INFINITY);
     }
   }
 
