@@ -32,11 +32,11 @@ float upwind_gradient(float *u, ptrdiff_t row, ptrdiff_t col, float cellsize,
   return g;
 }
 
-int32_t test_excess_ge(float *excess, float *dem, ptrdiff_t nrows,
-                       ptrdiff_t ncols) {
+int32_t test_excess_constraint(float *excess, float *dem, ptrdiff_t nrows,
+                               ptrdiff_t ncols) {
   for (ptrdiff_t j = 0; j < ncols; j++) {
     for (ptrdiff_t i = 0; i < nrows; i++) {
-      assert(excess[i + j * nrows] <= dem[i + j*nrows]);
+      assert(excess[i + j * nrows] <= dem[i + j * nrows]);
     }
   }
   return 0;
@@ -51,6 +51,15 @@ int32_t test_upwind_gradient(float *excess, float *threshold, float cellsize,
                    threshold[j * nrows + i] <
                1e-4);
       }
+    }
+  }
+  return 0;
+}
+
+int32_t test_excess_isfinite(float *excess, ptrdiff_t nrows, ptrdiff_t ncols) {
+  for (ptrdiff_t j = 0; j < ncols; j++) {
+    for (ptrdiff_t i = 0; i < nrows; i++) {
+      assert(excess[i + j * nrows] != INFINITY);
     }
   }
   return 0;
@@ -95,19 +104,19 @@ int32_t random_dem_test(ptrdiff_t nrows, ptrdiff_t ncols, ptrdiff_t nlayers,
 
   excesstopography_fsm2d(fsm_excess, dem, threshold, cellsize, nrows, ncols);
 
-  test_excess_ge(fsm_excess,dem,nrows,ncols);
+  test_excess_constraint(fsm_excess, dem, nrows, ncols);
   test_upwind_gradient(fsm_excess, threshold, cellsize, nrows, ncols);
 
   excesstopography_fmm2d(fmm_excess, heap, back, dem, threshold, cellsize,
                          nrows, ncols);
 
-  test_excess_ge(fmm_excess,dem,nrows,ncols);
+  test_excess_constraint(fmm_excess, dem, nrows, ncols);
   test_upwind_gradient(fmm_excess, threshold, cellsize, nrows, ncols);
 
   excesstopography_fmm3d(fmm_excess3d, heap3d, back3d, dem, lithstack,
                          threshold_slopes3d, cellsize, nrows, ncols, nlayers);
 
-  test_excess_ge(fmm_excess3d, dem, nrows, ncols);  
+  test_excess_constraint(fmm_excess3d, dem, nrows, ncols);
 
   delete[] dem;
   delete[] fmm_excess;
@@ -153,11 +162,9 @@ int32_t eikonal_numerics_test(ptrdiff_t nrows, ptrdiff_t ncols, uint32_t test) {
   excesstopography_fmm2d(excess, heap, back, dem, threshold, 30.0, nrows,
                          ncols);
 
-  for (ptrdiff_t j = 0; j < ncols; j++) {
-    for (ptrdiff_t i = 0; i < nrows; i++) {
-      assert(excess[i + j * nrows] != INFINITY);
-    }
-  }
+  test_upwind_gradient(excess, threshold, 30.0, nrows, ncols);
+  test_excess_constraint(excess, dem, nrows, ncols);
+  test_excess_isfinite(excess, nrows, ncols);
 
   delete[] dem;
   delete[] excess;
