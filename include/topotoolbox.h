@@ -350,4 +350,13 @@ void excesstopography_fmm3d(float *excess, ptrdiff_t *heap, ptrdiff_t *back,
                             ptrdiff_t nrows, ptrdiff_t ncols,
                             ptrdiff_t nlayers);
 
+
+/**
+ @brief TODO
+ */
+TOPOTOOLBOX_API
+void graphflood_full();
+
+
+
 #endif  // TOPOTOOLBOX_H
