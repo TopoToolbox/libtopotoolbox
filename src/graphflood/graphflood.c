@@ -1,5 +1,4 @@
 #define TOPOTOOLBOX_BUILD
-#pragma once
 
 #include <math.h>
 #include <stddef.h>
