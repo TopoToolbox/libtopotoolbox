@@ -37,12 +37,12 @@ Example in row major:
 this_dim0 is the current row, dim[1] is the number of columns and this_dim1 is the current column
 
 */
-int32_t dim2flat(int32_t this_dim0, int32_t this_dim1, int32_t* dim){
+int32_t dim2flat(int32_t this_dim0, int32_t this_dim1, uint32_t* dim){
 	return this_dim0 * dim[1] + this_dim1;
 }
 
 
-void flat2dim(int32_t* this_dim0, int32_t* this_dim1, int32_t* dim){
+void flat2dim(int32_t* this_dim0, int32_t* this_dim1, uint32_t* dim){
 
 }
 
