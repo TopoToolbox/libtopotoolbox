@@ -10,11 +10,19 @@ Row major representation
 |1|x|2|
 | |3| |
 */
-void generate_offset_D4(uint8_t** off0, uint8_t** off1){
-	*off0 = malloc( 4 * sizeof (uint8_t));
-	*off0 = (*uint8_t[4]){-1,0,0,1};
-	*off1 = malloc( 4 * sizeof (uint8_t));
-	*off1 = (*uint8_t[4]){0,-1,1,0};
+void generate_offset_D4(int8_t** off0, int8_t** off1){
+	*off0 = malloc( 4 * sizeof (int8_t));
+	*off0[0] = -1;
+	*off0[1] = 0;
+	*off0[2] = 0;
+	*off0[3] = -1;
+	// *off0 = (*int8_t[4]){-1,0,0,1};
+	*off1 = malloc( 4 * sizeof (int8_t));
+	*off1[0] = 0;
+	*off1[1] = -1;
+	*off1[2] = 1;
+	*off1[3] = 0;
+	// *off1 = (*int8_t[4]){0,-1,1,0};
 }
 
 /*
@@ -26,11 +34,27 @@ Row major representation
 |3|x|4|
 |5|6|7|
 */
-void generate_offset_D8(uint8_t** off0, uint8_t** off1){
-	*off0 = malloc( 8 * sizeof (uint8_t));
-	*off0 = (*uint8_t[8]){-1,-1,-1,0,0,1,1,1};
-	*off1 = malloc( 8 * sizeof (uint8_t));
-	*off1 = (*uint8_t[8]){-1,0,1,-1,1,-1,0,1};
+void generate_offset_D8(int8_t** off0, int8_t** off1){
+	*off0 = malloc( 8 * sizeof (int8_t));
+	*off0[0] = -1;
+	*off0[1] = -1;
+	*off0[2] = -1;
+	*off0[3] = 0 ;
+	*off0[4] = 0 ;
+	*off0[5] = 1 ;
+	*off0[6] = 1 ;
+	*off0[7] = 1 ;
+	// *off0 = (*int8_t[8]){-1,-1,-1,0,0,1,1,1};
+	*off1 = malloc( 8 * sizeof (int8_t));
+	*off1[0] = -1;
+	*off1[1] = 0 ;
+	*off1[2] = 1 ;
+	*off1[3] = -1;
+	*off1[4] = 1 ;
+	*off1[5] = -1;
+	*off1[6] = 0 ;
+	*off1[7] = 1 ;
+	// *off1 = (*int8_t[8]){-1,0,1,-1,1,-1,0,1};
 }
 
 
