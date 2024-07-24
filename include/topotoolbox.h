@@ -364,7 +364,7 @@ void graphflood_full();
   - the topologically ordered stack (sensu Braun and Willett, 2013) 
 */
 TOPOTOOLBOX_API
-void compute_sfgraph(size_t* Sreceivers, uint8_t* NSdonors, size_t* Stack, uint8_t* BCs, size_t* dim, bool D8);
+void compute_sfgraph(float* topo, int32_t* Sreceivers, uint8_t* NSdonors, size_t* Stack, uint8_t* BCs, size_t* dim, bool D8);
 
 
 
