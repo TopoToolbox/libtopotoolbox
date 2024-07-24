@@ -11,8 +11,10 @@ Row major representation
 | |3| |
 */
 void generate_offset_D4(uint8_t** off0, uint8_t** off1){
-	*off0 = uint8_t[4]{-1,0,0,1};
-	*off1 = uint8_t[4]{0,-1,1,0};
+	*off0 = malloc( 4 * sizeof (uint8_t));
+	*off0 = (*uint8_t[4]){-1,0,0,1};
+	*off1 = malloc( 4 * sizeof (uint8_t));
+	*off1 = (*uint8_t[4]){0,-1,1,0};
 }
 
 /*
@@ -25,8 +27,10 @@ Row major representation
 |5|6|7|
 */
 void generate_offset_D8(uint8_t** off0, uint8_t** off1){
-	*off0 = uint8_t[8]{-1,-1,-1,0,0,1,1,1};
-	*off1 = uint8_t[8]{-1,0,1,-1,1,-1,0,1};
+	*off0 = malloc( 8 * sizeof (uint8_t));
+	*off0 = (*uint8_t[8]){-1,-1,-1,0,0,1,1,1};
+	*off1 = malloc( 8 * sizeof (uint8_t));
+	*off1 = (*uint8_t[8]){-1,0,1,-1,1,-1,0,1};
 }
 
 
