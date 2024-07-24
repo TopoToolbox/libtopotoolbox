@@ -5,6 +5,7 @@ where nodes only have one receiver max, usually the steepest gradient one.
 
 */
 
+#pragma once
 #define TOPOTOOLBOX_BUILD
 
 #include <math.h>

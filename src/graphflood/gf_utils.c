@@ -1,3 +1,4 @@
+#pragma once
 #define TOPOTOOLBOX_BUILD
 #include "gf_utils.h"
 
