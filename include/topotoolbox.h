@@ -357,6 +357,15 @@ void excesstopography_fmm3d(float *excess, ptrdiff_t *heap, ptrdiff_t *back,
 TOPOTOOLBOX_API
 void graphflood_full();
 
+/*
+  Computes a single flow graph with minimal characteristics:
+  - List of single flow receivers
+  - Number of single flow donors
+  - the topologically ordered stack (sensu Braun and Willett, 2013) 
+*/
+TOPOTOOLBOX_API
+void compute_sfgraph(size_t* Sreceivers, uint8_t* NSdonors, size_t* Stack, uint8_t* BCs, size_t* dim, bool D8);
+
 
 
 #endif  // TOPOTOOLBOX_H
