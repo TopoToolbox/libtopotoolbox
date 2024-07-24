@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "../morphology/reconstruct.h"
 #include "topotoolbox.h"
 
