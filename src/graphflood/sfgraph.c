@@ -27,6 +27,6 @@ where nodes only have one receiver max, usually the steepest gradient one.
 */
 TOPOTOOLBOX_API
 void compute_sfgraph(float* topo, int32_t* Sreceivers, uint8_t* NSdonors, uint32_t* Stack, uint8_t* BCs, uint32_t* dim, bool D8) {
-  printf("YOLO\n");
+  
   
 }

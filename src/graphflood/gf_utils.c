@@ -86,3 +86,93 @@ uint8_t N_neighbour(bool D8){
 }
 
 
+/*
+The following functions helps determining how a given node handles flux.
+It uses the standard used in DAGGER/scabbard tools
+Each node has a uint8_t code describing its status.
+Note that capital letters correspond to the c++ enum class in DAGGER.
+
+The tool is WIP so some of these might not be implemented in every tools yet.
+
+Cannot flow at all (nodata):
+NO_FLOW = 0,
+
+Internal Node (can flow in and out of the cell):
+FLOW = 1,
+
+2 is legacy and does not do anything
+
+Flow can out there but can also flow to downstream neighbours.
+For example, a node at the edge - but that have a neighbour with lower elevation:
+CAN_OUT = 3,
+
+Flow can only out when entering the cell:
+OUT = 4,
+
+PROBABLY LEGACY
+FORCE_OUT = 5,
+
+For cells located at the edge of a DEM, flow can pass through but not leave (local minima if no downstream neighbour)
+CANNOT_OUT = 6,
+
+Flow can only flow to potential receivers
+exemple, you have a DEM of a river segment and want to input water from a side:
+IN = 7,
+
+Same than 7, but cannot even receive from upstream neighbours
+FORCE_IN = 8,
+
+periodic border (not implemented yet but will have to be):
+PERIODIC_BORDER = 9
+
+
+uint8_t has 256 possibilities so there is plenty of space for more options
+*/
+
+
+
+
+
+bool can_receive(int32_t node, uint8_t* BCs){
+	if(
+		BCs[node] == 1 ||
+		BCs[node] == 3 ||
+		BCs[node] == 4 ||
+		BCs[node] == 5 ||
+		BCs[node] == 6 ||
+		BCs[node] == 7 ||
+		BCs[node] == 9
+
+	){
+		return true;
+	}else{
+		return false;
+	}
+}
+
+bool can_give(int32_t node, uint8_t* BCs){
+	if(
+		BCs[node] == 1 ||
+		BCs[node] == 3 ||
+		BCs[node] == 6 ||
+		BCs[node] == 7 ||
+		BCs[node] == 8 ||
+		BCs[node] == 9
+
+	){
+		return true;
+	}else{
+		return false;
+	}
+}
+
+
+bool is_nodata(int32_t node, uint8_t* BCs){
+	if(
+		BCs[node] == 0
+	){
+		return true;
+	}else{
+		return false;
+	}
+}

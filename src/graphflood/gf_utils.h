@@ -15,4 +15,6 @@ void generate_offset_D4(int8_t** off0, int8_t** off1);
 void generate_offset_D8(int8_t** off0, int8_t** off1);
 int32_t dim2flat(int32_t this_dim0, int32_t this_dim1, uint32_t* dim);
 void flat2dim(int32_t* this_dim0, int32_t* this_dim1, uint32_t* dim);
-
+bool can_receive(int32_t node, uint8_t* BCs);
+bool can_give(int32_t node, uint8_t* BCs);
+bool is_nodata(int32_t node, uint8_t* BCs);
