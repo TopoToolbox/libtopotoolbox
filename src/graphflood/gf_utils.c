@@ -122,37 +122,7 @@ void generate_offset_D8_flat(int32_t** off, uint32_t* dim){
 	*off[7] = dim[0] + 1 ;
 }
 
-/*
-Generate the offsets for neighbouring operations 
-D8 version:
 
-Row major representation
-|0|1|2|
-|3|x|4|
-|5|6|7|
-*/
-void generate_offset_D8(int8_t** off0, int8_t** off1){
-	*off0 = malloc( 8 * sizeof (int8_t));
-	*off0[0] = -1;
-	*off0[1] = -1;
-	*off0[2] = -1;
-	*off0[3] = 0 ;
-	*off0[4] = 0 ;
-	*off0[5] = 1 ;
-	*off0[6] = 1 ;
-	*off0[7] = 1 ;
-	// *off0 = (*int8_t[8]){-1,-1,-1,0,0,1,1,1};
-	*off1 = malloc( 8 * sizeof (int8_t));
-	*off1[0] = -1;
-	*off1[1] = 0 ;
-	*off1[2] = 1 ;
-	*off1[3] = -1;
-	*off1[4] = 1 ;
-	*off1[5] = -1;
-	*off1[6] = 0 ;
-	*off1[7] = 1 ;
-	// *off1 = (*int8_t[8]){-1,0,1,-1,1,-1,0,1};
-}
 
 
 /*
@@ -162,9 +132,9 @@ Example in row major:
 this_dim0 is the current row, dim[1] is the number of columns and this_dim1 is the current column
 
 */
-int32_t dim2flat(int32_t this_dim0, int32_t this_dim1, uint32_t* dim){
-	return this_dim0 * dim[1] + this_dim1;
-}
+// int32_t dim2flat(int32_t this_dim0, int32_t this_dim1, uint32_t* dim){
+// 	return this_dim0 * dim[1] + this_dim1;
+// }
 int32_t dim2flat(uint32_t this_dim0, uint32_t this_dim1, uint32_t* dim){
 	return this_dim0 * dim[1] + this_dim1;
 }

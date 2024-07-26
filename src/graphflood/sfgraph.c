@@ -17,7 +17,7 @@ where nodes only have one receiver max, usually the steepest gradient one.
 
 
 
-static int32_t recursive_stack(node, Sdonors, NSdonors, offset);
+static void recursive_stack(int32_t node, int32_t* Sdonors, int32_t* Stack, uint32_t* NSdonors, size_t istack);
 
 /*
   Computes a single flow graph with minimal characteristics:
@@ -29,9 +29,10 @@ TOPOTOOLBOX_API
 void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t* NSdonors, uint32_t* Stack, uint8_t* BCs, uint32_t* dim, float dx, bool D8) {
   
   // Initialising the offset for neighbouring operations
-  *int32_t offset = NULL;
-  (D8 == false) ? generate_offset_D4_flat(&off,dim) : generate_offset_D8_flat(&off,dim);
+  int32_t* offset = NULL;
+  (D8 == false) ? generate_offset_D4_flat(&offset,dim) : generate_offset_D8_flat(&offset,dim);
   // Initialising the offset distance for each neighbour
+  float* offdx = NULL;
   (D8 == false) ? generate_offsetdx_D4_flat(&offdx,dx) : generate_offset_D8dx_flat(&offdx,dx);
 
   // For all the nodes
@@ -62,7 +63,7 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
         // flat indices
         int32_t nnode = node + offset[n];
         // who can receive
-        if(can_receive(nnode) == false)
+        if(can_receive(nnode, BCs) == false)
           continue;
 
         // I check wether their slope is the steepest
@@ -107,7 +108,7 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
 Recursive function to build Braun and Willett's Stack (single flow topological ordering)
 for each donors of a node it successively include them to the stack and call itself on the donor
 */
-static void recursive_stack(node, Sdonors, Stack, NSdonors, istack){
+static void recursive_stack(int32_t node, int32_t* Sdonors, int32_t* Stack, uint32_t* NSdonors, size_t istack){
   Stack[istack] = node;
   ++istack;
   for(uint32_t nd=0; nd<NSdonors[node]; ++nd){
