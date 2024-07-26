@@ -112,6 +112,6 @@ static void recursive_stack(int32_t node, int32_t* Sdonors, int32_t* Stack, uint
   Stack[istack] = node;
   ++istack;
   for(uint32_t nd=0; nd<NSdonors[node]; ++nd){
-    recursive_stack(Sdonors[node * N_neighbour(D8) + nd], Sdonors, Stack, NSdonors, istack);
+    recursive_stack(Sdonors[node * N_neighbour(D8) + nd], Sdonors, Stack, NSdonors, istack,D8);
   }
 }
