@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "../morphology/reconstruct.h"
-#include "topotoolbox.h"
+// #include "topotoolbox.h"
 
 
 void generate_offset_D4(int8_t** off0, int8_t** off1);

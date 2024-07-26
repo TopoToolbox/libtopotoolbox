@@ -12,8 +12,8 @@ where nodes only have one receiver max, usually the steepest gradient one.
 #include <stdint.h>
 
 #include "../morphology/reconstruct.h"
-#include "topotoolbox.h"
 #include "gf_utils.h"
+#include "topotoolbox.h"
 
 
 
