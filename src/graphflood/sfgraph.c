@@ -109,7 +109,7 @@ Recursive function to build Braun and Willett's Stack (single flow topological o
 for each donors of a node it successively include them to the stack and call itself on the donor
 */
 static void recursive_stack(int32_t node, int32_t* Sdonors, uint32_t* Stack, uint8_t* NSdonors, size_t* istack, bool D8){
-  Stack[istack] = node;
+  Stack[*istack] = node;
   ++(*istack);
   for(uint32_t nd=0; nd<NSdonors[node]; ++nd){
     recursive_stack(Sdonors[node * N_neighbour(D8) + nd], Sdonors, Stack, NSdonors, istack, D8);
