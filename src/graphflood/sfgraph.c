@@ -28,12 +28,17 @@ static void recursive_stack(int32_t node, int32_t* Sdonors, int32_t* Stack, uint
 TOPOTOOLBOX_API
 void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t* NSdonors, uint32_t* Stack, uint8_t* BCs, uint32_t* dim, float dx, bool D8) {
   
+  printf("DEBUG::1, entering function");
+
+
   // Initialising the offset for neighbouring operations
   int32_t* offset = NULL;
   (D8 == false) ? generate_offset_D4_flat(&offset,dim) : generate_offset_D8_flat(&offset,dim);
   // Initialising the offset distance for each neighbour
   float* offdx = NULL;
   (D8 == false) ? generate_offsetdx_D4(&offdx,dx) : generate_offsetdx_D8(&offdx,dx);
+
+  printf("DEBUG::OFFSET::%s\n", offset[0]);
 
   // For all the nodes
   // in row major d0 is row and d1 is col
