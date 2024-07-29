@@ -10,6 +10,7 @@ where nodes only have one receiver max, usually the steepest gradient one.
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include "../morphology/reconstruct.h"
 #include "gf_utils.h"
@@ -46,8 +47,8 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
       // Getting flat index of the node
       int32_t node = dim2flat(d0,d1,dim);
 
-      printf("%s\n", node);
-      fflush(stdout);
+      fprintf(stderr, "%s\n", node);
+
 
       // By convention (see fastscape, LSDTT, ...) a no steepest receiver = itself
       Sreceivers[node] = node;
