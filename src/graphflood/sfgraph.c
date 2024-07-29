@@ -28,8 +28,6 @@ static void recursive_stack(int32_t node, int32_t* Sdonors, int32_t* Stack, uint
 TOPOTOOLBOX_API
 void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t* NSdonors, uint32_t* Stack, uint8_t* BCs, uint32_t* dim, float dx, bool D8) {
   
-  printf("DEBUG::1, entering function");
-
   // // Initialising the offset for neighbouring operations
   int32_t* offset = NULL;
   (D8 == false) ? generate_offset_D4_flat(&offset,dim) : generate_offset_D8_flat(&offset, dim);
@@ -43,7 +41,7 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
   // in row major d0 is row and d1 is col
   // in col major d0 is col and d1 is row
   for(int32_t d0 = 0; d0<dim[0]; ++d0){
-    for(int32_t d1 = 0; d1<dim[0]; ++d1){
+    for(int32_t d1 = 0; d1<dim[1]; ++d1){
 
       // Getting flat index of the node
       int32_t node = dim2flat(d0,d1,dim);
