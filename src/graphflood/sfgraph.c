@@ -102,6 +102,10 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
 
   }
 
+
+  // Do not forget to free these
+  free(offset,offdx);
+
 }
 
 
