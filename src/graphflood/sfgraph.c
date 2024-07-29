@@ -49,7 +49,7 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
       int32_t node = 1204;
 
       printf( "%s\n", node);
-
+      continue;
 
       // By convention (see fastscape, LSDTT, ...) a no steepest receiver = itself
       Sreceivers[node] = node;
@@ -89,7 +89,7 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
     }
   }
   return;
-  
+
 
   // Back calculating the number of steepest receivers and inverting the receivers
   for(size_t node = 0; node<dim[0]*dim[1]; ++node){
