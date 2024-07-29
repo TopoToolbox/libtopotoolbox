@@ -363,9 +363,15 @@ void excesstopography_fmm3d(float *excess, ptrdiff_t *heap, ptrdiff_t *back,
 TOPOTOOLBOX_API
 void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t* NSdonors, uint32_t* Stack, uint8_t* BCs, uint32_t* dim, float dx, bool D8);
 
-/**
+/*
+   @brief TODO
+*/
+TOPOTOOLBOX_API
+void compute_drainage_area_single_flow(float* output, int32_t* Sreceivers, uint32_t* Stack, uint32_t* dim, float dx);
+
+/*
  @brief TODO
- */
+*/
 TOPOTOOLBOX_API
 void graphflood_full();
 

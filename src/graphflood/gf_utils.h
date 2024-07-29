@@ -26,3 +26,4 @@ bool can_receive(int32_t node, uint8_t* BCs);
 bool can_give(int32_t node, uint8_t* BCs);
 bool is_nodata(int32_t node, uint8_t* BCs);
 uint8_t N_neighbour(bool D8);
+uint32_t nxy(uint32_t* dim);

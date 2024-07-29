@@ -163,6 +163,8 @@ uint8_t N_neighbour(bool D8){
 		return 4;
 }
 
+uint32_t nxy(uint32_t* dim){return dim[0] * dim[1];}
+
 
 
 /*
