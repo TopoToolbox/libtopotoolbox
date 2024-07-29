@@ -44,7 +44,8 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
 
       // Getting flat index of the node
       int32_t node = dim2flat(d0,d1,dim);
-      printf("%d\n", node);
+      printf("%d", node);
+      printf("vs %d", nxy(dim));
 
       // By convention (see fastscape, LSDTT, ...) a no steepest receiver = itself
       Sreceivers[node] = node;
