@@ -119,6 +119,10 @@ D8 version.
 void generate_offset_D8_flat(int32_t** off, uint32_t* dim){
 	// creating a generic array to assign to the pointer
 	*off = (int32_t*)malloc( 8 * sizeof (int32_t));
+	if(*off == NULL){
+		printf("YOLO\n");
+		return
+	}
 	*off[0] = -dim[0] - 1;
 	*off[1] = -dim[0] + 0;
 	*off[2] = -dim[0] + 1;
