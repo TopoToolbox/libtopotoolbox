@@ -35,7 +35,7 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
   float offdx[8];
   (D8 == false) ? generate_offsetdx_D4(offdx,dx) : generate_offsetdx_D8(offdx,dx);
 
-  printf("%s\n",offset[0]);
+  printf("%d\n",offset[0]);
   return;
   // For all the nodes
   // in row major d0 is row and d1 is col
