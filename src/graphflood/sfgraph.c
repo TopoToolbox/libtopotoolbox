@@ -32,7 +32,7 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
   int32_t* offset = NULL;
   (D8 == false) ? generate_offset_D4_flat(&offset,dim) : generate_offset_D8_flat(&offset, dim);
   // // Initialising the offset distance for each neighbour
-  float* offdx;
+  float* offdx = NULL;
   (D8 == false) ? generate_offsetdx_D4(&offdx,dx) : generate_offsetdx_D8(&offdx,dx);
 
   // printf("DEBUG::OFFSET::%s\n", offset[0]);
@@ -40,8 +40,8 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
   // For all the nodes
   // in row major d0 is row and d1 is col
   // in col major d0 is col and d1 is row
-  for(int32_t d0 = 0; d0<dim[0]; ++d0){
-    for(int32_t d1 = 0; d1<dim[1]; ++d1){
+  for(uint32_t d0 = 0; d0<dim[0]; ++d0){
+    for(uint32_t d1 = 0; d1<dim[1]; ++d1){
 
       // Getting flat index of the node
       int32_t node = dim2flat(d0,d1,dim);
