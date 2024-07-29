@@ -17,7 +17,7 @@ where nodes only have one receiver max, usually the steepest gradient one.
 
 
 
-static void recursive_stack(int32_t node, int32_t* Sdonors, int32_t* Stack, uint32_t* NSdonors, size_t istack, bool D8);
+static void recursive_stack(int32_t node, int32_t* Sdonors, int32_t* Stack, uint8_t* NSdonors, size_t istack, bool D8);
 
 /*
   Computes a single flow graph with minimal characteristics:
@@ -108,7 +108,7 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
 Recursive function to build Braun and Willett's Stack (single flow topological ordering)
 for each donors of a node it successively include them to the stack and call itself on the donor
 */
-static void recursive_stack(int32_t node, int32_t* Sdonors, int32_t* Stack, uint32_t* NSdonors, size_t istack, bool D8){
+static void recursive_stack(int32_t node, int32_t* Sdonors, int32_t* Stack, uint8_t* NSdonors, size_t istack, bool D8){
   Stack[istack] = node;
   ++istack;
   for(uint32_t nd=0; nd<NSdonors[node]; ++nd){

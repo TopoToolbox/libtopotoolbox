@@ -6,8 +6,8 @@ add_library(topotoolbox
   morphology/reconstruct.c
   priority_queue.c
   excesstopography.c
-  graphflood/sfgraph.c
   graphflood/gf_utils.c
+  graphflood/sfgraph.c
   graphflood/graphflood.c
 )
 
