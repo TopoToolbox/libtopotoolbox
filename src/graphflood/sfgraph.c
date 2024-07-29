@@ -56,7 +56,7 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
 
       // Boundary condition checks: the node needs to being able to give to have receivers
       // Note that nodata cannot give so it filter them too
-      if(can_give(node,BCs) == false)
+      if(can_give(node,BCs) == false || true)
         continue;
 
       // Targetting the steepest receiver
