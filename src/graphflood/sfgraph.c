@@ -61,6 +61,9 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
 
       // for all the neighbours ...
       for(size_t n = 0; n<N_neighbour(D8); ++n){
+        // Checking if the neighbour belongs to the grid
+        if(check_bound_neighbour(node, n, dim, BCs, D8) == false)
+          continue;
         // flat indices
         int32_t nnode = node + offset[n];
         // who can receive

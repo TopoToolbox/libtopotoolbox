@@ -199,8 +199,64 @@ PERIODIC_BORDER = 9
 uint8_t has 256 possibilities so there is plenty of space for more options
 */
 
+/*
+I know BCs is not used so far here but that's future proof for periodic conditions or other edge cases
+*/
+void check_bound(int32_t node, uint32_t* dim, uint8_t* BCs, bool* valid ){
+	if(node < 0 || node >= dim[0] * dim[1])
+		*valid = false;
+}
+
+void check_top_customs(int32_t node, uint8_t n, uint32_t* dim, uint8_t* BCs, bool* valid, bool D8){
+
+	// Checking if the node is on the first row and trying to target above
+	if (node < dim[0] && node >=0) {
+		if( (D8 && n < 3) || (D8 == false && n == 0))
+			*valid = false;
+	}
+	// # Done
+}
+
+void check_bottom_customs(int32_t node, uint8_t n, uint32_t* dim, uint8_t* BCs, bool* valid, bool D8){
+
+	// Checking if the node is on the first row and trying to target above
+	if (node >= dim[0] * dim[1] - dim[0]) {
+		if( (D8 && n >= 5) || (D8 == false && n == 3))
+			*valid = false;
+	}
+	// # Done
+}
+
+void check_left_customs(int32_t node, uint8_t n, uint32_t* dim, uint8_t* BCs, bool* valid, bool D8){
+
+	// Checking if the node is on the first row and trying to target above
+	if (node % dim[0] == 0) {
+		if( (D8 && (n == 0 || n == 3 || n == 5) ) || (D8 == false && n == 1))
+			*valid = false;
+	}
+	// # Done
+}
+
+void check_right_customs(int32_t node, uint8_t n, uint32_t* dim, uint8_t* BCs, bool* valid, bool D8){
+
+	// Checking if the node is on the first row and trying to target above
+	if (node % dim[0] == dim[0] - 1) {
+		if( (D8 && (n == 2 || n == 4 || n == 7) ) || (D8 == false && n == 2))
+			*valid = false;
+	}
+	// # Done
+}
 
 
+bool check_bound_neighbour(int32_t node, uint8_t n, uint32_t* dim, uint8_t* BCs, bool D8){
+	bool valid = true;
+	check_bound(node, dim, BCs, valid );
+	check_top_customs(node, n, dim, BCs, valid, D8);
+	check_bottom_customs(node, n, dim, BCs, valid, D8);
+	check_left_customs(node, n, dim, BCs, valid, D8);
+	check_right_customs(node, n, dim, BCs, valid, D8);
+	return valid
+}
 
 
 bool can_receive(int32_t node, uint8_t* BCs){
