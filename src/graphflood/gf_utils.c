@@ -146,7 +146,7 @@ this_dim0 is the current row, dim[1] is the number of columns and this_dim1 is t
 // 	return this_dim0 * dim[1] + this_dim1;
 // }
 int32_t dim2flat(uint32_t this_dim0, uint32_t this_dim1, uint32_t* dim){
-	return this_dim0 * dim[1] + this_dim1;
+	return int32_t(this_dim0 * dim[1] + this_dim1);
 }
 
 
