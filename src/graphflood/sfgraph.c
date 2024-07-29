@@ -35,7 +35,7 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
   // float* offdx = NULL;
   // (D8 == false) ? generate_offsetdx_D4(&offdx,dx) : generate_offsetdx_D8(&offdx,dx);
   int32_t offset[3] = {-1,1,1};
-  float offsetdx[3] = {-1.,1.,dx};
+  float offdx[3] = {-1.,1.,dx};
 
   // free(offset);
   // free(offdx);
