@@ -250,12 +250,12 @@ void check_right_customs(int32_t node, uint8_t n, uint32_t* dim, uint8_t* BCs, b
 
 bool check_bound_neighbour(int32_t node, uint8_t n, uint32_t* dim, uint8_t* BCs, bool D8){
 	bool valid = true;
-	check_bound(node, dim, BCs, valid );
-	check_top_customs(node, n, dim, BCs, valid, D8);
-	check_bottom_customs(node, n, dim, BCs, valid, D8);
-	check_left_customs(node, n, dim, BCs, valid, D8);
-	check_right_customs(node, n, dim, BCs, valid, D8);
-	return valid
+	check_bound(node, dim, BCs, &valid );
+	check_top_customs(node, n, dim, BCs, &valid, D8);
+	check_bottom_customs(node, n, dim, BCs, &valid, D8);
+	check_left_customs(node, n, dim, BCs, &valid, D8);
+	check_right_customs(node, n, dim, BCs, &valid, D8);
+	return valid;
 }
 
 
