@@ -35,8 +35,7 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
   float offdx[8];
   (D8 == false) ? generate_offsetdx_D4(offdx,dx) : generate_offsetdx_D8(offdx,dx);
 
-  printf("%d\n",offset[0]);
-  return;
+
   // For all the nodes
   // in row major d0 is row and d1 is col
   // in col major d0 is col and d1 is row
@@ -44,9 +43,8 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
     for(uint32_t d1 = 0; d1<dim[1]; ++d1){
 
       // Getting flat index of the node
-      // int32_t node = dim2flat(d0,d1,dim);
-      int32_t node = 1204;
-      printf("%s\n", node);
+      int32_t node = dim2flat(d0,d1,dim);
+      printf("%d\n", node);
 
       // By convention (see fastscape, LSDTT, ...) a no steepest receiver = itself
       Sreceivers[node] = node;
