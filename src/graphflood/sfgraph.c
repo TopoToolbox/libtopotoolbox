@@ -31,10 +31,10 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
   
   // // Initialising the offset for neighbouring operations
   int32_t* offset = NULL;
-  // (D8 == false) ? generate_offset_D4_flat(&offset,dim) : generate_offset_D8_flat(&offset, dim);
+  (D8 == false) ? generate_offset_D4_flat(&offset,dim) : generate_offset_D8_flat(&offset, dim);
   // // Initialising the offset distance for each neighbour
   float* offdx = NULL;
-  // (D8 == false) ? generate_offsetdx_D4(&offdx,dx) : generate_offsetdx_D8(&offdx,dx);
+  (D8 == false) ? generate_offsetdx_D4(&offdx,dx) : generate_offsetdx_D8(&offdx,dx);
 
   // printf("DEBUG::OFFSET::%s\n", offset[0]);
 
@@ -88,6 +88,10 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
       Sreceivers[node] = this_receiver;
     }
   }
+
+  // Do not forget to free these
+  free(offset);
+  free(offdx);
   return;
 
 
