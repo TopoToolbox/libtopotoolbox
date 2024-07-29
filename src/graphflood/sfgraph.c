@@ -31,79 +31,79 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
   printf("DEBUG::1, entering function");
 
 
-  // Initialising the offset for neighbouring operations
-  int32_t* offset = NULL;
-  (D8 == false) ? generate_offset_D4_flat(&offset,dim) : generate_offset_D8_flat(&offset,dim);
-  // Initialising the offset distance for each neighbour
-  float* offdx = NULL;
-  (D8 == false) ? generate_offsetdx_D4(&offdx,dx) : generate_offsetdx_D8(&offdx,dx);
+  // // Initialising the offset for neighbouring operations
+  // int32_t* offset = NULL;
+  // (D8 == false) ? generate_offset_D4_flat(&offset,dim) : generate_offset_D8_flat(&offset,dim);
+  // // Initialising the offset distance for each neighbour
+  // float* offdx = NULL;
+  // (D8 == false) ? generate_offsetdx_D4(&offdx,dx) : generate_offsetdx_D8(&offdx,dx);
 
-  printf("DEBUG::OFFSET::%s\n", offset[0]);
+  // printf("DEBUG::OFFSET::%s\n", offset[0]);
 
   // For all the nodes
   // in row major d0 is row and d1 is col
   // in col major d0 is col and d1 is row
-  for(int32_t d0 = 0; d0<dim[0]; ++d0){
-    for(int32_t d1 = 0; d1<dim[0]; ++d1){
+  // for(int32_t d0 = 0; d0<dim[0]; ++d0){
+  //   for(int32_t d1 = 0; d1<dim[0]; ++d1){
 
-      // Getting flat index of the node
-      int32_t node = dim2flat(d0,d1,dim);
+  //     // Getting flat index of the node
+  //     int32_t node = dim2flat(d0,d1,dim);
 
-      // By convention (see fastscape, LSDTT, ...) a no steepest receiver = itself
-      Sreceivers[node] = node;
+  //     // By convention (see fastscape, LSDTT, ...) a no steepest receiver = itself
+  //     Sreceivers[node] = node;
 
-      // Boundary condition checks: the node needs to being able to give to have receivers
-      // Note that nodata cannot give so it filter them too
-      if(can_give(node,BCs) == false)
-        continue;
+  //     // Boundary condition checks: the node needs to being able to give to have receivers
+  //     // Note that nodata cannot give so it filter them too
+  //     if(can_give(node,BCs) == false)
+  //       continue;
 
-      // Targetting the steepest receiver
-      // -> Initialising the node to itself (no receivers)
-      int32_t this_receiver = node;
-      // -> Initialising the slope to 0
-      float SD = 0.;
+  //     // Targetting the steepest receiver
+  //     // -> Initialising the node to itself (no receivers)
+  //     int32_t this_receiver = node;
+  //     // -> Initialising the slope to 0
+  //     float SD = 0.;
 
-      // for all the neighbours ...
-      for(size_t n = 0; n<N_neighbour(D8); ++n){
-        // flat indices
-        int32_t nnode = node + offset[n];
-        // who can receive
-        if(can_receive(nnode, BCs) == false)
-          continue;
+  //     // for all the neighbours ...
+  //     for(size_t n = 0; n<N_neighbour(D8); ++n){
+  //       // flat indices
+  //       int32_t nnode = node + offset[n];
+  //       // who can receive
+  //       if(can_receive(nnode, BCs) == false)
+  //         continue;
 
-        // I check wether their slope is the steepest
-        float tS = (topo[node] - topo[nnode])/offdx[n];
+  //       // I check wether their slope is the steepest
+  //       float tS = (topo[node] - topo[nnode])/offdx[n];
 
-        // if it is
-        if(tS > SD){
-          // I save it
-          this_receiver = nnode;
-          SD = 0.;
-        }
-      }
+  //       // if it is
+  //       if(tS > SD){
+  //         // I save it
+  //         this_receiver = nnode;
+  //         SD = 0.;
+  //       }
+  //     }
 
-      // and the final choice is saved
-      Sreceivers[node] = this_receiver;
-    }
-  }
+  //     // and the final choice is saved
+  //     Sreceivers[node] = this_receiver;
+  //   }
+  // }
   
 
-  // Back calculating the number of steepest receivers and inverting the receivers
-  for(size_t node = 0; node<dim[0]*dim[1]; ++node){
-    if(node != Sreceivers[node]){
-      Sdonors[Sreceivers[node] * N_neighbour(D8) + NSdonors[Sreceivers[node]]] = node;
-      ++NSdonors[Sreceivers[node]];
-    }
-  }
+  // // Back calculating the number of steepest receivers and inverting the receivers
+  // for(size_t node = 0; node<dim[0]*dim[1]; ++node){
+  //   if(node != Sreceivers[node]){
+  //     Sdonors[Sreceivers[node] * N_neighbour(D8) + NSdonors[Sreceivers[node]]] = node;
+  //     ++NSdonors[Sreceivers[node]];
+  //   }
+  // }
 
-  // Finally calculating Braun and Willett 2013
-  size_t istack = 0;
-  for(size_t node = 0; node<dim[0]*dim[1]; ++node){
-    if(node == Sreceivers[node]){
-      recursive_stack(node, Sdonors, Stack, NSdonors, istack, D8);
-    }
+  // // Finally calculating Braun and Willett 2013
+  // size_t istack = 0;
+  // for(size_t node = 0; node<dim[0]*dim[1]; ++node){
+  //   if(node == Sreceivers[node]){
+  //     recursive_stack(node, Sdonors, Stack, NSdonors, istack, D8);
+  //   }
 
-  }
+  // }
 
 }
 
