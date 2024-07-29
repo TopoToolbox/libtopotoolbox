@@ -11,12 +11,12 @@
 // #include "topotoolbox.h"
 
 
-void generate_offset_D4(int8_t** off0, int8_t** off1);
-void generate_offset_D8(int8_t** off0, int8_t** off1);
-void generate_offset_D4_flat(int32_t** off, uint32_t* dim);
-void generate_offset_D8_flat(int32_t** off, uint32_t* dim);
-void generate_offsetdx_D4(float** off, float dx);
-void generate_offsetdx_D8(float** off, float dx);
+void generate_offset_D4(int8_t* off0, int8_t* off1);
+void generate_offset_D8(int8_t* off0, int8_t* off1);
+void generate_offset_D4_flat(int32_t* off, uint32_t* dim);
+void generate_offset_D8_flat(int32_t* off, uint32_t* dim);
+void generate_offsetdx_D4(float* off, float dx);
+void generate_offsetdx_D8(float* off, float dx);
 
 
 // int32_t dim2flat(int32_t this_dim1_dim0, int32_t this_dim1, uint32_t* dim);
