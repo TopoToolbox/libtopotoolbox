@@ -19,15 +19,15 @@ Calculate the drainage area from a topological order
 TOPOTOOLBOX_API
 void compute_drainage_area_single_flow(float* output, int32_t* Sreceivers, uint32_t* Stack, uint32_t* dim, float dx){
 
-	uint32_t nxy = nxy(dim);
+	uint32_t tnxy = nxy(dim);
 	const float cell_area = dx*dx;
 	
-	for(size_t i=0; i<nxy;++i){
-		size_t ri = nxy - 1 - i;
+	for(size_t i=0; i<tnxy;++i){
+		size_t ri = tnxy - 1 - i;
 		int32_t node = Stack[ri];
 		if(node == Sreceivers[node])
 			continue;
-		output[node] += dx*dx;
+		output[node] += cell_area;
 		output[Sreceivers[node]] += output[node];
 	}
 
