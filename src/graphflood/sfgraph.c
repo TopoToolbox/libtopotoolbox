@@ -33,7 +33,7 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
   (D8 == false) ? generate_offset_D4_flat(&offset,dim) : generate_offset_D8_flat(&offset,dim);
   // Initialising the offset distance for each neighbour
   float* offdx = NULL;
-  (D8 == false) ? generate_offsetdx_D4(&offdx,dx) : generate_offset_D8dx(&offdx,dx);
+  (D8 == false) ? generate_offsetdx_D4(&offdx,dx) : generate_offsetdx_D8(&offdx,dx);
 
   // For all the nodes
   // in row major d0 is row and d1 is col
