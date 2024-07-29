@@ -28,7 +28,7 @@ static void recursive_stack(int32_t node, int32_t* Sdonors, uint32_t* Stack, uin
 */
 TOPOTOOLBOX_API
 void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t* NSdonors, uint32_t* Stack, uint8_t* BCs, uint32_t* dim, float dx, bool D8) {
-  
+  return;
   // // Initialising the offset for neighbouring operations
   int32_t* offset = NULL;
   // (D8 == false) ? generate_offset_D4_flat(&offset,dim) : generate_offset_D8_flat(&offset, dim);
@@ -47,7 +47,7 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
       // Getting flat index of the node
       // int32_t node = dim2flat(d0,d1,dim);
       int32_t node = 1204;
-      printf( "%s\n", node);
+      printf("%s\n", node);
 
       // By convention (see fastscape, LSDTT, ...) a no steepest receiver = itself
       Sreceivers[node] = node;
@@ -89,8 +89,8 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
   }
 
   // Do not forget to free these
-  // free(offset);
-  // free(offdx);
+  free(offset);
+  free(offdx);
   return;
 
 
