@@ -352,11 +352,7 @@ void excesstopography_fmm3d(float *excess, ptrdiff_t *heap, ptrdiff_t *back,
                             ptrdiff_t nlayers);
 
 
-/**
- @brief TODO
- */
-TOPOTOOLBOX_API
-void graphflood_full();
+
 
 /*
   Computes a single flow graph with minimal characteristics:
@@ -367,6 +363,10 @@ void graphflood_full();
 TOPOTOOLBOX_API
 void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t* NSdonors, uint32_t* Stack, uint8_t* BCs, uint32_t* dim, float dx, bool D8);
 
-
+/**
+ @brief TODO
+ */
+TOPOTOOLBOX_API
+void graphflood_full();
 
 #endif  // TOPOTOOLBOX_H
