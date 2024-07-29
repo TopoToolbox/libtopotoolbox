@@ -88,6 +88,7 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
       Sreceivers[node] = this_receiver;
     }
   }
+  return;
   
 
   // Back calculating the number of steepest receivers and inverting the receivers
