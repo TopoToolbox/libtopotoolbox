@@ -44,16 +44,13 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
 
       // Getting flat index of the node
       int32_t node = dim2flat(d0,d1,dim);
-      printf("%u", node);
-      printf("vs %u \n", nxy(dim));
 
       // By convention (see fastscape, LSDTT, ...) a no steepest receiver = itself
       Sreceivers[node] = node;
-      continue;
 
       // Boundary condition checks: the node needs to being able to give to have receivers
       // Note that nodata cannot give so it filter them too
-      if(can_give(node,BCs) == false || true)
+      if(can_give(node,BCs) == false)
         continue;
 
       // Targetting the steepest receiver
@@ -85,9 +82,6 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
       Sreceivers[node] = this_receiver;
     }
   }
-
-  return;
-
 
   // Back calculating the number of steepest receivers and inverting the receivers
   for(size_t node = 0; node<dim[0]*dim[1]; ++node){
