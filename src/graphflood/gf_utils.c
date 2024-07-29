@@ -12,13 +12,13 @@ Row major representation
 */
 void generate_offset_D4(int8_t** off0, int8_t** off1){
 	// creating a generic array to assign to the pointer
-	*off0 = malloc( 4 * sizeof (int8_t));
+	*off0 = (int8_t*)malloc( 4 * sizeof (int8_t));
 	*off0[0] = -1;
 	*off0[1] = 0;
 	*off0[2] = 0;
 	*off0[3] = -1;
 	// creating a generic array to assign to the pointer
-	*off1 = malloc( 4 * sizeof (int8_t));
+	*off1 = (int8_t*)malloc( 4 * sizeof (int8_t));
 	*off1[0] = 0;
 	*off1[1] = -1;
 	*off1[2] = 1;
@@ -36,7 +36,7 @@ Row major representation
 */
 void generate_offsetdx_D4(float** off, float dx){
 	// creating a generic array to assign to the pointer
-	*off = malloc( 4 * sizeof (float));
+	*off = (float*)malloc( 4 * sizeof (float));
 	*off[0] = dx;
 	*off[1] = dx;
 	*off[2] = dx;
@@ -54,7 +54,7 @@ Row major representation
 */
 void generate_offset_D8(int8_t** off0, int8_t** off1){
 	// creating a generic array to assign to the pointer
-	*off0 = malloc( 8 * sizeof (int8_t));
+	*off0 = (int8_t*)malloc( 8 * sizeof (int8_t));
 	*off0[0] = -1;
 	*off0[1] = -1;
 	*off0[2] = -1;
@@ -65,7 +65,7 @@ void generate_offset_D8(int8_t** off0, int8_t** off1){
 	*off0[7] = 1 ;
 	// *off0 = (*int8_t[8]){-1,-1,-1,0,0,1,1,1};
 	// creating a generic array to assign to the pointer
-	*off1 = malloc( 8 * sizeof (int8_t));
+	*off1 = (int8_t*)malloc( 8 * sizeof (int8_t));
 	*off1[0] = -1;
 	*off1[1] = 0 ;
 	*off1[2] = 1 ;
@@ -88,7 +88,7 @@ Row major representation
 void generate_offsetdx_D8(float** off, float dx){
 	float diag = sqrt(2) * dx;
 	// creating a generic array to assign to the pointer
-	*off = malloc( 4 * sizeof (float));
+	*off = (float*)malloc( 4 * sizeof (float));
 	*off[0] = diag;
 	*off[1] = dx;
 	*off[2] = diag;
@@ -105,7 +105,7 @@ D4 version.
 */
 void generate_offset_D4_flat(int32_t** off, uint32_t* dim){
 	// creating a generic array to assign to the pointer
-	*off = malloc( 4 * sizeof (int32_t));
+	*off = (int32_t*)malloc( 4 * sizeof (int32_t));
 	*off[0] = -dim[0];
 	*off[1] = -1;
 	*off[2] = 1;
@@ -118,7 +118,7 @@ D8 version.
 */
 void generate_offset_D8_flat(int32_t** off, uint32_t* dim){
 	// creating a generic array to assign to the pointer
-	*off = malloc( 8 * sizeof (int32_t));
+	*off = (int32_t*)malloc( 8 * sizeof (int32_t));
 	*off[0] = -dim[0] - 1;
 	*off[1] = -dim[0] + 0;
 	*off[2] = -dim[0] + 1;
