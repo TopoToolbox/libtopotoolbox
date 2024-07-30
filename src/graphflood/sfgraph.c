@@ -245,7 +245,7 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 			// and the final choice is saved
 			Sreceivers[node] = this_receiver;
 			if(Sreceivers[Sreceivers[node]] == node )
-				printf("%f vs %f\n", topo[node], topo[Sreceivers[node]]);
+				printf("%.15f vs %.15f\n", topo[node], topo[Sreceivers[node]]);
 		}
 	}
 
