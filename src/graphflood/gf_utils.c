@@ -292,6 +292,20 @@ bool can_give(int32_t node, uint8_t* BCs){
 	}
 }
 
+bool can_out(int32_t node, uint8_t* BCs){
+	if(
+		BCs[node] == 3 ||
+		BCs[node] == 4 ||
+		BCs[node] == 5
+
+
+	){
+		return true;
+	}else{
+		return false;
+	}
+}
+
 
 bool is_nodata(int32_t node, uint8_t* BCs){
 	if(
