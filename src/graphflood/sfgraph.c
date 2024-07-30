@@ -194,14 +194,13 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 		// for all the neighbours ...
 		for(size_t n = 0; n<N_neighbour(D8); ++n){
 
-			
-			// flat indices
-			int32_t nnode = node + (int32_t)offset[n];
-
 			// Checking if the neighbour belongs to the grid
-			if(check_bound_neighbour(nnode, n, dim, BCs, D8) == false){
+			if(check_bound_neighbour(node, n, dim, BCs, D8) == false){
 				continue;
 			}
+
+			// flat indices
+			int32_t nnode = node + (int32_t)offset[n];
 
 			if(is_nodata(nnode,BCs)) continue;
 			
@@ -223,9 +222,9 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 
 			
 
-			if(closed[node] == false){
+			if(closed[nnode] == false){
 
-				closed[node] = true;
+				closed[nnode] = true;
 
 				if(topo[nnode]<=nextafter(topo[node],FLT_MAX)){
 					topo[nnode]=nextafter(topo[node],FLT_MAX);
