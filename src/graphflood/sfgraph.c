@@ -50,6 +50,7 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
 
 			// By convention (see fastscape, LSDTT, ...) a no steepest receiver = itself
 			Sreceivers[node] = node;
+			NSdonors[node] = 0;
 
 			// Boundary condition checks: the node needs to being able to give to have receivers
 			// Note that nodata cannot give so it filter them too
@@ -137,8 +138,10 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 	(D8 == false) ? generate_offsetdx_D4(offdx,dx) : generate_offsetdx_D8(offdx,dx);
 
 	uint8_t* closed = (uint8_t*) malloc( nxy(dim) * sizeof(uint8_t) );
-	for(uint32_t i=0; i<nxy(dim); ++i)
+	for(uint32_t i=0; i<nxy(dim); ++i){
+		NSdonors[i] = 0;
 		closed[i]=false;
+	}
 
 	PitQueue pit;
 	pitqueue_init(&pit,nxy(dim));
@@ -160,8 +163,6 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 
 		if(is_nodata(i,BCs)){
 			closed[i] = true;
-			Stack[istack] = i;
-			++istack;
 		}
 
 	}
@@ -184,9 +185,6 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 			node=pfpq_pop_and_get_key(&open);
 			PitTop=FLT_MIN;
 		}
-
-		Stack[istack] = node;
-		++istack;
 
 		bool need_update = Sreceivers[node] == node;
 
