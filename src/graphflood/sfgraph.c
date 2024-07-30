@@ -230,7 +230,7 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 
 				if(topo[nnode] <= topo[node]+1e-3){
 
-					topo[nnode] = topo[node]+1e-3;
+					topo[nnode] = topo[node]+1e-3 + ;
 					pitqueue_enqueue(&pit,nnode);
 					Sreceivers[nnode] = node;
 				
