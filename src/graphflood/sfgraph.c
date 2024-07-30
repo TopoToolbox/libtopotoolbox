@@ -151,6 +151,8 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 	uint32_t istack = 0;
 
 	for(uint32_t i=0; i<nxy(dim); ++i){
+		// By convention (see fastscape, LSDTT, ...) a no steepest receiver = itself
+		Sreceivers[i] = i;
 		if(can_out(i,BCs)){
 			pfpq_push(&open, i, topo[i]);
 			closed[i] = true;
@@ -186,8 +188,8 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 		Stack[istack] = node;
 		++istack;
 
-		// By convention (see fastscape, LSDTT, ...) a no steepest receiver = itself
-		Sreceivers[node] = node;
+		bool need_update = Sreceivers[node] == node;
+
 		// Targetting the steepest receiver
 		// -> Initialising the node to itself (no receivers)
 		int32_t this_receiver = node;
@@ -209,7 +211,7 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 			
 
 			// who can receive 
-			if(can_receive(nnode, BCs) && can_give(node,BCs) && closed[nnode]){
+			if(can_receive(nnode, BCs) && can_give(node,BCs) && closed[nnode] && need_update){
 				
 
 				// I check wether their slope is the steepest
@@ -233,14 +235,17 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 
 					topo[nnode] = nextafter(topo[node],FLT_MAX);
 					pitqueue_enqueue(&pit,nnode);
+					Sreceivers[nnode] = node;
 				
 				} else
 					pfpq_push(&open,nnode,topo[nnode]);
 			}
 
 		}
-		// and the final choice is saved
-		Sreceivers[node] = this_receiver;
+		if(need_update){
+			// and the final choice is saved
+			Sreceivers[node] = this_receiver;
+		}
 	}
 
 	pfpq_free(&open);
