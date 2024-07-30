@@ -81,7 +81,7 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
 				if(tS > SD){
 					// I save it
 					this_receiver = nnode;
-					SD = 0.;
+					SD = tS;
 				}
 			}
 
@@ -214,7 +214,7 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 				if(tS > SD){
 					// I save it
 					this_receiver = nnode;
-					SD = 0.;
+					SD = tS;
 				}
 			}
 
@@ -230,6 +230,7 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 				} else
 					pfpq_push(&open,nnode,topo[nnode]);
 			}
+
 		}
 		// and the final choice is saved
 		Sreceivers[node] = this_receiver;
