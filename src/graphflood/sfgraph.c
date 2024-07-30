@@ -151,8 +151,10 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 	uint32_t istack = 0;
 
 	for(uint32_t i=0; i<nxy(dim); ++i){
-		if(can_out(i,BCs))
+		if(can_out(i,BCs)){
 			pfpq_push(&open, i, topo[i]);
+			closed[i] = true;
+		}
 
 		if(is_nodata(i,BCs)){
 			closed[i] = true;
