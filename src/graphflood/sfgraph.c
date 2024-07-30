@@ -91,9 +91,9 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
 	}
 
 	// Back calculating the number of steepest receivers and inverting the receivers
-	for(size_t node = 0; node<dim[0]*dim[1]; ++node){
-		if(node != Sreceivers[node]){
-			Sdonors[Sreceivers[node] * N_neighbour(D8) + NSdonors[Sreceivers[node]]] = node;
+	for(uint32_t node = 0; node<dim[0]*dim[1]; ++node){
+		if(node != (uint32_t)Sreceivers[node]){
+			Sdonors[Sreceivers[node] * N_neighbour(D8) + NSdonors[Sreceivers[node]]] = (int32_t)node;
 			++NSdonors[Sreceivers[node]];
 		}
 	}
@@ -143,7 +143,7 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 	PitQueue pit;
 	pitqueue_init(&pit,nxy(dim));
 
-	PFPQ open;
+	PFPQueue open;
 	pfpq_init(&open, nxy(dim));
 
 	float PitTop = FLT_MIN;
