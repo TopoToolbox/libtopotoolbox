@@ -21,7 +21,7 @@ where nodes only have one receiver max, usually the steepest gradient one.
 
 
 
-static void recursive_stack(int32_t node, int32_t* Sdonors, uint32_t* Stack, uint8_t* NSdonors, size_t* istack, bool D8);
+static void recursive_stack(int32_t node, int32_t* Sdonors, uint32_t* Stack, uint8_t* NSdonors, uint32_t* istack, bool D8);
 
 /*
 	Computes a single flow graph with minimal characteristics:
@@ -115,7 +115,7 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
 Recursive function to build Braun and Willett's Stack (single flow topological ordering)
 for each donors of a node it successively include them to the stack and call itself on the donor
 */
-static void recursive_stack(int32_t node, int32_t* Sdonors, uint32_t* Stack, uint8_t* NSdonors, size_t* istack, bool D8){
+static void recursive_stack(int32_t node, int32_t* Sdonors, uint32_t* Stack, uint8_t* NSdonors, uint32_t* istack, bool D8){
 	Stack[*istack] = node;
 	++(*istack);
 	for(uint32_t nd=0; nd<NSdonors[node]; ++nd){
@@ -200,10 +200,8 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 			// flat indices
 			int32_t nnode = node + (int32_t)offset[n];
 
-			if(is_nodata(node,BCs)) continue;
+			if(is_nodata(nnode,BCs)) continue;
 			
-			// flat indices
-			int32_t nnode = node + (int32_t)offset[n];
 
 			// who can receive 
 			if(can_receive(nnode, BCs) && can_give(node,BCs) ){
@@ -241,8 +239,8 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 	pitqueue_free(&pit);
 
 	// Back calculating the number of steepest receivers and inverting the receivers
-	for(size_t node = 0; node<dim[0]*dim[1]; ++node){
-		if(node != Sreceivers[node]){
+	for(uint32_t node = 0; node<dim[0]*dim[1]; ++node){
+		if(node != (uint32_t)Sreceivers[node]){
 			Sdonors[Sreceivers[node] * N_neighbour(D8) + NSdonors[Sreceivers[node]]] = node;
 			++NSdonors[Sreceivers[node]];
 		}
