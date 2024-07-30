@@ -228,9 +228,9 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 
 				closed[nnode] = true;
 
-				if(topo[nnode] <= nextafter(topo[node],FLT_MAX)){
+				if(topo[nnode] <= nexttoward(topo[node],FLT_MAX)){
 
-					topo[nnode] = nextafter(topo[node],FLT_MAX);
+					topo[nnode] = nexttoward(topo[node],FLT_MAX);
 					pitqueue_enqueue(&pit,nnode);
 					Sreceivers[nnode] = node;
 				
