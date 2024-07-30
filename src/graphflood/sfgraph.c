@@ -246,10 +246,6 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 		if(need_update){
 			// and the final choice is saved
 			Sreceivers[node] = this_receiver;
-			if(Sreceivers[Sreceivers[node]] == node && node != Sreceivers[node]){
-
-				printf("%.15g vs %.15g\n", topo[node], topo[Sreceivers[node]]);
-			}
 		}
 	}
 
@@ -263,6 +259,15 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 			Sdonors[Sreceivers[node] * N_neighbour(D8) + NSdonors[Sreceivers[node]]] = node;
 			++NSdonors[Sreceivers[node]];
 		}
+	}
+
+	// Finally calculating Braun and Willett 2013
+	istack = 0;
+	for(uint32_t node = 0; node<dim[0]*dim[1]; ++node){
+		if(node == (uint32_t)Sreceivers[node]){
+			recursive_stack(node, Sdonors, Stack, NSdonors, &istack, D8);
+		}
+
 	}
 
 
