@@ -189,6 +189,7 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 		++istack;
 
 		bool need_update = Sreceivers[node] == node;
+		need_update = true;
 
 		// Targetting the steepest receiver
 		// -> Initialising the node to itself (no receivers)
@@ -211,7 +212,7 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 			
 
 			// who can receive 
-			if(can_receive(nnode, BCs) && can_give(node,BCs) && closed[nnode] && need_update){
+			if(can_receive(nnode, BCs) && can_give(node,BCs) && need_update){
 				
 
 				// I check wether their slope is the steepest
