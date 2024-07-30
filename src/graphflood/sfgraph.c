@@ -12,7 +12,6 @@ where nodes only have one receiver max, usually the steepest gradient one.
 #include <stdint.h>
 #include <stdio.h>
 #include <float.h>
-#include <time.h>
 
 #include "../morphology/reconstruct.h"
 #include "gf_utils.h"
@@ -130,8 +129,6 @@ static void recursive_stack(int32_t node, int32_t* Sdonors, uint32_t* Stack, uin
 TOPOTOOLBOX_API
 void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t* NSdonors, uint32_t* Stack, uint8_t* BCs, uint32_t* dim, float dx, bool D8) {
 	
-	srand(time(NULL));
-
 	// Initialising the offset for neighbouring operations
 	int32_t offset[8];
 	(D8 == false) ? generate_offset_D4_flat(offset,dim) : generate_offset_D8_flat(offset, dim);
@@ -231,9 +228,11 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 
 				closed[nnode] = true;
 
-				if(topo[nnode] <= topo[node]+1e-3){
+				if(topo[nnode] <= nextafter(topo[node],FLT_MAX)){
 
-					topo[nnode] = topo[node]+1e-3 + 1e-3*(float)rand() / (float)RAND_MAX;
+					topo[nnode] = nextafter(topo[node],FLT_MAX);
+					// topo[nnode] = topo[node]+1e-3 + 1e-3* (float)rand() / (float)RAND_MAX;
+
 					pitqueue_enqueue(&pit,nnode);
 					Sreceivers[nnode] = node;
 				
@@ -248,7 +247,7 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 			// and the final choice is saved
 			Sreceivers[node] = this_receiver;
 			if(Sreceivers[Sreceivers[node]] == node )
-				printf("%.15f vs %.15f\n", topo[node], topo[Sreceivers[node]]);
+				printf("%.15g vs %.15g\n", topo[node], topo[Sreceivers[node]]);
 		}
 	}
 
