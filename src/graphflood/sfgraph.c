@@ -99,9 +99,9 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
 	}
 
 	// Finally calculating Braun and Willett 2013
-	size_t istack = 0;
-	for(size_t node = 0; node<dim[0]*dim[1]; ++node){
-		if(node == Sreceivers[node]){
+	uint32_t istack = 0;
+	for(uint32_t node = 0; node<dim[0]*dim[1]; ++node){
+		if(node == (uint32_t)Sreceivers[node]){
 			recursive_stack(node, Sdonors, Stack, NSdonors, &istack, D8);
 		}
 
@@ -190,7 +190,6 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 		// -> Initialising the slope to 0
 		float SD = 0.;
 
-
 		// for all the neighbours ...
 		for(size_t n = 0; n<N_neighbour(D8); ++n){
 
@@ -199,12 +198,13 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 				continue;
 			}
 			// flat indices
-			int32_t nnode = node + offset[n];
+			int32_t nnode = node + (int32_t)offset[n];
 
 			if(is_nodata(node,BCs)) continue;
 			
 			// flat indices
-			int32_t nnode = node + offset[n];
+			int32_t nnode = node + (int32_t)offset[n];
+
 			// who can receive 
 			if(can_receive(nnode, BCs) && can_give(node,BCs) ){
 				
@@ -224,13 +224,9 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 
 			if(closed[node] == false){
 
-				closed[i]=true;
+				closed[node] = true;
 
-				// not needed I think
-				// if(topo[node]==FLT_MIN)
-				// 	pit.push(GridCellZ<elev_t>(nx,ny,FLT_MIN));
-
-				else if(topo[nnode]<=nextafter(topo[node],FLT_MAX)){
+				if(topo[nnode]<=nextafter(topo[node],FLT_MAX)){
 					topo[nnode]=nextafter(topo[node],FLT_MAX);
 					pitqueue_enqueue(&pit,nnode);
 				} else
