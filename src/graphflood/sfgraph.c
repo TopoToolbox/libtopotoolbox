@@ -246,8 +246,10 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 		if(need_update){
 			// and the final choice is saved
 			Sreceivers[node] = this_receiver;
-			if(Sreceivers[Sreceivers[node]] == node )
+			if(Sreceivers[Sreceivers[node]] == node && node != Sreceivers[node]){
+
 				printf("%.15g vs %.15g\n", topo[node], topo[Sreceivers[node]]);
+			}
 		}
 	}
 
