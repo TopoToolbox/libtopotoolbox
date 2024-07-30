@@ -237,6 +237,7 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 
 	pfpq_free(&open);
 	pitqueue_free(&pit);
+	free(closed);
 
 	// Back calculating the number of steepest receivers and inverting the receivers
 	for(uint32_t node = 0; node<dim[0]*dim[1]; ++node){
