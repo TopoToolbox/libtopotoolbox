@@ -229,14 +229,12 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 
 				closed[nnode] = true;
 
-				// if(topo[nnode] <= nextafter(topo[node],FLT_MAX)){
+				if(topo[nnode] <= nextafter(topo[node],FLT_MAX)){
 
-				// 	topo[nnode] = nextafter(topo[node],FLT_MAX);
-				if(topo[nnode] <= topo[node] + 1e-3){
-
-					topo[nnode] = topo[node] + 1e-3;
+					topo[nnode] = nextafter(topo[node],FLT_MAX);
 					
-					pitqueue_enqueue(&pit,nnode);
+					pfpq_push(&pit,nnode,topo[nnode]);
+					// pitqueue_enqueue(&pit,nnode);
 				
 				} else
 					pfpq_push(&open,nnode,topo[nnode]);
