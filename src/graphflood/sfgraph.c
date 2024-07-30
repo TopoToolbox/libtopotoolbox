@@ -153,6 +153,7 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 	for(uint32_t i=0; i<nxy(dim); ++i){
 		if(can_out(i,BCs))
 			pfpq_push(&open, i, topo[i]);
+
 		if(is_nodata(i,BCs)){
 			closed[i] = true;
 			Stack[istack] = i;
@@ -180,6 +181,8 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 			PitTop=FLT_MIN;
 		}
 
+		if(istack >= nxy(dim))
+			printf("???!!!\n");
 		Stack[istack] = node;
 		++istack;
 
