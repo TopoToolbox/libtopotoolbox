@@ -209,7 +209,7 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 			
 
 			// who can receive 
-			if(can_receive(nnode, BCs) && can_give(node,BCs) ){
+			if(can_receive(nnode, BCs) && can_give(node,BCs) && closed[nnode]){
 				
 
 				// I check wether their slope is the steepest
@@ -232,9 +232,7 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 				if(topo[nnode] <= nextafter(topo[node],FLT_MAX)){
 
 					topo[nnode] = nextafter(topo[node],FLT_MAX);
-					
-					pfpq_push(&pit,nnode,topo[nnode]);
-					// pitqueue_enqueue(&pit,nnode);
+					pitqueue_enqueue(&pit,nnode);
 				
 				} else
 					pfpq_push(&open,nnode,topo[nnode]);
