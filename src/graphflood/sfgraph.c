@@ -189,7 +189,6 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 		++istack;
 
 		bool need_update = Sreceivers[node] == node;
-		need_update = true;
 
 		// Targetting the steepest receiver
 		// -> Initialising the node to itself (no receivers)
@@ -212,7 +211,7 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 			
 
 			// who can receive 
-			if(can_receive(nnode, BCs) && can_give(node,BCs) && need_update){
+			if(can_receive(nnode, BCs) && can_give(node,BCs) && need_update && closed[nnode]){
 				
 
 				// I check wether their slope is the steepest
@@ -225,9 +224,6 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 					SD = tS;
 				}
 			}
-
-			
-
 			if(closed[nnode] == false){
 
 				closed[nnode] = true;
@@ -243,9 +239,13 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 			}
 
 		}
+
+
 		if(need_update){
 			// and the final choice is saved
 			Sreceivers[node] = this_receiver;
+			if(Sreceivers[Sreceivers[node]] == node )
+				printf("HAPPENS\n");
 		}
 	}
 
