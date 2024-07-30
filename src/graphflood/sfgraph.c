@@ -183,8 +183,6 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 			PitTop=FLT_MIN;
 		}
 
-		if(istack >= nxy(dim))
-			printf("???!!!\n");
 		Stack[istack] = node;
 		++istack;
 
@@ -231,9 +229,15 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 
 				closed[nnode] = true;
 
-				if(topo[nnode]<=nextafter(topo[node],FLT_MAX)){
-					topo[nnode]=nextafter(topo[node],FLT_MAX);
+				// if(topo[nnode] <= nextafter(topo[node],FLT_MAX)){
+
+				// 	topo[nnode] = nextafter(topo[node],FLT_MAX);
+				if(topo[nnode] <= topo[node] + 1e-3){
+
+					topo[nnode] = topo[node] + 1e-3;
+					
 					pitqueue_enqueue(&pit,nnode);
+				
 				} else
 					pfpq_push(&open,nnode,topo[nnode]);
 			}
