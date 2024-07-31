@@ -31,7 +31,7 @@ void graphflood_full(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Precipit
   // Init the graph structure locally
   GF_UINT* Sreceivers = (GF_UINT*)malloc(sizeof(GF_UINT) * nxy(dim));
   GF_FLOAT* distToReceivers = (GF_FLOAT*)malloc(sizeof(GF_FLOAT) * nxy(dim));
-  GF_UINT* Sdonors = (GF_UINT*)malloc(sizeof(GF_UINT) * nxy(dim) * (D8) ? 8:4);
+  GF_UINT* Sdonors = (GF_UINT*)malloc(sizeof(GF_UINT) * nxy(dim) * (D8 ? 8:4) );
   uint8_t* NSdonors = (uint8_t*)malloc(sizeof(uint8_t) * nxy(dim));
   GF_UINT* Stack = (GF_UINT*)malloc(sizeof(GF_UINT) * nxy(dim));
   GF_FLOAT* Qwin = (GF_FLOAT*)malloc(sizeof(GF_FLOAT) * nxy(dim));
