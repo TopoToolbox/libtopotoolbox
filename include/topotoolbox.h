@@ -361,16 +361,16 @@ void excesstopography_fmm3d(float *excess, ptrdiff_t *heap, ptrdiff_t *back,
   - the topologically ordered stack (sensu Braun and Willett, 2013) 
 */
 TOPOTOOLBOX_API
-void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t* NSdonors, uint32_t* Stack, uint8_t* BCs, uint32_t* dim, float dx, bool D8);
+void compute_sfgraph(GF_FLOAT* topo, GF_UINT* Sreceivers, GF_UINT* Sdonors, uint8_t* NSdonors, GF_UINT* Stack, uint8_t* BCs, GF_UINT* dim, GF_FLOAT dx, bool D8);
 
 TOPOTOOLBOX_API
-void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t* NSdonors, uint32_t* Stack, uint8_t* BCs, uint32_t* dim, float dx, bool D8);
+void compute_sfgraph_priority_flood(GF_FLOAT* topo, GF_UINT* Sreceivers, GF_UINT* Sdonors, uint8_t* NSdonors, GF_UINT* Stack, uint8_t* BCs, GF_UINT* dim, GF_FLOAT dx, bool D8);
 
 /*
    @brief TODO
 */
 TOPOTOOLBOX_API
-void compute_drainage_area_single_flow(float* output, int32_t* Sreceivers, uint32_t* Stack, uint32_t* dim, float dx);
+void compute_drainage_area_single_flow(GF_FLOAT* output, int32_t* Sreceivers, uint32_t* Stack, uint32_t* dim, GF_FLOAT dx);
 
 /*
  @brief TODO

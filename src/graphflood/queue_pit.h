@@ -9,6 +9,7 @@ B.G.
 */
 #pragma once
 
+#include "define_types.h"
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -16,7 +17,7 @@ B.G.
 
 // Define the queue structure
 typedef struct {
-    uint32_t* buffer;
+    GF_UINT* buffer;
     int front;
     int rear;
     int size;
@@ -25,7 +26,7 @@ typedef struct {
 
 // Function to initialize the queue with a given capacity
 static inline bool pitqueue_init(PitQueue* q, int capacity) {
-    q->buffer = (uint32_t*)malloc(capacity * sizeof(uint32_t));
+    q->buffer = (GF_UINT*)malloc(capacity * sizeof(GF_UINT));
     if (q->buffer == NULL) {
         return false;  // Allocation failed
     }
@@ -47,7 +48,7 @@ static inline bool pitqueue_is_full(PitQueue* q) {
 }
 
 // Function to enqueue an element into the queue
-static inline bool pitqueue_enqueue(PitQueue* q, uint32_t value) {
+static inline bool pitqueue_enqueue(PitQueue* q, GF_UINT value) {
     if (pitqueue_is_full(q)) {
         return false;  // Queue is full
     }
@@ -58,7 +59,7 @@ static inline bool pitqueue_enqueue(PitQueue* q, uint32_t value) {
 }
 
 // Function to dequeue an element from the queue
-static inline bool pitqueue_dequeue(PitQueue* q, uint32_t* value) {
+static inline bool pitqueue_dequeue(PitQueue* q, GF_UINT* value) {
     if (pitqueue_is_empty(q)) {
         return false;  // Queue is empty
     }
@@ -69,8 +70,8 @@ static inline bool pitqueue_dequeue(PitQueue* q, uint32_t* value) {
 }
 
 // Function to dequeue an element from the queue
-static inline uint32_t pitqueue_pop_and_get(PitQueue* q) {
-    uint32_t value = q->buffer[q->front];
+static inline GF_UINT pitqueue_pop_and_get(PitQueue* q) {
+    GF_UINT value = q->buffer[q->front];
     q->front = (q->front + 1) % q->capacity;
     q->size--;
     return value;

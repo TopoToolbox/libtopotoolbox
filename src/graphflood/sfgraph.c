@@ -7,6 +7,8 @@ where nodes only have one receiver max, usually the steepest gradient one.
 
 #define TOPOTOOLBOX_BUILD
 
+#include "define_types.h"
+
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -21,7 +23,7 @@ where nodes only have one receiver max, usually the steepest gradient one.
 
 
 
-static void recursive_stack(int32_t node, int32_t* Sdonors, uint32_t* Stack, uint8_t* NSdonors, uint32_t* istack, bool D8);
+static void recursive_stack(GF_UINT node, GF_UINT* Sdonors, GF_UINT* Stack, uint8_t* NSdonors, GF_UINT* istack, bool D8);
 
 /*
 	Computes a single flow graph with minimal characteristics:
@@ -30,9 +32,9 @@ static void recursive_stack(int32_t node, int32_t* Sdonors, uint32_t* Stack, uin
 	- the topologically ordered stack (sensu Braun and Willett, 2013) 
 */
 TOPOTOOLBOX_API
-void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t* NSdonors, uint32_t* Stack, uint8_t* BCs, uint32_t* dim, float dx, bool D8) {
+void compute_sfgraph(float* topo, GF_UINT* Sreceivers, GF_UINT* Sdonors, uint8_t* NSdonors, GF_UINT* Stack, uint8_t* BCs, GF_UINT* dim, float dx, bool D8) {
 	// Initialising the offset for neighbouring operations
-	int32_t offset[8];
+	GF_INT offset[8];
 	(D8 == false) ? generate_offset_D4_flat(offset,dim) : generate_offset_D8_flat(offset, dim);
 	// // Initialising the offset distance for each neighbour
 	float offdx[8];
@@ -42,11 +44,11 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
 	// For all the nodes
 	// in row major d0 is row and d1 is col
 	// in col major d0 is col and d1 is row
-	for(uint32_t d0 = 0; d0<dim[0]; ++d0){
-		for(uint32_t d1 = 0; d1<dim[1]; ++d1){
+	for(GF_UINT d0 = 0; d0<dim[0]; ++d0){
+		for(GF_UINT d1 = 0; d1<dim[1]; ++d1){
 
 			// Getting flat index of the node
-			int32_t node = dim2flat(d0,d1,dim);
+			GF_UINT node = dim2flat(d0,d1,dim);
 
 			// By convention (see fastscape, LSDTT, ...) a no steepest receiver = itself
 			Sreceivers[node] = node;
@@ -59,18 +61,18 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
 
 			// Targetting the steepest receiver
 			// -> Initialising the node to itself (no receivers)
-			int32_t this_receiver = node;
+			GF_UINT this_receiver = node;
 			// -> Initialising the slope to 0
 			float SD = 0.;
 
 			// for all the neighbours ...
-			for(size_t n = 0; n<N_neighbour(D8); ++n){
+			for(GF_UINT n = 0; n<N_neighbour(D8); ++n){
 				// Checking if the neighbour belongs to the grid
 				if(check_bound_neighbour(node, n, dim, BCs, D8) == false){
 					continue;
 				}
 				// flat indices
-				int32_t nnode = node + offset[n];
+				GF_UINT nnode = node + offset[n];
 				// who can receive
 				if(can_receive(nnode, BCs) == false)
 					continue;
@@ -92,17 +94,17 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
 	}
 
 	// Back calculating the number of steepest receivers and inverting the receivers
-	for(uint32_t node = 0; node<dim[0]*dim[1]; ++node){
-		if(node != (uint32_t)Sreceivers[node]){
+	for(GF_UINT node = 0; node<dim[0]*dim[1]; ++node){
+		if(node != (GF_UINT)Sreceivers[node]){
 			Sdonors[Sreceivers[node] * N_neighbour(D8) + NSdonors[Sreceivers[node]]] = (int32_t)node;
 			++NSdonors[Sreceivers[node]];
 		}
 	}
 
 	// Finally calculating Braun and Willett 2013
-	uint32_t istack = 0;
-	for(uint32_t node = 0; node<dim[0]*dim[1]; ++node){
-		if(node == (uint32_t)Sreceivers[node]){
+	GF_UINT istack = 0;
+	for(GF_UINT node = 0; node<dim[0]*dim[1]; ++node){
+		if(node == (GF_UINT)Sreceivers[node]){
 			recursive_stack(node, Sdonors, Stack, NSdonors, &istack, D8);
 		}
 
@@ -116,10 +118,10 @@ void compute_sfgraph(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t
 Recursive function to build Braun and Willett's Stack (single flow topological ordering)
 for each donors of a node it successively include them to the stack and call itself on the donor
 */
-static void recursive_stack(int32_t node, int32_t* Sdonors, uint32_t* Stack, uint8_t* NSdonors, uint32_t* istack, bool D8){
+static void recursive_stack(GF_UINT node, GF_UINT* Sdonors, GF_UINT* Stack, uint8_t* NSdonors, GF_UINT* istack, bool D8){
 	Stack[*istack] = node;
 	++(*istack);
-	for(uint32_t nd=0; nd<NSdonors[node]; ++nd){
+	for(GF_UINT nd=0; nd<NSdonors[node]; ++nd){
 		recursive_stack(Sdonors[node * N_neighbour(D8) + nd], Sdonors, Stack, NSdonors, istack, D8);
 	}
 }
@@ -128,17 +130,17 @@ static void recursive_stack(int32_t node, int32_t* Sdonors, uint32_t* Stack, uin
 
 
 TOPOTOOLBOX_API
-void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* Sdonors, uint8_t* NSdonors, uint32_t* Stack, uint8_t* BCs, uint32_t* dim, float dx, bool D8) {
+void compute_sfgraph_priority_flood(float* topo, GF_UINT* Sreceivers, GF_UINT* Sdonors, uint8_t* NSdonors, GF_UINT* Stack, uint8_t* BCs, GF_UINT* dim, float dx, bool D8) {
 	
 	// Initialising the offset for neighbouring operations
-	int32_t offset[8];
+	GF_INT offset[8];
 	(D8 == false) ? generate_offset_D4_flat(offset,dim) : generate_offset_D8_flat(offset, dim);
 	// // Initialising the offset distance for each neighbour
 	float offdx[8];
 	(D8 == false) ? generate_offsetdx_D4(offdx,dx) : generate_offsetdx_D8(offdx,dx);
 
 	uint8_t* closed = (uint8_t*) malloc( nxy(dim) * sizeof(uint8_t) );
-	for(uint32_t i=0; i<nxy(dim); ++i){
+	for(GF_UINT i=0; i<nxy(dim); ++i){
 		NSdonors[i] = 0;
 		closed[i]=false;
 	}
@@ -151,9 +153,9 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 
 	float PitTop = FLT_MIN;
 
-	uint32_t istack = 0;
+	GF_UINT istack = 0;
 
-	for(uint32_t i=0; i<nxy(dim); ++i){
+	for(GF_UINT i=0; i<nxy(dim); ++i){
 		// By convention (see fastscape, LSDTT, ...) a no steepest receiver = itself
 		Sreceivers[i] = i;
 		if(can_out(i,BCs)){
@@ -167,7 +169,7 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 
 	}
 
-	uint32_t node;
+	GF_UINT node;
 
 	while(pfpq_empty(&open) == false || pit.size>0){
 
@@ -190,12 +192,12 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 
 		// Targetting the steepest receiver
 		// -> Initialising the node to itself (no receivers)
-		int32_t this_receiver = node;
+		GF_UINT this_receiver = node;
 		// -> Initialising the slope to 0
 		float SD = 0.;
 
 		// for all the neighbours ...
-		for(size_t n = 0; n<N_neighbour(D8); ++n){
+		for(GF_UINT n = 0; n<N_neighbour(D8); ++n){
 
 			// Checking if the neighbour belongs to the grid
 			if(check_bound_neighbour(node, n, dim, BCs, D8) == false){
@@ -203,7 +205,7 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 			}
 
 			// flat indices
-			int32_t nnode = node + (int32_t)offset[n];
+			GF_UINT nnode = node + offset[n];
 
 			if(is_nodata(nnode,BCs)) continue;
 			
@@ -252,8 +254,8 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 	free(closed);
 
 	// Back calculating the number of steepest receivers and inverting the receivers
-	for(uint32_t node = 0; node<dim[0]*dim[1]; ++node){
-		if(node != (uint32_t)Sreceivers[node]){
+	for(GF_UINT node = 0; node<dim[0]*dim[1]; ++node){
+		if(node != (GF_UINT)Sreceivers[node]){
 			Sdonors[Sreceivers[node] * N_neighbour(D8) + NSdonors[Sreceivers[node]]] = node;
 			++NSdonors[Sreceivers[node]];
 		}
@@ -261,8 +263,8 @@ void compute_sfgraph_priority_flood(float* topo, int32_t* Sreceivers, int32_t* S
 
 	// Finally calculating Braun and Willett 2013
 	istack = 0;
-	for(uint32_t node = 0; node<dim[0]*dim[1]; ++node){
-		if(node == (uint32_t)Sreceivers[node]){
+	for(GF_UINT node = 0; node<dim[0]*dim[1]; ++node){
+		if(node == (GF_UINT)Sreceivers[node]){
 			recursive_stack(node, Sdonors, Stack, NSdonors, &istack, D8);
 		}
 

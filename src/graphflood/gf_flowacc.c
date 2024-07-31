@@ -5,6 +5,9 @@ This file contains routine to accumulate flow downstream, a way or another
 
 #define TOPOTOOLBOX_BUILD
 
+#include "define_types.h"
+
+
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -17,14 +20,14 @@ This file contains routine to accumulate flow downstream, a way or another
 Calculate the drainage area from a topological order
 */
 TOPOTOOLBOX_API
-void compute_drainage_area_single_flow(float* output, int32_t* Sreceivers, uint32_t* Stack, uint32_t* dim, float dx){
+void compute_drainage_area_single_flow(GF_FLOAT* output, GF_UINT* Sreceivers, GF_UINT* Stack, GF_UINT* dim, GF_FLOAT dx){
 
-	uint32_t tnxy = nxy(dim);
-	const float cell_area = dx*dx;
+	GF_UINT tnxy = nxy(dim);
+	const GF_FLOAT cell_area = dx*dx;
 	
-	for(size_t i=0; i<tnxy;++i){
-		size_t ri = tnxy - 1 - i;
-		int32_t node = Stack[ri];
+	for(GF_UINT i=0; i<tnxy;++i){
+		GF_UINT ri = tnxy - 1 - i;
+		GF_UINT node = Stack[ri];
 		if(node == Sreceivers[node])
 			continue;
 		output[node] += cell_area;

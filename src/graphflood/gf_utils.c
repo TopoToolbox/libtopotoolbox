@@ -31,7 +31,7 @@ Row major representation
 |1|x|2|
 | |3| |
 */
-void generate_offsetdx_D4(float* off, float dx){
+void generate_offsetdx_D4(GF_FLOAT* off, GF_FLOAT dx){
 	// creating a generic array to assign to the pointer
 	off[0] = dx;
 	off[1] = dx;
@@ -77,8 +77,8 @@ Row major representation
 |1|x|2|
 | |3| |
 */
-void generate_offsetdx_D8(float* off, float dx){
-	float diag = sqrt(2) * dx;
+void generate_offsetdx_D8(GF_FLOAT* off, GF_FLOAT dx){
+	GF_FLOAT diag = sqrt(2) * dx;
 	// creating a generic array to assign to the pointer
 	off[0] = diag;
 	off[1] = dx;
@@ -94,7 +94,7 @@ void generate_offsetdx_D8(float* off, float dx){
 Generate the flat offsets for neighbouring operations
 D4 version.
 */
-void generate_offset_D4_flat(int32_t* off, uint32_t* dim){
+void generate_offset_D4_flat(GF_INT* off, GF_UINT* dim){
 	// creating a generic array to assign to the pointer
 	off[0] = -dim[0];
 	off[1] = -1;
@@ -106,7 +106,7 @@ void generate_offset_D4_flat(int32_t* off, uint32_t* dim){
 Generate the flat offsets for neighbouring operations
 D8 version.
 */
-void generate_offset_D8_flat(int32_t* off, uint32_t* dim){
+void generate_offset_D8_flat(GF_INT* off, GF_UINT* dim){
 	// creating a generic array to assign to the pointer
 	off[0] = -dim[0] - 1;
 	off[1] = -dim[0] + 0;
@@ -128,15 +128,15 @@ Example in row major:
 this_dim0 is the current row, dim[1] is the number of columns and this_dim1 is the current column
 
 */
-// int32_t dim2flat(int32_t this_dim0, int32_t this_dim1, uint32_t* dim){
+// GF_INT dim2flat(GF_INT this_dim0, GF_INT this_dim1, GF_UINT* dim){
 // 	return this_dim0 * dim[1] + this_dim1;
 // }
-int32_t dim2flat(uint32_t this_dim0, uint32_t this_dim1, uint32_t* dim){
-	return (int32_t) (this_dim0 * dim[1] + this_dim1);
+GF_UINT dim2flat(GF_UINT this_dim0, GF_UINT this_dim1, GF_UINT* dim){
+	return (this_dim0 * dim[1] + this_dim1);
 }
 
 
-void flat2dim(int32_t node, uint32_t* this_dim0, uint32_t* this_dim1, uint32_t* dim){
+void flat2dim(GF_UINT node, GF_UINT* this_dim0, GF_UINT* this_dim1, GF_UINT* dim){
 	*this_dim0 = node % dim[1];
 	*this_dim1 = node - (*this_dim0) * dim[1];
 }
@@ -152,7 +152,7 @@ uint8_t N_neighbour(bool D8){
 		return 4;
 }
 
-uint32_t nxy(uint32_t* dim){return dim[0] * dim[1];}
+GF_UINT nxy(GF_UINT* dim){return dim[0] * dim[1];}
 
 
 
@@ -202,12 +202,12 @@ uint8_t has 256 possibilities so there is plenty of space for more options
 /*
 I know BCs is not used so far here but that's future proof for periodic conditions or other edge cases
 */
-void check_bound(int32_t node, uint32_t* dim, uint8_t* BCs, bool* valid ){
+void check_bound(GF_UINT node, GF_UINT* dim, uint8_t* BCs, bool* valid ){
 	if(node < 0 || node >= dim[0] * dim[1])
 		*valid = false;
 }
 
-void check_top_customs(int32_t node, uint8_t n, uint32_t* dim, uint8_t* BCs, bool* valid, bool D8){
+void check_top_customs(GF_UINT node, uint8_t n, GF_UINT* dim, uint8_t* BCs, bool* valid, bool D8){
 
 	// Checking if the node is on the first row and trying to target above
 	if (node < dim[0] && node >=0) {
@@ -217,7 +217,7 @@ void check_top_customs(int32_t node, uint8_t n, uint32_t* dim, uint8_t* BCs, boo
 	// # Done
 }
 
-void check_bottom_customs(int32_t node, uint8_t n, uint32_t* dim, uint8_t* BCs, bool* valid, bool D8){
+void check_bottom_customs(GF_UINT node, uint8_t n, GF_UINT* dim, uint8_t* BCs, bool* valid, bool D8){
 
 	// Checking if the node is on the first row and trying to target above
 	if (node >= dim[0] * dim[1] - dim[0]) {
@@ -227,7 +227,7 @@ void check_bottom_customs(int32_t node, uint8_t n, uint32_t* dim, uint8_t* BCs, 
 	// # Done
 }
 
-void check_left_customs(int32_t node, uint8_t n, uint32_t* dim, uint8_t* BCs, bool* valid, bool D8){
+void check_left_customs(GF_UINT node, uint8_t n, GF_UINT* dim, uint8_t* BCs, bool* valid, bool D8){
 
 	// Checking if the node is on the first row and trying to target above
 	if (node % dim[0] == 0) {
@@ -237,7 +237,7 @@ void check_left_customs(int32_t node, uint8_t n, uint32_t* dim, uint8_t* BCs, bo
 	// # Done
 }
 
-void check_right_customs(int32_t node, uint8_t n, uint32_t* dim, uint8_t* BCs, bool* valid, bool D8){
+void check_right_customs(GF_UINT node, uint8_t n, GF_UINT* dim, uint8_t* BCs, bool* valid, bool D8){
 
 	// Checking if the node is on the first row and trying to target above
 	if (node % dim[0] == dim[0] - 1) {
@@ -248,7 +248,7 @@ void check_right_customs(int32_t node, uint8_t n, uint32_t* dim, uint8_t* BCs, b
 }
 
 
-bool check_bound_neighbour(int32_t node, uint8_t n, uint32_t* dim, uint8_t* BCs, bool D8){
+bool check_bound_neighbour(GF_UINT node, uint8_t n, GF_UINT* dim, uint8_t* BCs, bool D8){
 	bool valid = true;
 	check_bound(node, dim, BCs, &valid );
 	check_top_customs(node, n, dim, BCs, &valid, D8);
@@ -259,7 +259,7 @@ bool check_bound_neighbour(int32_t node, uint8_t n, uint32_t* dim, uint8_t* BCs,
 }
 
 
-bool can_receive(int32_t node, uint8_t* BCs){
+bool can_receive(GF_UINT node, uint8_t* BCs){
 	if(
 		BCs[node] == 1 ||
 		BCs[node] == 3 ||
@@ -276,7 +276,7 @@ bool can_receive(int32_t node, uint8_t* BCs){
 	}
 }
 
-bool can_give(int32_t node, uint8_t* BCs){
+bool can_give(GF_UINT node, uint8_t* BCs){
 	if(
 		BCs[node] == 1 ||
 		BCs[node] == 3 ||
@@ -292,7 +292,7 @@ bool can_give(int32_t node, uint8_t* BCs){
 	}
 }
 
-bool can_out(int32_t node, uint8_t* BCs){
+bool can_out(GF_UINT node, uint8_t* BCs){
 	if(
 		BCs[node] == 3 ||
 		BCs[node] == 4 ||
@@ -307,7 +307,7 @@ bool can_out(int32_t node, uint8_t* BCs){
 }
 
 
-bool is_nodata(int32_t node, uint8_t* BCs){
+bool is_nodata(GF_UINT node, uint8_t* BCs){
 	if(
 		BCs[node] == 0
 	){
