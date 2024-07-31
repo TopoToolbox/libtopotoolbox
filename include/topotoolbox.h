@@ -364,7 +364,7 @@ TOPOTOOLBOX_API
 void compute_sfgraph(GF_FLOAT* topo, GF_UINT* Sreceivers, GF_FLOAT* distToReceivers_ptr, GF_UINT* Sdonors, uint8_t* NSdonors, GF_UINT* Stack, uint8_t* BCs, GF_UINT* dim, GF_FLOAT dx, bool D8);
 
 TOPOTOOLBOX_API
-void compute_sfgraph_priority_flood(GF_FLOAT* topo, GF_UINT* Sreceivers, GF_FLOAT* distToReceivers_ptr, GF_UINT* Sdonors, uint8_t* NSdonors, GF_UINT* Stack, uint8_t* BCs, GF_UINT* dim, GF_FLOAT dx, bool D8);
+void compute_sfgraph_priority_flood(GF_FLOAT* topo, GF_UINT* Sreceivers, GF_FLOAT* distToReceivers, GF_UINT* Sdonors, uint8_t* NSdonors, GF_UINT* Stack, uint8_t* BCs, GF_UINT* dim, GF_FLOAT dx, bool D8);
 
 /*
    @brief TODO
@@ -372,10 +372,17 @@ void compute_sfgraph_priority_flood(GF_FLOAT* topo, GF_UINT* Sreceivers, GF_FLOA
 TOPOTOOLBOX_API
 void compute_drainage_area_single_flow(GF_FLOAT* output, GF_UINT* Sreceivers, GF_UINT* Stack, GF_UINT* dim, GF_FLOAT dx);
 
+
+/*
+   @brief TODO
+*/
+TOPOTOOLBOX_API
+void compute_weighted_drainage_area_single_flow(GF_FLOAT* output, GF_FLOAT* weights, GF_UINT* Sreceivers, GF_UINT* Stack, GF_UINT* dim, GF_FLOAT dx)
+
 /*
  @brief TODO
 */
 TOPOTOOLBOX_API
-void graphflood_full();
+void graphflood_full(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Precipitations, GF_FLOAT* manning, GF_UINT* dim, GF_FLOAT dt, GF_FLOAT dx, bool SFD, bool D8, int N_iterations);
 
 #endif  // TOPOTOOLBOX_H
