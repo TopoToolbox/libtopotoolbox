@@ -4,6 +4,9 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
+#include "graphflood/define_types.h"
+
+
 // Define the element structure in the priority queue
 typedef struct {
 	GF_UINT key;  // The key associated with the element

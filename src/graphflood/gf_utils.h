@@ -1,7 +1,8 @@
 #pragma once
 #define TOPOTOOLBOX_BUILD
 
-#include "define_types.h"
+#include "graphflood/define_types.h"
+
 
 #include <math.h>
 #include <stddef.h>

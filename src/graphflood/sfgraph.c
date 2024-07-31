@@ -7,7 +7,8 @@ where nodes only have one receiver max, usually the steepest gradient one.
 
 #define TOPOTOOLBOX_BUILD
 
-#include "define_types.h"
+#include "graphflood/define_types.h"
+
 
 #include <math.h>
 #include <stddef.h>

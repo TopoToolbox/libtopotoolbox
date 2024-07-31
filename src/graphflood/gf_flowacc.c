@@ -5,7 +5,8 @@ This file contains routine to accumulate flow downstream, a way or another
 
 #define TOPOTOOLBOX_BUILD
 
-#include "define_types.h"
+#include "graphflood/define_types.h"
+
 
 
 #include <math.h>

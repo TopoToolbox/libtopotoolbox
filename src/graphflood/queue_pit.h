@@ -9,7 +9,9 @@ B.G.
 */
 #pragma once
 
-#include "define_types.h"
+
+#include "graphflood/define_types.h"
+
 
 #include <stdint.h>
 #include <stdbool.h>
