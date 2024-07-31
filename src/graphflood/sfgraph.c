@@ -33,7 +33,7 @@ static void recursive_stack(GF_UINT node, GF_UINT* Sdonors, GF_UINT* Stack, uint
 	- the topologically ordered stack (sensu Braun and Willett, 2013) 
 */
 TOPOTOOLBOX_API
-void compute_sfgraph(float* topo, GF_UINT* Sreceivers, GF_UINT* Sdonors, uint8_t* NSdonors, GF_UINT* Stack, uint8_t* BCs, GF_UINT* dim, float dx, bool D8) {
+void compute_sfgraph(float* topo, GF_UINT* Sreceivers, GF_FLOAT* distToReceivers, GF_UINT* Sdonors, uint8_t* NSdonors, GF_UINT* Stack, uint8_t* BCs, GF_UINT* dim, float dx, bool D8) {
 	// Initialising the offset for neighbouring operations
 	GF_INT offset[8];
 	(D8 == false) ? generate_offset_D4_flat(offset,dim) : generate_offset_D8_flat(offset, dim);
@@ -53,6 +53,7 @@ void compute_sfgraph(float* topo, GF_UINT* Sreceivers, GF_UINT* Sdonors, uint8_t
 
 			// By convention (see fastscape, LSDTT, ...) a no steepest receiver = itself
 			Sreceivers[node] = node;
+			distToReceivers[node] = 0.;
 			NSdonors[node] = 0;
 
 			// Boundary condition checks: the node needs to being able to give to have receivers
@@ -63,6 +64,7 @@ void compute_sfgraph(float* topo, GF_UINT* Sreceivers, GF_UINT* Sdonors, uint8_t
 			// Targetting the steepest receiver
 			// -> Initialising the node to itself (no receivers)
 			GF_UINT this_receiver = node;
+			GF_FLOAT this_receiverdx = 0.;
 			// -> Initialising the slope to 0
 			float SD = 0.;
 
@@ -85,12 +87,14 @@ void compute_sfgraph(float* topo, GF_UINT* Sreceivers, GF_UINT* Sdonors, uint8_t
 				if(tS > SD){
 					// I save it
 					this_receiver = nnode;
+					this_receiverdx = offdx[n];
 					SD = tS;
 				}
 			}
 
 			// and the final choice is saved
 			Sreceivers[node] = this_receiver;
+			distToReceivers[node] = this_receiverdx;
 		}
 	}
 
@@ -131,7 +135,7 @@ static void recursive_stack(GF_UINT node, GF_UINT* Sdonors, GF_UINT* Stack, uint
 
 
 TOPOTOOLBOX_API
-void compute_sfgraph_priority_flood(float* topo, GF_UINT* Sreceivers, GF_UINT* Sdonors, uint8_t* NSdonors, GF_UINT* Stack, uint8_t* BCs, GF_UINT* dim, float dx, bool D8) {
+void compute_sfgraph_priority_flood(float* topo, GF_UINT* Sreceivers, GF_FLOAT* distToReceivers, GF_UINT* Sdonors, uint8_t* NSdonors, GF_UINT* Stack, uint8_t* BCs, GF_UINT* dim, float dx, bool D8) {
 	
 	// Initialising the offset for neighbouring operations
 	GF_INT offset[8];
@@ -159,6 +163,7 @@ void compute_sfgraph_priority_flood(float* topo, GF_UINT* Sreceivers, GF_UINT* S
 	for(GF_UINT i=0; i<nxy(dim); ++i){
 		// By convention (see fastscape, LSDTT, ...) a no steepest receiver = itself
 		Sreceivers[i] = i;
+		distToReceivers[i] = 0.;
 		if(can_out(i,BCs)){
 			pfpq_push(&open, i, topo[i]);
 			closed[i] = true;
@@ -194,6 +199,7 @@ void compute_sfgraph_priority_flood(float* topo, GF_UINT* Sreceivers, GF_UINT* S
 		// Targetting the steepest receiver
 		// -> Initialising the node to itself (no receivers)
 		GF_UINT this_receiver = node;
+		GF_FLOAT this_receiverdx = 0.;
 		// -> Initialising the slope to 0
 		float SD = 0.;
 
@@ -222,6 +228,7 @@ void compute_sfgraph_priority_flood(float* topo, GF_UINT* Sreceivers, GF_UINT* S
 				if(tS > SD){
 					// I save it
 					this_receiver = nnode;
+					this_receiverdx = offdx[n];
 					SD = tS;
 				}
 			}
@@ -236,6 +243,7 @@ void compute_sfgraph_priority_flood(float* topo, GF_UINT* Sreceivers, GF_UINT* S
 
 					pitqueue_enqueue(&pit,nnode);
 					Sreceivers[nnode] = node;
+					distToReceivers[nnode] = offdx[n];
 				
 				} else
 					pfpq_push(&open,nnode,topo[nnode]);
@@ -247,6 +255,7 @@ void compute_sfgraph_priority_flood(float* topo, GF_UINT* Sreceivers, GF_UINT* S
 		if(need_update){
 			// and the final choice is saved
 			Sreceivers[node] = this_receiver;
+			distToReceivers[node] = this_receiverdx;
 		}
 	}
 

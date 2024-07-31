@@ -361,10 +361,10 @@ void excesstopography_fmm3d(float *excess, ptrdiff_t *heap, ptrdiff_t *back,
   - the topologically ordered stack (sensu Braun and Willett, 2013) 
 */
 TOPOTOOLBOX_API
-void compute_sfgraph(GF_FLOAT* topo, GF_UINT* Sreceivers, GF_UINT* Sdonors, uint8_t* NSdonors, GF_UINT* Stack, uint8_t* BCs, GF_UINT* dim, GF_FLOAT dx, bool D8);
+void compute_sfgraph(GF_FLOAT* topo, GF_UINT* Sreceivers, GF_FLOAT* distToReceivers_ptr, GF_UINT* Sdonors, uint8_t* NSdonors, GF_UINT* Stack, uint8_t* BCs, GF_UINT* dim, GF_FLOAT dx, bool D8);
 
 TOPOTOOLBOX_API
-void compute_sfgraph_priority_flood(GF_FLOAT* topo, GF_UINT* Sreceivers, GF_UINT* Sdonors, uint8_t* NSdonors, GF_UINT* Stack, uint8_t* BCs, GF_UINT* dim, GF_FLOAT dx, bool D8);
+void compute_sfgraph_priority_flood(GF_FLOAT* topo, GF_UINT* Sreceivers, GF_FLOAT* distToReceivers_ptr, GF_UINT* Sdonors, uint8_t* NSdonors, GF_UINT* Stack, uint8_t* BCs, GF_UINT* dim, GF_FLOAT dx, bool D8);
 
 /*
    @brief TODO
