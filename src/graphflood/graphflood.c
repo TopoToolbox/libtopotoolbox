@@ -50,12 +50,15 @@ void graphflood_full(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Precipit
   printf("DEBUG::A\n");
   for(GF_UINT iteration = 0; iteration<N_neighbour; ++iteration){
 
+    printf("DEBUG::A1\n");
     // At each iteration I update the graph while filling every depressions (*in the hydraulic surface) with water
     compute_sfgraph_priority_flood(Zw, Sreceivers, distToReceivers, Sdonors, NSdonors, Stack, BCs, dim, dx, D8);
 
+    printf("DEBUG::A2\n");
     // From the graph hence created I accumulate the flow (steady conditions)
     compute_weighted_drainage_area_single_flow(Qwin, Precipitations, Sreceivers, Stack, dim, dx);
 
+    printf("DEBUG::A3\n");
     for(GF_UINT i=0; i<nxy(dim);++i){
 
       // Traversing the stack in reverse, super important because it allows us to update the Zw on the go
