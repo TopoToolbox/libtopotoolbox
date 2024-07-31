@@ -11,6 +11,14 @@
 #include "../morphology/reconstruct.h"
 #include "topotoolbox.h"
 
+inline float max_float(float a, float b) {
+    return (a > b) ? a : b;
+}
+
+inline float min_float(float a, float b) {
+    return (a < b) ? a : b;
+}
+
 /*
   todo
 */
@@ -61,13 +69,13 @@ void graphflood_full(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Precipit
       if(Zw[node] == Z[node] && Qwin[node] == 0) continue;
 
       // Calculating the hydraulic slope
-      GF_FLOAT tSw = min(Zw[node] - Zw[rec], (GF_FLOAT)1e-6)/distToReceivers[node];
+      GF_FLOAT tSw = min_float(Zw[node] - Zw[rec], (GF_FLOAT)1e-6)/distToReceivers[node];
       
       // Calculating the Volumetric discharge based on Manning's friction equation
       GF_FLOAT tQwout = distToReceivers[node]/manning[node] * pow(Zw[node] - Z[node], 5./3.) * sqrt(tSw);
 
       // Applying the divergence
-      Zw[node] = max(Z[node], Zw[node] + dt*(Qwin[node] - tQwout)/cell_area);
+      Zw[node] = max_float(Z[node], Zw[node] + dt*(Qwin[node] - tQwout)/cell_area);
     }
   }
 
