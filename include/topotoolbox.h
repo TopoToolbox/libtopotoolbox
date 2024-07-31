@@ -370,7 +370,7 @@ void compute_sfgraph_priority_flood(GF_FLOAT* topo, GF_UINT* Sreceivers, GF_UINT
    @brief TODO
 */
 TOPOTOOLBOX_API
-void compute_drainage_area_single_flow(GF_FLOAT* output, int32_t* Sreceivers, uint32_t* Stack, uint32_t* dim, GF_FLOAT dx);
+void compute_drainage_area_single_flow(GF_FLOAT* output, GF_UINT* Sreceivers, GF_UINT* Stack, GF_UINT* dim, GF_FLOAT dx);
 
 /*
  @brief TODO
