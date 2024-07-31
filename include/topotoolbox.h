@@ -353,7 +353,7 @@ void excesstopography_fmm3d(float *excess, ptrdiff_t *heap, ptrdiff_t *back,
 
 
 
-
+#include "graphflood/define_types/h"
 /*
   Computes a single flow graph with minimal characteristics:
   - List of single flow receivers
