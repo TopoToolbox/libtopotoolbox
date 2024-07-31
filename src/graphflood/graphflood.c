@@ -52,7 +52,7 @@ void graphflood_full(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Precipit
       // Traversing the stack in reverse, super important because it allows us to update the Zw on the go
       // (it ensures receivers are never processed before the donors and therefor the hydraulic slope remains explicit even if we update a donor)
       GF_UINT node = Stack[nxy(dim) - i - 1];
-      rec = Sreceivers[node];
+      GF_UINT rec = Sreceivers[node];
 
       // Checking if the node needs to be processed 
       // Note that a lot of the checks are actually already done by the graph calculation
