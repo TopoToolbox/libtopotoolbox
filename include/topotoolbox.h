@@ -377,7 +377,7 @@ void compute_drainage_area_single_flow(GF_FLOAT* output, GF_UINT* Sreceivers, GF
    @brief TODO
 */
 TOPOTOOLBOX_API
-void compute_weighted_drainage_area_single_flow(GF_FLOAT* output, GF_FLOAT* weights, GF_UINT* Sreceivers, GF_UINT* Stack, GF_UINT* dim, GF_FLOAT dx)
+void compute_weighted_drainage_area_single_flow(GF_FLOAT* output, GF_FLOAT* weights, GF_UINT* Sreceivers, GF_UINT* Stack, GF_UINT* dim, GF_FLOAT dx);
 
 /*
  @brief TODO
