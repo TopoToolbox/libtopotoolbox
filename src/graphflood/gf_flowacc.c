@@ -25,6 +25,9 @@ void compute_drainage_area_single_flow(GF_FLOAT* output, GF_UINT* Sreceivers, GF
 
 	GF_UINT tnxy = nxy(dim);
 	const GF_FLOAT cell_area = dx*dx;
+
+	for(GF_UINT i=0; i<tnxy;++i)
+		output[i] = 0.;
 	
 	for(GF_UINT i=0; i<tnxy;++i){
 		GF_UINT ri = tnxy - 1 - i;
