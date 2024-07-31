@@ -35,7 +35,7 @@ void graphflood_full(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Precipit
   for(GF_UINT i=0; i < nxy(dim); ++i)
     Zw[i] = Z[i] + hw[i];
 
-  printf("DEBUG::Z\n");
+  // printf("DEBUG::Z\n");
 
   // Init the graph structure locally
   GF_UINT* Sreceivers = (GF_UINT*)malloc(sizeof(GF_UINT) * nxy(dim));
@@ -47,18 +47,18 @@ void graphflood_full(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Precipit
 
   GF_FLOAT cell_area = dx*dx;
 
-  printf("DEBUG::A\n");
-  for(GF_UINT iteration = 0; iteration<N_neighbour; ++iteration){
+  // printf("DEBUG::A\n");
+  for(GF_UINT iteration = 0; iteration<N_iterations; ++iteration){
 
-    printf("DEBUG::A1\n");
+    // printf("DEBUG::A1\n");
     // At each iteration I update the graph while filling every depressions (*in the hydraulic surface) with water
     compute_sfgraph_priority_flood(Zw, Sreceivers, distToReceivers, Sdonors, NSdonors, Stack, BCs, dim, dx, D8);
 
-    printf("DEBUG::A2\n");
+    // printf("DEBUG::A2\n");
     // From the graph hence created I accumulate the flow (steady conditions)
     compute_weighted_drainage_area_single_flow(Qwin, Precipitations, Sreceivers, Stack, dim, dx);
 
-    printf("DEBUG::A3\n");
+    // printf("DEBUG::A3\n");
     for(GF_UINT i=0; i<nxy(dim);++i){
 
       // Traversing the stack in reverse, super important because it allows us to update the Zw on the go
@@ -82,7 +82,7 @@ void graphflood_full(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Precipit
       Zw[node] = max_float(Z[node], Zw[node] + dt*(Qwin[node] - tQwout)/cell_area);
     }
   }
-  printf("DEBUG::B\n");
+  // printf("DEBUG::B\n");
 
 
   // back translate Zw into hw
