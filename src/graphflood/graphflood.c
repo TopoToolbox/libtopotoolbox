@@ -121,7 +121,7 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 		Stack[i] = i;
 	}
 
-	printf("DEBUG::Z1 %u\n", Stack[45]);
+	// printf("DEBUG::Z1 %u\n", Stack[45]);
 
 
 	for(GF_UINT iteration = 0; iteration<N_iterations; ++iteration){
