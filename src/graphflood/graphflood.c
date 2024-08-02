@@ -166,7 +166,7 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 					continue;
 				}
 
-				GF_FLOAT tSw = (Zw[node] - Zw[nnode])/offdx[n];
+				GF_FLOAT tSw = max_float(1e-4, (Zw[node] - Zw[nnode])/offdx[n]);
 
 				weights[n] = tSw * ((dx == offdx[n] || D8 == false) ? dx : dxy );
 
