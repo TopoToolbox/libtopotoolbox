@@ -223,7 +223,7 @@ void compute_priority_flood_plus_topological_ordering(float* topo, GF_UINT* stac
 					// raise
 					topo[nnode] = nextafter(topo[node],FLT_MAX);
 					// put in pqueue
-					pfpq_push(&pit,nnode,topo[nnode]);
+					pfpq_push(&open,nnode,topo[nnode]);
 					// Affect current node as neighbours Sreceiver
 				} else{
 					// ... Not in a pit? then wimply in PQ for next proc
