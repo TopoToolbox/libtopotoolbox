@@ -73,7 +73,6 @@ void _graphflood_full_sfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 			Zw[node] = max_float(Z[node], Zw[node] + dt*(Qwin[node] - tQwout)/cell_area);
 		}
 	}
-	// printf("DEBUG::B\n");
 
 
 	// back translate Zw into hw
@@ -121,16 +120,13 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 		Stack[i] = i;
 	}
 
-	// printf("DEBUG::Z1 %u\n", Stack[45]);
 	GF_FLOAT weights[8];
 
 
 	for(GF_UINT iteration = 0; iteration<N_iterations; ++iteration){
 
 		// First priority flooding and calculating stack
-		// printf("DEBUG::A\n");
 		compute_priority_flood_plus_topological_ordering(Zw, Stack, BCs, dim, D8);
-		// printf("DEBUG::B\n");
 
 		// reintialising Qw
 		for(GF_UINT i=0; i<nxy(dim);++i){
@@ -145,14 +141,10 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 			// (it ensures receivers are never processed before the donors and therefor the hydraulic slope remains explicit even if we update a donor)
 			GF_UINT node = Stack[nxy(dim) - i - 1];
 
-			printf("%u\n", node );
-			printf("A\n");
 			// If no data: pass
 			if(is_nodata(node,BCs)) continue;
-			printf("B\n");
 			// First, incrementing local Qwin
 			Qwin[node] += Precipitations[node] * dx * dx;	
-			printf("C\n");
 
 			// Now calculating the gradients: local, steepest and weighted
 			GF_FLOAT sumslope = 0., maxslope = 0., dxmaxdir = dx;
@@ -183,18 +175,20 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 
 			}
 
-			printf("D\n");
 
 			// Transferring the flux
 			if(sumslope > 0 && Qwin[node] > 0){
 				for(GF_UINT n=0; n<N_neighbour(D8); ++n){
-					if(n == 0) continue;
+					if(weights[n] == 0) continue;
 					Qwin[node + offset[n]] = weights[n]/sumslope * Qwin[node];
 				}
 			}
 
+
 			// Calculating the Volumetric discharge based on Manning's friction equation
 			GF_FLOAT tQwout = dxmaxdir/manning[node] * pow(Zw[node] - Z[node], 5./3.) * sqrt(maxslope);
+
+
 
 			// Applying the divergence
 			Zw[node] = max_float(Z[node], Zw[node] + dt*(Qwin[node] - tQwout)/cell_area);
