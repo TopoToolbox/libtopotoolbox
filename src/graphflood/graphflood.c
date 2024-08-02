@@ -206,8 +206,8 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 
 	// back translate Zw into hw
 	for(GF_UINT i=0; i < nxy(dim); ++i)
-		hw[i] = Qwin[i];
-		// hw[i] = -Z[i] + Zw[i];
+		hw[i] = -Z[i] + Zw[i];
+		// hw[i] = Qwin[i];
 
 	free(Zw);
 	free(Qwin);
