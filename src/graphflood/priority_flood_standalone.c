@@ -166,7 +166,7 @@ void compute_priority_flood_plus_topological_ordering(float* topo, GF_UINT* stac
 
 	GF_UINT istack = 0;
 
-
+	printf('DEBUG::A1\n');
 	// Initialisation phase: initialise the queue with nodethat can drain out of the model
 	// Also initialise the sfg data structure
 	for(GF_UINT i=0; i<nxy(dim); ++i){
@@ -185,6 +185,7 @@ void compute_priority_flood_plus_topological_ordering(float* topo, GF_UINT* stac
 		}
 
 	}
+	printf('DEBUG::A2\n');
 
 
 	// Here we go: Starting the main process
