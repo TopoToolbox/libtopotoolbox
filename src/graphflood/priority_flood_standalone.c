@@ -196,6 +196,7 @@ void compute_priority_flood_plus_topological_ordering(float* topo, GF_UINT* stac
 
 		stack[istack] = node;
 		++istack;
+		printf("%s vs %s\n", istack, dim(nxy));
 
 		// for all the neighbours ...
 		for(GF_UINT n = 0; n<N_neighbour(D8); ++n){
