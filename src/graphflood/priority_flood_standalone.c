@@ -154,7 +154,6 @@ void compute_priority_flood_plus_topological_ordering(float* topo, GF_UINT* stac
 	GF_INT offset[8];
 	(D8 == false) ? generate_offset_D4_flat(offset,dim) : generate_offset_D8_flat(offset, dim);
 
-
 	// initialising the nodes to not closed ( = to be processed)
 	uint8_t* closed = (uint8_t*) malloc( nxy(dim) * sizeof(uint8_t) );
 	for(GF_UINT i=0; i<nxy(dim); ++i)
@@ -163,7 +162,6 @@ void compute_priority_flood_plus_topological_ordering(float* topo, GF_UINT* stac
 	// The priority queue data structure (keeps stuff sorted)
 	PFPQueue open;
 	pfpq_init(&open, nxy(dim));
-
 
 	GF_UINT istack = 0;
 
@@ -197,7 +195,8 @@ void compute_priority_flood_plus_topological_ordering(float* topo, GF_UINT* stac
 		node=pfpq_pop_and_get_key(&open);
 
 		printf("%s vs %s\n", istack, nxy(dim));
-		stack[istack] = node;
+		if(istack < nxy(dim))
+			stack[istack] = node;
 		++istack;
 
 		// for all the neighbours ...
