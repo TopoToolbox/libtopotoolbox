@@ -193,6 +193,7 @@ void compute_priority_flood_plus_topological_ordering(float* topo, GF_UINT* stac
 	GF_UINT node;
 	while(pfpq_empty(&open) == false){
 
+		printf("DEBUG::A3\n");
 		node=pfpq_pop_and_get_key(&open);
 
 		printf("%s vs %s\n", istack, nxy(dim));
