@@ -150,6 +150,9 @@ TOPOTOOLBOX_API
 void compute_priority_flood_plus_topological_ordering(float* topo, GF_UINT* stack, uint8_t* BCs, GF_UINT* dim, bool D8) {
 	
 	printf('DEBUG::A0\n');
+	int number;
+  printf("Enter an integer: ");
+  scanf("%d", &number);
 	// Initialising the offset for neighbouring operations
 	GF_INT offset[8];
 	(D8 == false) ? generate_offset_D4_flat(offset,dim) : generate_offset_D8_flat(offset, dim);
