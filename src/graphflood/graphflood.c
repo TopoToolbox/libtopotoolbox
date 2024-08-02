@@ -122,79 +122,79 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 	printf("DEBUG::Z1  %S\n", Stack[45]);
 
 
-	for(GF_UINT iteration = 0; iteration<N_iterations; ++iteration){
+	// for(GF_UINT iteration = 0; iteration<N_iterations; ++iteration){
 
-		// First priority flooding and calculating stack
-		printf("DEBUG::A\n");
-		// compute_priority_flood_plus_topological_ordering(Zw, Stack, BCs, dim, D8);
-		printf("DEBUG::B\n");
+	// 	// First priority flooding and calculating stack
+	// 	printf("DEBUG::A\n");
+	// 	compute_priority_flood_plus_topological_ordering(Zw, Stack, BCs, dim, D8);
+	// 	printf("DEBUG::B\n");
 
-		// reintialising Qw
-		for(GF_UINT i=0; i<nxy(dim);++i){
-			Qwin[i] = 0.;
-		}
+	// 	// reintialising Qw
+	// 	for(GF_UINT i=0; i<nxy(dim);++i){
+	// 		Qwin[i] = 0.;
+	// 	}
 
-		GF_FLOAT weights[8];
+	// 	GF_FLOAT weights[8];
 
-		// processing nodes from top to bottom
-		for(GF_UINT i=0; i<nxy(dim);++i){
+	// 	// processing nodes from top to bottom
+	// 	for(GF_UINT i=0; i<nxy(dim);++i){
 
-			// Traversing the stack in reverse, super important because it allows us to update the Zw on the go
-			// (it ensures receivers are never processed before the donors and therefor the hydraulic slope remains explicit even if we update a donor)
-			GF_UINT node = Stack[nxy(dim) - i - 1];
+	// 		// Traversing the stack in reverse, super important because it allows us to update the Zw on the go
+	// 		// (it ensures receivers are never processed before the donors and therefor the hydraulic slope remains explicit even if we update a donor)
+	// 		GF_UINT node = Stack[nxy(dim) - i - 1];
 
-			// If no data: pass
-			if(is_nodata(node,BCs)) continue;
+	// 		// If no data: pass
+	// 		if(is_nodata(node,BCs)) continue;
 
-			// First, incrementing local Qwin
-			Qwin[node] += Precipitations[node] * dx * dx;
+	// 		// First, incrementing local Qwin
+	// 		Qwin[node] += Precipitations[node] * dx * dx;
 
-			// Now calculating the gradients: local, steepest and weighted
-			GF_FLOAT sumslope = 0., maxslope = 0., dxmaxdir = dx;
-			for(GF_UINT n=0; n<N_neighbour(D8); ++n){
+	// 		// Now calculating the gradients: local, steepest and weighted
+	// 		GF_FLOAT sumslope = 0., maxslope = 0., dxmaxdir = dx;
+	// 		for(GF_UINT n=0; n<N_neighbour(D8); ++n){
 
-				// Checking if the neighbour belongs to the grid
-				if(check_bound_neighbour(node, n, dim, BCs, D8) == false){
-					weights[n] = 0;
-					continue; 
-				}
+	// 			// Checking if the neighbour belongs to the grid
+	// 			if(check_bound_neighbour(node, n, dim, BCs, D8) == false){
+	// 				weights[n] = 0;
+	// 				continue; 
+	// 			}
 
-				GF_UINT nnode = node + offset[n];
+	// 			GF_UINT nnode = node + offset[n];
 
-				if(Zw[nnode] >= Zw[node] || can_receive(nnode,BCs) == false || can_give(node,BCs) == false){
-					weights[n] = 0;
-					continue;
-				}
+	// 			if(Zw[nnode] >= Zw[node] || can_receive(nnode,BCs) == false || can_give(node,BCs) == false){
+	// 				weights[n] = 0;
+	// 				continue;
+	// 			}
 
-				GF_FLOAT tSw = (Zw[node] - Zw[nnode])/offdx[n];
+	// 			GF_FLOAT tSw = (Zw[node] - Zw[nnode])/offdx[n];
 
-				weights[n] = tSw * ((dx == offdx[n] || D8 == false) ? dx : dxy );
+	// 			weights[n] = tSw * ((dx == offdx[n] || D8 == false) ? dx : dxy );
 
-				sumslope += weights[n];
-				if(tSw > maxslope){
-					maxslope = tSw;
-					dxmaxdir = offdx[n];
-				}
+	// 			sumslope += weights[n];
+	// 			if(tSw > maxslope){
+	// 				maxslope = tSw;
+	// 				dxmaxdir = offdx[n];
+	// 			}
 
-			}
+	// 		}
 
-			// Transferring the flux
-			if(sumslope > 0 && Qwin[node] > 0){
-				for(GF_UINT n=0; n<N_neighbour(D8); ++n){
-					if(n == 0) continue;
-					Qwin[node + offset[n]] = weights[n]/sumslope * Qwin[node];
-				}
-			}
+	// 		// Transferring the flux
+	// 		if(sumslope > 0 && Qwin[node] > 0){
+	// 			for(GF_UINT n=0; n<N_neighbour(D8); ++n){
+	// 				if(n == 0) continue;
+	// 				Qwin[node + offset[n]] = weights[n]/sumslope * Qwin[node];
+	// 			}
+	// 		}
 
-			// Calculating the Volumetric discharge based on Manning's friction equation
-			GF_FLOAT tQwout = dxmaxdir/manning[node] * pow(Zw[node] - Z[node], 5./3.) * sqrt(maxslope);
+	// 		// Calculating the Volumetric discharge based on Manning's friction equation
+	// 		GF_FLOAT tQwout = dxmaxdir/manning[node] * pow(Zw[node] - Z[node], 5./3.) * sqrt(maxslope);
 
-			// Applying the divergence
-			Zw[node] = max_float(Z[node], Zw[node] + dt*(Qwin[node] - tQwout)/cell_area);
+	// 		// Applying the divergence
+	// 		Zw[node] = max_float(Z[node], Zw[node] + dt*(Qwin[node] - tQwout)/cell_area);
 
-		}
+	// 	}
 
-	}
+	// }
 
 	free(Zw);
 	free(Qwin);
