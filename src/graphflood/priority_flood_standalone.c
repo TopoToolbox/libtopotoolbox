@@ -129,6 +129,8 @@ void compute_priority_flood(float* topo, uint8_t* BCs, GF_UINT* dim, bool D8) {
 
 		}
 
+	}
+
 	// Done with the queues and close, free memory
 	pfpq_free(&open);
 	pitqueue_free(&pit);
