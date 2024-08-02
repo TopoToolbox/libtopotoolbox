@@ -112,8 +112,15 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 		Zw[i] = Z[i] + hw[i];
 
 	GF_FLOAT* Qwin = (GF_FLOAT*)malloc(sizeof(GF_FLOAT) * nxy(dim));
-
 	GF_UINT* Stack = (GF_UINT*)malloc(sizeof(GF_UINT) * nxy(dim));
+	// reintialising Qw
+	for(GF_UINT i=0; i<nxy(dim);++i){
+		Qwin[i] = 0.;
+		Stack[i] = i;
+	}
+
+	printf("DEBUG::Z1\n");
+
 
 	for(GF_UINT iteration = 0; iteration<N_iterations; ++iteration){
 
