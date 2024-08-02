@@ -33,9 +33,6 @@ void compute_priority_flood(float* topo, uint8_t* BCs, GF_UINT* dim, bool D8) {
 	// Initialising the offset for neighbouring operations
 	GF_INT offset[8];
 	(D8 == false) ? generate_offset_D4_flat(offset,dim) : generate_offset_D8_flat(offset, dim);
-	// // Initialising the offset distance for each neighbour
-	float offdx[8];
-	(D8 == false) ? generate_offsetdx_D4(offdx,dx) : generate_offsetdx_D8(offdx,dx);
 
 
 	// initialising the nodes to not closed ( = to be processed)
@@ -153,9 +150,6 @@ void compute_priority_flood_plus_topological_ordering(float* topo, GF_UINT* stac
 	// Initialising the offset for neighbouring operations
 	GF_INT offset[8];
 	(D8 == false) ? generate_offset_D4_flat(offset,dim) : generate_offset_D8_flat(offset, dim);
-	// // Initialising the offset distance for each neighbour
-	float offdx[8];
-	(D8 == false) ? generate_offsetdx_D4(offdx,dx) : generate_offsetdx_D8(offdx,dx);
 
 
 	// initialising the nodes to not closed ( = to be processed)
@@ -236,6 +230,7 @@ void compute_priority_flood_plus_topological_ordering(float* topo, GF_UINT* stac
 			}
 
 		}
+	}
 
 	// Done with the queues and close, free memory
 	pfpq_free(&open);
