@@ -149,7 +149,7 @@ By experience the slowing down factor is small for most cases ( low amount of de
 TOPOTOOLBOX_API
 void compute_priority_flood_plus_topological_ordering(float* topo, GF_UINT* stack, uint8_t* BCs, GF_UINT* dim, bool D8) {
 	
-	printf('DEBUG::A0\n');
+	// printf('DEBUG::A0\n');
 
 	// // Initialising the offset for neighbouring operations
 	// GF_INT offset[8];
