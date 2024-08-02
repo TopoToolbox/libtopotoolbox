@@ -119,14 +119,14 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 		Stack[i] = i;
 	}
 
-	printf("DEBUG::Z1\n");
+	printf("DEBUG::Z1  %S\n", Stack[45]);
 
 
 	for(GF_UINT iteration = 0; iteration<N_iterations; ++iteration){
 
 		// First priority flooding and calculating stack
 		printf("DEBUG::A\n");
-		compute_priority_flood_plus_topological_ordering(Zw, Stack, BCs, dim, D8);
+		// compute_priority_flood_plus_topological_ordering(Zw, Stack, BCs, dim, D8);
 		printf("DEBUG::B\n");
 
 		// reintialising Qw
