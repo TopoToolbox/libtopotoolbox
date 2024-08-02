@@ -191,8 +191,9 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 			// Calculating the Volumetric discharge based on Manning's friction equation
 			GF_FLOAT tQwout = dxmaxdir/manning[node] * pow(Zw[node] - Z[node], 5./3.) * sqrt(maxslope);
 
-			if(Qwin[node] > 0)
-				printf("%f\n",Qwin[node])
+			if(Qwin[node] > 0){
+				printf("%f\n", Qwin[node]);
+			}
 
 			// Applying the divergence
 			// printf("%f", dt*(Qwin[node] - tQwout)/cell_area);
