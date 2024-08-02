@@ -102,14 +102,14 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 	GF_FLOAT offdx[8];
 	(D8 == false) ? generate_offsetdx_D4(offdx,dx) : generate_offsetdx_D8(offdx,dx);
 
-	// GF_FLOAT dxy = sqrt(2) * dx; 
-	// GF_FLOAT cell_area = dx*dx;
+	GF_FLOAT dxy = sqrt(2) * dx; 
+	GF_FLOAT cell_area = dx*dx;
 
 
-	// // Creating an array of Zw (hydraulic surface = Z + hw)
-	// GF_FLOAT* Zw = (GF_FLOAT*)malloc(sizeof(GF_FLOAT) * nxy(dim));
-	// for(GF_UINT i=0; i < nxy(dim); ++i)
-	// 	Zw[i] = Z[i] + hw[i];
+	// Creating an array of Zw (hydraulic surface = Z + hw)
+	GF_FLOAT* Zw = (GF_FLOAT*)malloc(sizeof(GF_FLOAT) * nxy(dim));
+	for(GF_UINT i=0; i < nxy(dim); ++i)
+		Zw[i] = Z[i] + hw[i];
 
 	// GF_FLOAT* Qwin = (GF_FLOAT*)malloc(sizeof(GF_FLOAT) * nxy(dim));
 	// GF_UINT* Stack = (GF_UINT*)malloc(sizeof(GF_UINT) * nxy(dim));
