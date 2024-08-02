@@ -134,7 +134,7 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 		}
 
 
-		printf("%u\n", Stack[1500]);
+		printf("%u\n", Stack[560250]);
 
 		// processing nodes from top to bottom
 		for(GF_UINT i=0; i<nxy(dim);++i){
