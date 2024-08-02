@@ -115,7 +115,6 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 
 	GF_UINT* Stack = (GF_UINT*)malloc(sizeof(GF_UINT) * nxy(dim));
 
-	GF_FLOAT cell_area = dx*dx;
 	for(GF_UINT iteration = 0; iteration<N_iterations; ++iteration){
 
 		// First priority flooding and calculating stack
