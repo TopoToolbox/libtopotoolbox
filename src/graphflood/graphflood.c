@@ -96,30 +96,30 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 
 	
 	// Initialising the offset for neighbouring operations
-	GF_INT offset[8];
-	(D8 == false) ? generate_offset_D4_flat(offset,dim) : generate_offset_D8_flat(offset, dim);
-	// // Initialising the offset distance for each neighbour
-	GF_FLOAT offdx[8];
-	(D8 == false) ? generate_offsetdx_D4(offdx,dx) : generate_offsetdx_D8(offdx,dx);
+	// GF_INT offset[8];
+	// (D8 == false) ? generate_offset_D4_flat(offset,dim) : generate_offset_D8_flat(offset, dim);
+	// // // Initialising the offset distance for each neighbour
+	// GF_FLOAT offdx[8];
+	// (D8 == false) ? generate_offsetdx_D4(offdx,dx) : generate_offsetdx_D8(offdx,dx);
 
-	GF_FLOAT dxy = sqrt(2) * dx; 
-	GF_FLOAT cell_area = dx*dx;
+	// GF_FLOAT dxy = sqrt(2) * dx; 
+	// GF_FLOAT cell_area = dx*dx;
 
 
-	// Creating an array of Zw (hydraulic surface = Z + hw)
-	GF_FLOAT* Zw = (GF_FLOAT*)malloc(sizeof(GF_FLOAT) * nxy(dim));
-	for(GF_UINT i=0; i < nxy(dim); ++i)
-		Zw[i] = Z[i] + hw[i];
+	// // Creating an array of Zw (hydraulic surface = Z + hw)
+	// GF_FLOAT* Zw = (GF_FLOAT*)malloc(sizeof(GF_FLOAT) * nxy(dim));
+	// for(GF_UINT i=0; i < nxy(dim); ++i)
+	// 	Zw[i] = Z[i] + hw[i];
 
-	GF_FLOAT* Qwin = (GF_FLOAT*)malloc(sizeof(GF_FLOAT) * nxy(dim));
-	GF_UINT* Stack = (GF_UINT*)malloc(sizeof(GF_UINT) * nxy(dim));
-	// reintialising Qw
-	for(GF_UINT i=0; i<nxy(dim);++i){
-		Qwin[i] = 0.;
-		Stack[i] = i;
-	}
+	// GF_FLOAT* Qwin = (GF_FLOAT*)malloc(sizeof(GF_FLOAT) * nxy(dim));
+	// GF_UINT* Stack = (GF_UINT*)malloc(sizeof(GF_UINT) * nxy(dim));
+	// // reintialising Qw
+	// for(GF_UINT i=0; i<nxy(dim);++i){
+	// 	Qwin[i] = 0.;
+	// 	Stack[i] = i;
+	// }
 
-	printf("DEBUG::Z1  %S\n", Stack[45]);
+	// printf("DEBUG::Z1  %S\n", Stack[45]);
 
 
 	// for(GF_UINT iteration = 0; iteration<N_iterations; ++iteration){
@@ -196,9 +196,9 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 
 	// }
 
-	free(Zw);
-	free(Qwin);
-	free(Stack);
+	// free(Zw);
+	// free(Qwin);
+	// free(Stack);
 
 
 }
