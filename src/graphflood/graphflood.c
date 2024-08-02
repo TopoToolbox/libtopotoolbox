@@ -134,7 +134,7 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 		}
 
 
-		printf("%u\n", Stack[560250]);
+		// printf("%u\n", Stack[560250]);
 
 		// processing nodes from top to bottom
 		for(GF_UINT i=0; i<nxy(dim);++i){
@@ -194,9 +194,9 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 
 
 			// Applying the divergence
-			printf("%d",Zw[node]);
+			printf("%f", dt*(Qwin[node] - tQwout)/cell_area);
 			Zw[node] = max_float(Z[node], Zw[node] + dt*(Qwin[node] - tQwout)/cell_area);
-			printf("vs %d\n",Zw[node]);
+			printf("vs %f", tQwout);
 
 		}
 
