@@ -151,94 +151,94 @@ void compute_priority_flood_plus_topological_ordering(float* topo, GF_UINT* stac
 	
 	// printf('DEBUG::A0\n');
 
-	// // Initialising the offset for neighbouring operations
-	// GF_INT offset[8];
-	// (D8 == false) ? generate_offset_D4_flat(offset,dim) : generate_offset_D8_flat(offset, dim);
+	// Initialising the offset for neighbouring operations
+	GF_INT offset[8];
+	(D8 == false) ? generate_offset_D4_flat(offset,dim) : generate_offset_D8_flat(offset, dim);
 
-	// // initialising the nodes to not closed ( = to be processed)
-	// uint8_t* closed = (uint8_t*) malloc( nxy(dim) * sizeof(uint8_t) );
-	// for(GF_UINT i=0; i<nxy(dim); ++i)
-	// 	closed[i]=false;
+	// initialising the nodes to not closed ( = to be processed)
+	uint8_t* closed = (uint8_t*) malloc( nxy(dim) * sizeof(uint8_t) );
+	for(GF_UINT i=0; i<nxy(dim); ++i)
+		closed[i]=false;
 
-	// // The priority queue data structure (keeps stuff sorted)
-	// PFPQueue open;
-	// pfpq_init(&open, nxy(dim));
+	// The priority queue data structure (keeps stuff sorted)
+	PFPQueue open;
+	pfpq_init(&open, nxy(dim));
 
-	// GF_UINT istack = 0;
+	GF_UINT istack = 0;
 
-	// printf('DEBUG::A1\n');
-	// // Initialisation phase: initialise the queue with nodethat can drain out of the model
-	// // Also initialise the sfg data structure
-	// for(GF_UINT i=0; i<nxy(dim); ++i){
+	printf("DEBUG::A1\n");
+	// Initialisation phase: initialise the queue with nodethat can drain out of the model
+	// Also initialise the sfg data structure
+	for(GF_UINT i=0; i<nxy(dim); ++i){
 
-	// 	// If flow can leave, I push
-	// 	if(can_out(i,BCs)){
-	// 		pfpq_push(&open, i, topo[i]);
-	// 		closed[i] = true;
-	// 	}
+		// If flow can leave, I push
+		if(can_out(i,BCs)){
+			pfpq_push(&open, i, topo[i]);
+			closed[i] = true;
+		}
 
-	// 	// Note that no data node are immediately closed as processed
-	// 	if(is_nodata(i,BCs)){
-	// 		closed[i] = true;
-	// 		stack[istack] = i;
-	// 		++istack;
-	// 	}
+		// Note that no data node are immediately closed as processed
+		if(is_nodata(i,BCs)){
+			closed[i] = true;
+			stack[istack] = i;
+			++istack;
+		}
 
-	// }
-	// printf('DEBUG::A2\n');
+	}
+	printf("DEBUG::A2\n");
 
 
-	// // Here we go: Starting the main process
-	// // Processing stops once all the nodes - nodata have been visited once (i.e. pit fifo and PQ empty)
-	// GF_UINT node;
-	// while(pfpq_empty(&open) == false){
+	// Here we go: Starting the main process
+	// Processing stops once all the nodes - nodata have been visited once (i.e. pit fifo and PQ empty)
+	GF_UINT node;
+	while(pfpq_empty(&open) == false){
 
-	// 	node=pfpq_pop_and_get_key(&open);
+		node=pfpq_pop_and_get_key(&open);
 
-	// 	printf("%s vs %s\n", istack, nxy(dim));
-	// 	if(istack < nxy(dim))
-	// 		stack[istack] = node;
-	// 	++istack;
+		printf("%s vs %s\n", istack, nxy(dim));
+		if(istack < nxy(dim))
+			stack[istack] = node;
+		++istack;
 
-	// 	// for all the neighbours ...
-	// 	for(GF_UINT n = 0; n<N_neighbour(D8); ++n){
+		// for all the neighbours ...
+		for(GF_UINT n = 0; n<N_neighbour(D8); ++n){
 
-	// 		// Checking if the neighbour belongs to the grid
-	// 		if(check_bound_neighbour(node, n, dim, BCs, D8) == false){
-	// 			continue;
-	// 		}
+			// Checking if the neighbour belongs to the grid
+			if(check_bound_neighbour(node, n, dim, BCs, D8) == false){
+				continue;
+			}
 
-	// 		// flat indices
-	// 		GF_UINT nnode = node + offset[n];
+			// flat indices
+			GF_UINT nnode = node + offset[n];
 
-	// 		// if nodata I skip
-	// 		if(is_nodata(nnode,BCs)) continue;
+			// if nodata I skip
+			if(is_nodata(nnode,BCs)) continue;
 
-	// 		// If the node is closed (i.e. already in a pit or processed) I skip
-	// 		if(closed[nnode] == false){
+			// If the node is closed (i.e. already in a pit or processed) I skip
+			if(closed[nnode] == false){
 
-	// 			// other wise I close it
-	// 			closed[nnode] = true;
+				// other wise I close it
+				closed[nnode] = true;
 
-	// 			// I raise its elevation if is in pit
-	// 			// nextafter maskes sure I pick the next floating point data corresponding to the current precision 
-	// 			if(topo[nnode] <= nextafter(topo[node],FLT_MAX)){
-	// 				// raise
-	// 				topo[nnode] = nextafter(topo[node],FLT_MAX);
-	// 				// put in pqueue
-	// 				pfpq_push(&open,nnode,topo[nnode]);
-	// 				// Affect current node as neighbours Sreceiver
-	// 			} else{
-	// 				// ... Not in a pit? then wimply in PQ for next proc
-	// 				pfpq_push(&open,nnode,topo[nnode]);
-	// 			}
-	// 		}
+				// I raise its elevation if is in pit
+				// nextafter maskes sure I pick the next floating point data corresponding to the current precision 
+				if(topo[nnode] <= nextafter(topo[node],FLT_MAX)){
+					// raise
+					topo[nnode] = nextafter(topo[node],FLT_MAX);
+					// put in pqueue
+					pfpq_push(&open,nnode,topo[nnode]);
+					// Affect current node as neighbours Sreceiver
+				} else{
+					// ... Not in a pit? then wimply in PQ for next proc
+					pfpq_push(&open,nnode,topo[nnode]);
+				}
+			}
 
-	// 	}
-	// }
+		}
+	}
 
-	// // Done with the queues and close, free memory
-	// pfpq_free(&open);
-	// free(closed);
+	// Done with the queues and close, free memory
+	pfpq_free(&open);
+	free(closed);
 
 }
