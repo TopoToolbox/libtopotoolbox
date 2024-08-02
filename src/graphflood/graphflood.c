@@ -134,6 +134,8 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 		}
 
 
+		printf("%u\n", Stack[1500]);
+
 		// processing nodes from top to bottom
 		for(GF_UINT i=0; i<nxy(dim);++i){
 
@@ -181,9 +183,7 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 			if(sumslope > 0){
 				for(GF_UINT n=0; n<N_neighbour(D8); ++n){
 					if(weights[n] == 0) continue;
-
 					Qwin[node + offset[n]] += weights[n]/sumslope * Qwin[node];
-				
 				}
 			}
 
