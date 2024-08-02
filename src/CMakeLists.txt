@@ -8,6 +8,7 @@ add_library(topotoolbox
   excesstopography.c
   graphflood/gf_utils.c
   graphflood/sfgraph.c
+  graphflood/priority_flood_standalone.c
   graphflood/gf_flowacc.c
   graphflood/graphflood.c
 )

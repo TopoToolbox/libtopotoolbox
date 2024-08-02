@@ -11,31 +11,26 @@
 #include "../morphology/reconstruct.h"
 #include "topotoolbox.h"
 
+
+// Helper functions ton mimic c++ std::min and std::max
 inline float max_float(float a, float b) {
     return (a > b) ? a : b;
 }
-
 inline float min_float(float a, float b) {
     return (a < b) ? a : b;
 }
 
-/*
-  todo
-*/
-TOPOTOOLBOX_API
-void graphflood_full(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Precipitations, GF_FLOAT* manning, GF_UINT* dim, GF_FLOAT dt, GF_FLOAT dx, bool SFD, bool D8, int N_iterations) {
 
-  if(SFD == false){
-    printf("Multiple Flow Direction is work in progress and won't work yet\n");
-    return;
-  }
+/*
+Internal function running graphflood in its full vanilla version in single flow direction
+*/
+void _graphflood_full_sfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Precipitations, GF_FLOAT* manning, GF_UINT* dim, GF_FLOAT dt, GF_FLOAT dx, bool SFD, bool D8, int N_iterations){
 
   // Creating an array of Zw (hydraulic surface = Z + hw)
   GF_FLOAT* Zw = (GF_FLOAT*)malloc(sizeof(GF_FLOAT) * nxy(dim));
   for(GF_UINT i=0; i < nxy(dim); ++i)
     Zw[i] = Z[i] + hw[i];
 
-  // printf("DEBUG::Z\n");
 
   // Init the graph structure locally
   GF_UINT* Sreceivers = (GF_UINT*)malloc(sizeof(GF_UINT) * nxy(dim));
@@ -47,18 +42,14 @@ void graphflood_full(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Precipit
 
   GF_FLOAT cell_area = dx*dx;
 
-  // printf("DEBUG::A\n");
   for(GF_UINT iteration = 0; iteration<N_iterations; ++iteration){
 
-    // printf("DEBUG::A1\n");
     // At each iteration I update the graph while filling every depressions (*in the hydraulic surface) with water
     compute_sfgraph_priority_flood(Zw, Sreceivers, distToReceivers, Sdonors, NSdonors, Stack, BCs, dim, dx, D8);
 
-    // printf("DEBUG::A2\n");
     // From the graph hence created I accumulate the flow (steady conditions)
     compute_weighted_drainage_area_single_flow(Qwin, Precipitations, Sreceivers, Stack, dim, dx);
 
-    // printf("DEBUG::A3\n");
     for(GF_UINT i=0; i<nxy(dim);++i){
 
       // Traversing the stack in reverse, super important because it allows us to update the Zw on the go
@@ -89,7 +80,7 @@ void graphflood_full(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Precipit
   for(GF_UINT i=0; i < nxy(dim); ++i)
     hw[i] = -Z[i] + Zw[i];
 
-  // don't forget to free memory
+  // Don't forget to free memory
   free(Zw);
   free(Qwin);
   free(Sreceivers);
@@ -97,5 +88,25 @@ void graphflood_full(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Precipit
   free(Sdonors);
   free(NSdonors);
   free(Stack);
+
+}
+
+
+
+/*
+  See topotoolbox.h for full instructions
+*/
+TOPOTOOLBOX_API
+void graphflood_full(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Precipitations, GF_FLOAT* manning, GF_UINT* dim, GF_FLOAT dt, GF_FLOAT dx, bool SFD, bool D8, int N_iterations) {
+
+  // Runs the single flow version of the algorithm
+  if(SFD)
+    _graphflood_full_sfd(Z, hw, BCs, Precipitations, manning, dim, dt, dx, SFD, D8, N_iterations);
+  else
+    _graphflood_full_mfd(Z, hw, BCs, Precipitations, manning, dim, dt, dx, SFD, D8, N_iterations);
+
+
+
+ 
   
 }

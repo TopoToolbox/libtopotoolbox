@@ -383,6 +383,13 @@ void compute_sfgraph_priority_flood(GF_FLOAT* topo, GF_UINT* Sreceivers,
 							GF_FLOAT* distToReceivers, GF_UINT* Sdonors, uint8_t* NSdonors, 
 							GF_UINT* Stack, uint8_t* BCs, GF_UINT* dim, GF_FLOAT dx, bool D8);
 
+
+TOPOTOOLBOX_API
+void compute_priority_flood(float* topo, uint8_t* BCs, GF_UINT* dim, bool D8);
+
+TOPOTOOLBOX_API
+void compute_priority_flood_plus_topological_ordering(float* topo, GF_UINT* stack, uint8_t* BCs, GF_UINT* dim, bool D8);
+
 /*
 	@brief Accumulate single flow drainage area downstream from a calculated graphflood single flow graph
 	@param[out] output: the field of drainage area
@@ -421,7 +428,7 @@ void compute_weighted_drainage_area_single_flow(GF_FLOAT* output, GF_FLOAT* weig
 	@param[in]     dims: [rows,columns] if row major and [columns, rows] if column major
 	@param[in]     dt: time step
 	@param[in]     dx: spatial step
-	@param[in]     SFD: single flow direction if True
+	@param[in]     SFD: single flow direction if True, multiple flow if false
 */
 TOPOTOOLBOX_API
 void graphflood_full(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Precipitations, GF_FLOAT* manning, GF_UINT* dim, GF_FLOAT dt, GF_FLOAT dx, bool SFD, bool D8, int N_iterations);

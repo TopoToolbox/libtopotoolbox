@@ -133,7 +133,13 @@ static void recursive_stack(GF_UINT node, GF_UINT* Sdonors, GF_UINT* Stack, uint
 
 
 
-
+/*
+See topotoolbox.h for more details.
+Computes both the single flow graph data structure, the topological ordering and fills the local minimas with Priority Flood + epsilon using Barnes (2014)
+receivers sfgraph structure built as the surface field fills up with PF, then 
+Note that it still runs the Stack ordering from Brun and Willett 2013 at the end to ensure a stack segmented by watersheds 
+(the PitQueue data structure speeds up the filling but breaks the node processing in ascending order within depressions)
+*/
 TOPOTOOLBOX_API
 void compute_sfgraph_priority_flood(float* topo, GF_UINT* Sreceivers, GF_FLOAT* distToReceivers, GF_UINT* Sdonors, uint8_t* NSdonors, GF_UINT* Stack, uint8_t* BCs, GF_UINT* dim, float dx, bool D8) {
 	
@@ -144,41 +150,58 @@ void compute_sfgraph_priority_flood(float* topo, GF_UINT* Sreceivers, GF_FLOAT* 
 	float offdx[8];
 	(D8 == false) ? generate_offsetdx_D4(offdx,dx) : generate_offsetdx_D8(offdx,dx);
 
+
+	// Reinitialising all the Ndonors to 0
+	// initialising the nodes to not closed ( = to be processed)
 	uint8_t* closed = (uint8_t*) malloc( nxy(dim) * sizeof(uint8_t) );
 	for(GF_UINT i=0; i<nxy(dim); ++i){
 		NSdonors[i] = 0;
 		closed[i]=false;
 	}
 
+
+	// PitQueue is a FIFO data structure to fill pits without having to use the more expensive priority queue
 	PitQueue pit;
 	pitqueue_init(&pit,nxy(dim));
 
+	// The priority queue data structure (keeps stuff sorted)
 	PFPQueue open;
 	pfpq_init(&open, nxy(dim));
 
+
+	// temp variable to help with PitQueue
 	float PitTop = FLT_MIN;
 
-	GF_UINT istack = 0;
 
+	// Initialisation phase: initialise the queue with nodethat can drain out of the model
+	// Also initialise the sfg data structure
 	for(GF_UINT i=0; i<nxy(dim); ++i){
+		
 		// By convention (see fastscape, LSDTT, ...) a no steepest receiver = itself
 		Sreceivers[i] = i;
 		distToReceivers[i] = 0.;
+
+		// If flow can leave, I push
 		if(can_out(i,BCs)){
 			pfpq_push(&open, i, topo[i]);
 			closed[i] = true;
 		}
 
+		// Note that no data node are immediately closed as processed
 		if(is_nodata(i,BCs)){
 			closed[i] = true;
 		}
 
 	}
 
-	GF_UINT node;
 
+	// Here we go: Starting the main process
+	// Processing stops once all the nodes - nodata have been visited once (i.e. pit fifo and PQ empty)
+	GF_UINT node;
 	while(pfpq_empty(&open) == false || pit.size>0){
 
+
+		// Selecting the next node
 		if(pit.size>0 && pfpq_empty(&open)==false && pfpq_top_priority(&open) == topo[pit.front]){
 
 			node=pfpq_pop_and_get_key(&open);
@@ -194,6 +217,8 @@ void compute_sfgraph_priority_flood(float* topo, GF_UINT* Sreceivers, GF_FLOAT* 
 			PitTop=FLT_MIN;
 		}
 
+		// Check is the Sreceiver has not already been imposed to a processed node
+		// if need_update is false, then I don;t chose a new receiver as it means I am in a pit		
 		bool need_update = Sreceivers[node] == node;
 
 		// Targetting the steepest receiver
@@ -214,10 +239,13 @@ void compute_sfgraph_priority_flood(float* topo, GF_UINT* Sreceivers, GF_FLOAT* 
 			// flat indices
 			GF_UINT nnode = node + offset[n];
 
+			// if nodata I skip
 			if(is_nodata(nnode,BCs)) continue;
 			
 
-			// who can receive 
+			// This section process the graph structure (if needed)
+			// Note that it can only be a Sreceiver if already closed
+			// otherwise it means it is either a donor or in a pit
 			if(can_receive(nnode, BCs) && can_give(node,BCs) && need_update && closed[nnode]){
 				
 
@@ -232,26 +260,32 @@ void compute_sfgraph_priority_flood(float* topo, GF_UINT* Sreceivers, GF_FLOAT* 
 					SD = tS;
 				}
 			}
+
+			// If the node is closed (i.e. already in a pit or processed) I skip
 			if(closed[nnode] == false){
 
+				// other wise I close it
 				closed[nnode] = true;
 
+				// I raise its elevation if is in pit
+				// nextafter maskes sure I pick the next floating point data corresponding to the current precision 
 				if(topo[nnode] <= nextafter(topo[node],FLT_MAX)){
-
+					// raise
 					topo[nnode] = nextafter(topo[node],FLT_MAX);
-					// topo[nnode] = topo[node]+1e-3 + 1e-3* (float)rand() / (float)RAND_MAX;
-
+					// put in pit queue
 					pitqueue_enqueue(&pit,nnode);
+					// Affect current node as neighbours Sreceiver
 					Sreceivers[nnode] = node;
 					distToReceivers[nnode] = offdx[n];
-				
-				} else
+				} else{
+					// ... Not in a pit? then in PQ for next proc
 					pfpq_push(&open,nnode,topo[nnode]);
+				}
 			}
 
 		}
 
-
+		// Updating SFG data structure if needed
 		if(need_update){
 			// and the final choice is saved
 			Sreceivers[node] = this_receiver;
@@ -259,6 +293,8 @@ void compute_sfgraph_priority_flood(float* topo, GF_UINT* Sreceivers, GF_FLOAT* 
 		}
 	}
 
+
+	// Done with the queues and close, free memory
 	pfpq_free(&open);
 	pitqueue_free(&pit);
 	free(closed);
@@ -272,7 +308,7 @@ void compute_sfgraph_priority_flood(float* topo, GF_UINT* Sreceivers, GF_FLOAT* 
 	}
 
 	// Finally calculating Braun and Willett 2013
-	istack = 0;
+	GF_UINT istack = 0;
 	for(GF_UINT node = 0; node<dim[0]*dim[1]; ++node){
 		if(node == (GF_UINT)Sreceivers[node]){
 			recursive_stack(node, Sdonors, Stack, NSdonors, &istack, D8);
