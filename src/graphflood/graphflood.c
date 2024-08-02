@@ -145,6 +145,8 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 			// (it ensures receivers are never processed before the donors and therefor the hydraulic slope remains explicit even if we update a donor)
 			GF_UINT node = Stack[nxy(dim) - i - 1];
 
+			printf("%u\n", node );
+
 			// If no data: pass
 			if(is_nodata(node,BCs)) continue;
 
