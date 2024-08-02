@@ -194,7 +194,9 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 
 
 			// Applying the divergence
+			printf("%d",Zw[node]);
 			Zw[node] = max_float(Z[node], Zw[node] + dt*(Qwin[node] - tQwout)/cell_area);
+			printf("vs %d\n",Zw[node]);
 
 		}
 
