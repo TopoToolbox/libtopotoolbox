@@ -199,6 +199,7 @@ void compute_priority_flood_plus_topological_ordering(float* topo, GF_UINT* stac
 		// printf("%u vs %u\n", istack, nxy(dim));
 		if(istack < nxy(dim)){
 			stack[istack] = node;
+		}
 
 		++istack;
 

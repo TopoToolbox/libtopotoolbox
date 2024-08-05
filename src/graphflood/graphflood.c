@@ -189,8 +189,9 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 				}
 			}
 
-			if(sumtransfer == 0. && can_out(node,BCs) != 0)
+			if(sumtransfer == 0. && can_out(node,BCs) == false){
 				printf("HAPPENS\n");
+			}
 
 
 			// Calculating the Volumetric discharge based on Manning's friction equation
