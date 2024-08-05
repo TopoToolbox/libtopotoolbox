@@ -357,16 +357,16 @@ void excesstopography_fmm3d(float *excess, ptrdiff_t *heap, ptrdiff_t *back,
 /*
 	@brief Computes a single flow graph: 
 	Receivers/Donors using the steepest descent method and topological ordering following a modified Braun and Willett (2013)
-	@param[in] topo: the topographic surface
+	@param[in]  topo: the topographic surface
 	@param[out] Sreceivers: array of steepest receiver vectorised index
 	@param[out] distToReceivers: array of distance to steepest receiver vectorised index
 	@param[out] Sdonors: array of donors to steepest receiver vectorised index (index * (8 or 4) + 0:NSdonors[index] to get them)
 	@param[out] NSdonors: array of number of steepest donors (nodes having this one as steepest receivers)
 	@param[out] Stack: topologically ordered list of nodes, from the baselevel to the sources
-	@param[in] BCs: codes for boundary conditions and no data management, see gf_utils.h or examples for the meaning
-	@param[in] dims: [rows,columns] if row major and [columns, rows] if column major
-	@param[in] dx: spatial step
-	@param[in] D8: true for topology including cardinals + diagonals, false for cardinals only
+	@param[in]  BCs: codes for boundary conditions and no data management, see gf_utils.h or examples for the meaning
+	@param[in]  dims: [rows,columns] if row major and [columns, rows] if column major
+	@param[in]  dx: spatial step
+	@param[in]  D8: true for topology including cardinals + diagonals, false for cardinals only
 
 */
 TOPOTOOLBOX_API
@@ -383,10 +383,28 @@ void compute_sfgraph_priority_flood(GF_FLOAT* topo, GF_UINT* Sreceivers,
 							GF_FLOAT* distToReceivers, GF_UINT* Sdonors, uint8_t* NSdonors, 
 							GF_UINT* Stack, uint8_t* BCs, GF_UINT* dim, GF_FLOAT dx, bool D8);
 
+/*
+	@brief Fills the depressions in place in the topography using Priority Floods Barnes (2014, modified to impose a minimal slope)
 
+	@param[inout]  topo: array of surface elevation
+	@param[in]     BCs: codes for boundary conditions and no data management, see gf_utils.h or examples for the meaning
+	@param[in]     dims: [rows,columns] if row major and [columns, rows] if column major
+	@param[in]     D8: true for topology including cardinals + diagonals, false for cardinals only
+*/
 TOPOTOOLBOX_API
 void compute_priority_flood(float* topo, uint8_t* BCs, GF_UINT* dim, bool D8);
 
+
+
+/*
+	@brief Fills the depressions in place in the topography using Priority Floods Barnes (2014, modified to impose a minimal slope)
+	This variant computes the topological order on the go (slightly slower as it uses a priority queue for all the nodes including in depressions)
+
+	@param[inout]  topo: array of surface elevation
+	@param[in]     BCs: codes for boundary conditions and no data management, see gf_utils.h or examples for the meaning
+	@param[in]     dims: [rows,columns] if row major and [columns, rows] if column major
+	@param[in]     D8: true for topology including cardinals + diagonals, false for cardinals only
+*/
 TOPOTOOLBOX_API
 void compute_priority_flood_plus_topological_ordering(float* topo, GF_UINT* stack, uint8_t* BCs, GF_UINT* dim, bool D8);
 
