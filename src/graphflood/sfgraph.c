@@ -50,6 +50,7 @@ void compute_sfgraph(float* topo, GF_UINT* Sreceivers, GF_FLOAT* distToReceivers
 
 			// Getting flat index of the node
 			GF_UINT node = dim2flat(d0,d1,dim);
+			topo[node] = node;
 
 			// By convention (see fastscape, LSDTT, ...) a no steepest receiver = itself
 			Sreceivers[node] = node;
