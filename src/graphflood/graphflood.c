@@ -180,12 +180,17 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 
 
 			// Transferring the flux
+			GF_FLOAT sumtransfer = 0.;
 			if(sumslope > 0){
 				for(GF_UINT n=0; n<N_neighbour(D8); ++n){
 					if(weights[n] == 0) continue;
 					Qwin[node + offset[n]] += weights[n]/sumslope * Qwin[node];
+					sumtransfer += weights[n]/sumslope * Qwin[node];
 				}
 			}
+
+			if(sumtransfer == 0. && can_out(node,BCs) != 0)
+				printf("HAPPENS\n");
 
 
 			// Calculating the Volumetric discharge based on Manning's friction equation

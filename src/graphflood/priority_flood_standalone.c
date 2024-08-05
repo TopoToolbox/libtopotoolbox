@@ -193,17 +193,13 @@ void compute_priority_flood_plus_topological_ordering(float* topo, GF_UINT* stac
 
 		// printf("DEBUG::A3\n");
 		node=pfpq_pop_and_get_key(&open);
-		if(topo[node] < current_elev)
-			printf("nope\n");
 
 		current_elev = topo[node];
 
 		// printf("%u vs %u\n", istack, nxy(dim));
 		if(istack < nxy(dim)){
 			stack[istack] = node;
-		}else{
-			printf("HAPPENS\n");
-		}
+
 		++istack;
 
 		// for all the neighbours ...
@@ -228,7 +224,7 @@ void compute_priority_flood_plus_topological_ordering(float* topo, GF_UINT* stac
 
 				// I raise its elevation if is in pit
 				// nextafter maskes sure I pick the next floating point data corresponding to the current precision 
-				if(topo[nnode] <= nextafter(topo[node],FLT_MAX)){
+				if(topo[nnode] <= nextafter(topo[node],FLT_MAX) + 1e-4){
 					// raise
 					topo[nnode] = nextafter(topo[node],FLT_MAX) + 1e-4;
 					// put in pqueue
