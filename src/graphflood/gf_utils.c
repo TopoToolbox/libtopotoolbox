@@ -96,10 +96,10 @@ D4 version.
 */
 void generate_offset_D4_flat(GF_INT* off, GF_UINT* dim){
 	// creating a generic array to assign to the pointer
-	off[0] = -dim[0];
+	off[0] = -dim[1];
 	off[1] = -1;
 	off[2] = 1;
-	off[3] = dim[0];
+	off[3] = dim[1];
 }
 
 /*
@@ -108,14 +108,14 @@ D8 version.
 */
 void generate_offset_D8_flat(GF_INT* off, GF_UINT* dim){
 	// creating a generic array to assign to the pointer
-	off[0] = -dim[0] - 1;
-	off[1] = -dim[0] + 0;
-	off[2] = -dim[0] + 1;
+	off[0] = -dim[1] - 1;
+	off[1] = -dim[1] + 0;
+	off[2] = -dim[1] + 1;
 	off[3] = -1;
 	off[4] = 1 ;
-	off[5] = dim[0] - 1;
-	off[6] = dim[0] + 0 ;
-	off[7] = dim[0] + 1 ;
+	off[5] = dim[1] - 1;
+	off[6] = dim[1] + 0 ;
+	off[7] = dim[1] + 1 ;
 }
 
 
@@ -210,7 +210,7 @@ void check_bound(GF_UINT node, GF_UINT* dim, uint8_t* BCs, bool* valid ){
 void check_top_customs(GF_UINT node, uint8_t n, GF_UINT* dim, uint8_t* BCs, bool* valid, bool D8){
 
 	// Checking if the node is on the first row and trying to target above
-	if (node < dim[0] && node >=0) {
+	if (node < dim[1] && node >=0) {
 		if( (D8 && n < 3) || (D8 == false && n == 0))
 			*valid = false;
 	}
@@ -220,7 +220,7 @@ void check_top_customs(GF_UINT node, uint8_t n, GF_UINT* dim, uint8_t* BCs, bool
 void check_bottom_customs(GF_UINT node, uint8_t n, GF_UINT* dim, uint8_t* BCs, bool* valid, bool D8){
 
 	// Checking if the node is on the first row and trying to target above
-	if (node >= dim[0] * dim[1] - dim[0]) {
+	if (node >= dim[0] * dim[1] - dim[1]) {
 		if( (D8 && n >= 5) || (D8 == false && n == 3))
 			*valid = false;
 	}
@@ -230,7 +230,7 @@ void check_bottom_customs(GF_UINT node, uint8_t n, GF_UINT* dim, uint8_t* BCs, b
 void check_left_customs(GF_UINT node, uint8_t n, GF_UINT* dim, uint8_t* BCs, bool* valid, bool D8){
 
 	// Checking if the node is on the first row and trying to target above
-	if (node % dim[0] == 0) {
+	if (node % dim[1] == 0) {
 		if( (D8 && (n == 0 || n == 3 || n == 5) ) || (D8 == false && n == 1))
 			*valid = false;
 	}
@@ -240,7 +240,7 @@ void check_left_customs(GF_UINT node, uint8_t n, GF_UINT* dim, uint8_t* BCs, boo
 void check_right_customs(GF_UINT node, uint8_t n, GF_UINT* dim, uint8_t* BCs, bool* valid, bool D8){
 
 	// Checking if the node is on the first row and trying to target above
-	if (node % dim[0] == dim[0] - 1) {
+	if (node % dim[1] == dim[1] - 1) {
 		if( (D8 && (n == 2 || n == 4 || n == 7) ) || (D8 == false && n == 2))
 			*valid = false;
 	}
