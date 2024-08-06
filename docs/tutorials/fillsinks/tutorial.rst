@@ -205,13 +205,14 @@ According to the header file and the libtopotoolbox API documentation,
 
 .. code:: C
 
-    void fillsinks(float *output, float *dem, ptrdiff_t nrows, ptrdiff_t ncols);
+    void fillsinks(float *output, float *dem, ptrdiff_t dims[2]);
 
-``dem`` is a pointer to the input data, an array of size ``nrows * ncols``. ``nrows`` refers to the fastest changing dimension in the
-two-dimensional array and ``ncols`` to the slowest changing
-dimension. For data read by GDAL, this means that ``nrows`` corresponds
-to the X dimension (``xsize``) and ``ncols`` corresponds to the Y
-dimension (``ysize``).
+``dem`` is a pointer to the input data, an array of size ``dims[0] *
+dims[1]``. ``dims[0]`` refers to the dimension that changes the
+fastest as you step through the array in memory while ``dims[1]``
+refers to the slowest changing dimension. For data read by GDAL, this
+means that ``dims[0]`` corresponds to the X dimension (``xsize``) and
+``dims[1]`` corresponds to the Y dimension (``ysize``).
 
 The ``output`` array must be the same size as the input array, and we
 must allocate it ourselves following our GDAL reading code in ``main``.
@@ -224,7 +225,8 @@ Following that, we have what we need to call ``fillsinks``:
 
 .. code:: C
 
-    fillsinks(output, dem, xsize, ysize);
+    ptrdiff_t dims[2] = {xsize, ysize};
+    fillsinks(output, dem, dims);
 
 The ``output`` array now contains the DEM with all of the sinks removed
 using a grayscale morphological reconstruction algorithm.
@@ -401,7 +403,8 @@ Complete code
 
       float *output = malloc(sizeof(*output)*xsize*ysize);
 
-      fillsinks(output, dem, xsize, ysize);
+      ptrdiff_t dims[2] = {xsize, ysize};
+      fillsinks(output, dem, dims);
 
       GDALDatasetH outDataset = GDALCreateCopy(hDriver, "filled_dem.tif", hDataset,
                                                FALSE, NULL, NULL, NULL);

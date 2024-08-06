@@ -23,46 +23,46 @@
   The new marker pixel value is constrained to lie below the
   corresponding pixel in `mask`.
  */
-ptrdiff_t forward_scan(float *marker, float *mask, ptrdiff_t nrows,
-                       ptrdiff_t ncols) {
+ptrdiff_t forward_scan(float *marker, float *mask, ptrdiff_t dims[2]) {
   // Offsets for the four neighbors
-  ptrdiff_t col_offset[4] = {-1, -1, -1, 0};
-  ptrdiff_t row_offset[4] = {1, 0, -1, -1};
+  ptrdiff_t j_offset[4] = {-1, -1, -1, 0};
+  ptrdiff_t i_offset[4] = {1, 0, -1, -1};
 
   ptrdiff_t count = 0;  // Number of modified pixels
 
-  for (ptrdiff_t p = 0; p < nrows * ncols; p++) {
-    ptrdiff_t col = p / nrows;
-    ptrdiff_t row = p % nrows;
+  for (ptrdiff_t j = 0; j < dims[1]; j++) {
+    for (ptrdiff_t i = 0; i < dims[0]; i++) {
+      ptrdiff_t p = j * dims[0] + i;
 
-    // Compute the maximum of the marker at the current pixel and all
-    // of its previously visisted neighbors
-    float max_height = marker[p];
-    for (ptrdiff_t neighbor = 0; neighbor < 4; neighbor++) {
-      ptrdiff_t neighbor_row = row + row_offset[neighbor];
-      ptrdiff_t neighbor_col = col + col_offset[neighbor];
+      // Compute the maximum of the marker at the current pixel and all
+      // of its previously visisted neighbors
+      float max_height = marker[p];
+      for (ptrdiff_t neighbor = 0; neighbor < 4; neighbor++) {
+        ptrdiff_t neighbor_i = i + i_offset[neighbor];
+        ptrdiff_t neighbor_j = j + j_offset[neighbor];
 
-      ptrdiff_t q = neighbor_col * nrows + neighbor_row;
+        ptrdiff_t q = neighbor_j * dims[0] + neighbor_i;
 
-      // Skip pixels outside the boundary
-      if (neighbor_row < 0 || neighbor_row >= nrows || neighbor_col < 0 ||
-          neighbor_col >= ncols) {
-        continue;
+        // Skip pixels outside the boundary
+        if (neighbor_i < 0 || neighbor_i >= dims[0] || neighbor_j < 0 ||
+            neighbor_j >= dims[1]) {
+          continue;
+        }
+
+        max_height = max_height > marker[q] ? max_height : marker[q];
       }
 
-      max_height = max_height > marker[q] ? max_height : marker[q];
-    }
+      // Set the marker at the current pixel to the minimum of the
+      // maximum height of the neighborhood and the mask at the current
+      // pixel.
 
-    // Set the marker at the current pixel to the minimum of the
-    // maximum height of the neighborhood and the mask at the current
-    // pixel.
+      float z = max_height < mask[p] ? max_height : mask[p];
 
-    float z = max_height < mask[p] ? max_height : mask[p];
-
-    if (z != marker[p]) {
-      // Increment count only if we change the current pixel
-      count++;
-      marker[p] = z;
+      if (z != marker[p]) {
+        // Increment count only if we change the current pixel
+        count++;
+        marker[p] = z;
+      }
     }
   }
   return count;
@@ -88,45 +88,45 @@ ptrdiff_t forward_scan(float *marker, float *mask, ptrdiff_t nrows,
   The new marker pixel value is constrained to lie below the
   corresponding pixel in `mask`.
  */
-ptrdiff_t backward_scan(float *marker, float *mask, ptrdiff_t nrows,
-                        ptrdiff_t ncols) {
+ptrdiff_t backward_scan(float *marker, float *mask, ptrdiff_t dims[2]) {
   // Offsets for the four neighbors
-  ptrdiff_t col_offset[4] = {1, 1, 1, 0};
-  ptrdiff_t row_offset[4] = {-1, 0, 1, 1};
+  ptrdiff_t j_offset[4] = {1, 1, 1, 0};
+  ptrdiff_t i_offset[4] = {-1, 0, 1, 1};
 
   ptrdiff_t count = 0;  // Number of modified pixels
 
   // Note that the loop decreases. p must have a signed type for this
   // to work correctly.
-  for (ptrdiff_t p = nrows * ncols - 1; p >= 0; p--) {
-    ptrdiff_t col = p / nrows;
-    ptrdiff_t row = p % nrows;
+  for (ptrdiff_t j = dims[1] - 1; j >= 0; j--) {
+    for (ptrdiff_t i = dims[0] - 1; i >= 0; i--) {
+      ptrdiff_t p = j * dims[0] + i;
 
-    // Compute the maximum of the marker at the current pixel and all
-    // of its previously visited neighbors
-    float max_height = marker[p];
-    for (ptrdiff_t neighbor = 0; neighbor < 4; neighbor++) {
-      ptrdiff_t neighbor_row = row + row_offset[neighbor];
-      ptrdiff_t neighbor_col = col + col_offset[neighbor];
-      ptrdiff_t q = neighbor_col * nrows + neighbor_row;
+      // Compute the maximum of the marker at the current pixel and all
+      // of its previously visited neighbors
+      float max_height = marker[p];
+      for (ptrdiff_t neighbor = 0; neighbor < 4; neighbor++) {
+        ptrdiff_t neighbor_i = i + i_offset[neighbor];
+        ptrdiff_t neighbor_j = j + j_offset[neighbor];
+        ptrdiff_t q = neighbor_j * dims[0] + neighbor_i;
 
-      // Skip pixels outside the boundary
-      if (neighbor_row < 0 || neighbor_row >= nrows || neighbor_col < 0 ||
-          neighbor_col >= ncols) {
-        continue;
+        // Skip pixels outside the boundary
+        if (neighbor_i < 0 || neighbor_i >= dims[0] || neighbor_j < 0 ||
+            neighbor_j >= dims[1]) {
+          continue;
+        }
+        max_height = max_height > marker[q] ? max_height : marker[q];
       }
-      max_height = max_height > marker[q] ? max_height : marker[q];
-    }
 
-    // Set the marker at the current pixel to the minimum of the
-    // maximum height of the neighborhood and the mask at the current
-    // pixel.
+      // Set the marker at the current pixel to the minimum of the
+      // maximum height of the neighborhood and the mask at the current
+      // pixel.
 
-    float z = max_height < mask[p] ? max_height : mask[p];
-    if (z != marker[p]) {
-      // Increment count only if we change the current pixel
-      count++;
-      marker[p] = z;
+      float z = max_height < mask[p] ? max_height : mask[p];
+      if (z != marker[p]) {
+        // Increment count only if we change the current pixel
+        count++;
+        marker[p] = z;
+      }
     }
   }
   return count;
@@ -140,7 +140,7 @@ ptrdiff_t backward_scan(float *marker, float *mask, ptrdiff_t nrows,
   (1993).
 
   Both `marker` and `mask` should point to two-dimensional arrays of
-  size (nrows, ncols) with the first dimension (nrows) changing
+  size (dims[0], dims[1]) with the first dimension (dims[0]) changing
   fastest. The `marker` array is updated with the result in-place.
 
   The algorithm alternately scans the marker image in the forward and
@@ -153,13 +153,13 @@ ptrdiff_t backward_scan(float *marker, float *mask, ptrdiff_t nrows,
   Transactions on Image Processing, Vol. 2, No. 2.
   https://doi.org/10.1109/83.217222
  */
-void reconstruct(float *marker, float *mask, ptrdiff_t nrows, ptrdiff_t ncols) {
-  ptrdiff_t n = ncols * nrows;
+void reconstruct(float *marker, float *mask, ptrdiff_t dims[2]) {
+  ptrdiff_t n = dims[0] * dims[1];
 
   const int32_t max_iterations = 1000;
   for (int32_t iteration = 0; iteration < max_iterations && n > 0;
        iteration++) {
-    n = forward_scan(marker, mask, nrows, ncols);
-    n += backward_scan(marker, mask, nrows, ncols);
+    n = forward_scan(marker, mask, dims);
+    n += backward_scan(marker, mask, dims);
   }
 }

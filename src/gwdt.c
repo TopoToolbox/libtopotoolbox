@@ -45,7 +45,7 @@
   Equivalence classes of labels are recorded in a union-find data
   structure. To avoid allocating additional memory for this data
   structure, it is built into the return values of the `compute_costs`
-  function, namely a ptrdiff_t array of size (nrows,ncols), which
+  function, namely a ptrdiff_t array of size (dims[0],dims[1]), which
   holds labels for the connected components, and a float array of the
   same size. The float array ultimately holds the costs returned from
   the function, but during the algorithm, it is used to keep track
@@ -157,7 +157,7 @@ static labeldepth unify(ptrdiff_t *labels, float *weights, ptrdiff_t pixel1,
 
   `costs`, `original_dem` and `filled_dem` should all represent
   two-dimensional single-precision floating point arrays of size
-  (nrows, ncols). `flats` represents a two-dimensional 32-bit integer
+  (dims[0], dims[1]). `flats` represents a two-dimensional 32-bit integer
   array of the same size that is given by the output of
   `identifyflats`. `conncomps` represents a two-dimensional ptrdiff_t
   array of the same size and it is used to store the connected component
@@ -165,8 +165,8 @@ static labeldepth unify(ptrdiff_t *labels, float *weights, ptrdiff_t pixel1,
  */
 TOPOTOOLBOX_API
 void gwdt_computecosts(float *costs, ptrdiff_t *conncomps, int32_t *flats,
-                       float *original_dem, float *filled_dem, ptrdiff_t nrows,
-                       ptrdiff_t ncols) {
+                       float *original_dem, float *filled_dem,
+                       ptrdiff_t dims[2]) {
   // flats, original_dem and filled_dem are passed as input
   //
   // conncomps and costs are outputs
@@ -179,14 +179,14 @@ void gwdt_computecosts(float *costs, ptrdiff_t *conncomps, int32_t *flats,
 
   // Offsets to the four neighbors that have already been visited
   // during the scan
-  ptrdiff_t forward_col_offset[4] = {-1, -1, -1, 0};
-  ptrdiff_t forward_row_offset[4] = {-1, 0, 1, -1};
+  ptrdiff_t forward_j_offset[4] = {-1, -1, -1, 0};
+  ptrdiff_t forward_i_offset[4] = {-1, 0, 1, -1};
 
   // All flats are on the interior of the image, so we don't need to
   // iterate over the borders
-  for (ptrdiff_t col = 0; col < ncols; col++) {
-    for (ptrdiff_t row = 0; row < nrows; row++) {
-      ptrdiff_t current_pixel = col * nrows + row;
+  for (ptrdiff_t j = 0; j < dims[1]; j++) {
+    for (ptrdiff_t i = 0; i < dims[0]; i++) {
+      ptrdiff_t current_pixel = j * dims[0] + i;
       if (!(flats[current_pixel] & 1)) {
         // Current pixel is not a flat
         costs[current_pixel] = 0.0;    // Set cost to zero
@@ -201,12 +201,12 @@ void gwdt_computecosts(float *costs, ptrdiff_t *conncomps, int32_t *flats,
       new_tree(conncomps, costs, current_pixel, current_depth);
 
       for (int32_t neighbor = 0; neighbor < 4; neighbor++) {
-        ptrdiff_t neighbor_col = col + forward_col_offset[neighbor];
-        ptrdiff_t neighbor_row = row + forward_row_offset[neighbor];
-        ptrdiff_t neighbor_pixel = neighbor_col * nrows + neighbor_row;
+        ptrdiff_t neighbor_j = j + forward_j_offset[neighbor];
+        ptrdiff_t neighbor_i = i + forward_i_offset[neighbor];
+        ptrdiff_t neighbor_pixel = neighbor_j * dims[0] + neighbor_i;
 
-        if (neighbor_col < 0 || neighbor_col >= ncols || neighbor_row < 0 ||
-            neighbor_row >= nrows) {
+        if (neighbor_j < 0 || neighbor_j >= dims[1] || neighbor_i < 0 ||
+            neighbor_i >= dims[0]) {
           // This should be unreachable, because no border pixel is
           // also a flat pixel.
           continue;
@@ -230,9 +230,9 @@ void gwdt_computecosts(float *costs, ptrdiff_t *conncomps, int32_t *flats,
   // Second scan: find the maximum difference for the connected
   // component of each flat
   // This time, we don't have to loop over the border pixels
-  for (ptrdiff_t col = 1; col < ncols - 1; col++) {
-    for (ptrdiff_t row = 1; row < nrows - 1; row++) {
-      ptrdiff_t current_pixel = col * nrows + row;
+  for (ptrdiff_t j = 1; j < dims[1] - 1; j++) {
+    for (ptrdiff_t i = 1; i < dims[0] - 1; i++) {
+      ptrdiff_t current_pixel = j * dims[0] + i;
       if (!(flats[current_pixel] & 1)) {
         continue;
       }
@@ -244,9 +244,9 @@ void gwdt_computecosts(float *costs, ptrdiff_t *conncomps, int32_t *flats,
 
   // Third scan: compute the costs using the max depth for each
   // connected component
-  for (ptrdiff_t col = 1; col < ncols - 1; col++) {
-    for (ptrdiff_t row = 1; row < nrows - 1; row++) {
-      ptrdiff_t current_pixel = col * nrows + row;
+  for (ptrdiff_t j = 1; j < dims[1] - 1; j++) {
+    for (ptrdiff_t i = 1; i < dims[0] - 1; i++) {
+      ptrdiff_t current_pixel = j * dims[0] + i;
       if (!(flats[current_pixel] & 1)) {
         continue;
       }
@@ -274,16 +274,16 @@ void gwdt_computecosts(float *costs, ptrdiff_t *conncomps, int32_t *flats,
  */
 TOPOTOOLBOX_API
 void gwdt(float *dist, ptrdiff_t *prev, float *costs, int32_t *flats,
-          ptrdiff_t *heap, ptrdiff_t *back, ptrdiff_t nrows, ptrdiff_t ncols) {
+          ptrdiff_t *heap, ptrdiff_t *back, ptrdiff_t dims[2]) {
   // Initialize the priority queue
   PriorityQueue q = {0};
   q.back = back;
   q.heap = heap;
   q.priorities = dist;
-  q.max_size = nrows * ncols;
-  for (ptrdiff_t col = 0; col < ncols; col++) {
-    for (ptrdiff_t row = 0; row < nrows; row++) {
-      ptrdiff_t idx = col * nrows + row;
+  q.max_size = dims[0] * dims[1];
+  for (ptrdiff_t j = 0; j < dims[1]; j++) {
+    for (ptrdiff_t i = 0; i < dims[0]; i++) {
+      ptrdiff_t idx = j * dims[0] + i;
       // prev points to self for any pixel that doesn't have a lower neighbor
       if (prev != NULL) {
         prev[idx] = idx;
@@ -301,25 +301,25 @@ void gwdt(float *dist, ptrdiff_t *prev, float *costs, int32_t *flats,
     }
   }
 
-  ptrdiff_t row_offset[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
-  ptrdiff_t col_offset[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
+  ptrdiff_t i_offset[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
+  ptrdiff_t j_offset[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
   float chamfer[8] = {SQRT2f, 1.0, SQRT2f, 1.0, 1.0, SQRT2f, 1.0, SQRT2f};
 
   while (!pq_isempty(&q)) {
     ptrdiff_t trial = pq_deletemin(&q);
     float trial_distance = pq_get_priority(&q, trial);
 
-    ptrdiff_t col = trial / nrows;
-    ptrdiff_t row = trial % nrows;
+    ptrdiff_t j = trial / dims[0];
+    ptrdiff_t i = trial % dims[0];
 
     for (ptrdiff_t neighbor = 0; neighbor < 8; neighbor++) {
-      ptrdiff_t neighbor_row = row + row_offset[neighbor];
-      ptrdiff_t neighbor_col = col + col_offset[neighbor];
-      ptrdiff_t neighbor_idx = neighbor_col * nrows + neighbor_row;
+      ptrdiff_t neighbor_i = i + i_offset[neighbor];
+      ptrdiff_t neighbor_j = j + j_offset[neighbor];
+      ptrdiff_t neighbor_idx = neighbor_j * dims[0] + neighbor_i;
 
       // Skip pixels outside the boundary or non-flat pixels
-      if (neighbor_row < 0 || neighbor_row >= nrows || neighbor_col < 0 ||
-          neighbor_col >= ncols || !(flats[neighbor_idx] & 1)) {
+      if (neighbor_i < 0 || neighbor_i >= dims[0] || neighbor_j < 0 ||
+          neighbor_j >= dims[1] || !(flats[neighbor_idx] & 1)) {
         continue;
       }
 

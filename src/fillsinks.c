@@ -21,30 +21,29 @@
   Sinks are filled using grayscale morphological reconstruction.
 */
 TOPOTOOLBOX_API
-void fillsinks(float *output, float *dem, ptrdiff_t nrows, ptrdiff_t ncols) {
-  for (ptrdiff_t col = 0; col < ncols; col++) {
-    for (ptrdiff_t row = 0; row < nrows; row++) {
+void fillsinks(float *output, float *dem, ptrdiff_t dims[2]) {
+  for (ptrdiff_t j = 0; j < dims[1]; j++) {
+    for (ptrdiff_t i = 0; i < dims[0]; i++) {
       // Invert the DEM
-      dem[col * nrows + row] *= -1.0;
+      dem[j * dims[0] + i] *= -1.0;
 
       // Set the boundary pixels of the output equal to the DEM and
       // the interior pixels equal to -INFINITY.
-      if ((row == 0 || row == (nrows - 1)) ||
-          (col == 0 || col == (ncols - 1))) {
-        output[col * nrows + row] = dem[col * nrows + row];
+      if ((i == 0 || i == (dims[0] - 1)) || (j == 0 || j == (dims[1] - 1))) {
+        output[j * dims[0] + i] = dem[j * dims[0] + i];
       } else {
-        output[col * nrows + row] = -INFINITY;
+        output[j * dims[0] + i] = -INFINITY;
       }
     }
   }
 
-  reconstruct(output, dem, nrows, ncols);
+  reconstruct(output, dem, dims);
 
   // Revert the DEM and the output
-  for (ptrdiff_t col = 0; col < ncols; col++) {
-    for (ptrdiff_t row = 0; row < nrows; row++) {
-      dem[col * nrows + row] *= -1.0;
-      output[col * nrows + row] *= -1.0;
+  for (ptrdiff_t j = 0; j < dims[1]; j++) {
+    for (ptrdiff_t i = 0; i < dims[0]; i++) {
+      dem[j * dims[0] + i] *= -1.0;
+      output[j * dims[0] + i] *= -1.0;
     }
   }
 }

@@ -3,6 +3,6 @@
 
 #include <stddef.h>
 
-void reconstruct(float *marker, float *mask, ptrdiff_t nrows, ptrdiff_t ncols);
+void reconstruct(float *marker, float *mask, ptrdiff_t dims[2]);
 
 #endif  // TOPOTOOLBOX_MORPHOLOGY_RECONSTRUCT_H

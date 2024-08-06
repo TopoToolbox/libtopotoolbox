@@ -60,6 +60,17 @@ jobs:
             c_compiler: cl
     steps:
       - uses: actions/checkout@v4
+      - name: Install ninja on windows
+        uses: seanmiddleditch/gha-setup-ninja@master
+        if: matrix.os == 'windows-latest'
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        if: matrix.os == 'windows-latest'
+      - name: Set environment variables on Windows
+        if: matrix.os == 'windows-latest'
+        run: |
+          echo "CMAKE_GENERATOR=Ninja" >> "$env:GITHUB_ENV" &&
+          echo "CMAKE_CONFIGURATION_TYPES=Release" >> "$env:GITHUB_ENV"
       - name: Configure static library
         run: >
           cmake -B ${{github.workspace}}/build/static
@@ -68,6 +79,8 @@ jobs:
           -DCMAKE_CXX_COMPILER=${{matrix.cpp_compiler}}
           -DTT_BUILD_TESTS=ON
           -DBUILD_SHARED_LIBS=OFF
+          --profiling-format=google-trace
+          --profiling-output ${{matrix.os}}_${{matrix.c_compiler}}_config_profile.json
       - name: Build static library
         run: cmake --build ${{github.workspace}}/build/static --config Release
       - name: Test static library
@@ -83,3 +96,8 @@ jobs:
           -DTT_SANITIZE=OFF
       - name: Build shared library
         run: cmake --build ${{github.workspace}}/build/shared --config Release
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{matrix.os}}_${{matrix.c_compiler}}_cmake_profiles
+          path: ${{matrix.os}}_${{matrix.c_compiler}}_config_profile.json

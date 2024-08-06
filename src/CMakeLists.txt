@@ -11,6 +11,8 @@ add_library(topotoolbox
   graphflood/priority_flood_standalone.c
   graphflood/gf_flowacc.c
   graphflood/graphflood.c
+  flow_routing.c
+  flow_accumulation.c
 )
 
 target_include_directories(
