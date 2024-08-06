@@ -6,6 +6,11 @@ add_library(topotoolbox
   morphology/reconstruct.c
   priority_queue.c
   excesstopography.c
+  graphflood/gf_utils.c
+  graphflood/sfgraph.c
+  graphflood/priority_flood_standalone.c
+  graphflood/gf_flowacc.c
+  graphflood/graphflood.c
   flow_routing.c
   flow_accumulation.c
 )
