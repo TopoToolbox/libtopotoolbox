@@ -69,7 +69,7 @@ void compute_sfgraph(float* topo, GF_UINT* Sreceivers,
       float SD = 0.;
 
       // for all the neighbours ...
-      for (GF_UINT n = 0; n < N_neighbour(D8); ++n) {
+      for (uint8_t n = 0; n < N_neighbour(D8); ++n) {
         // Checking if the neighbour belongs to the grid
         if (check_bound_neighbour(node, n, dim, BCs, D8) == false) {
           continue;
@@ -167,7 +167,7 @@ void compute_sfgraph_priority_flood(float* topo, GF_UINT* Sreceivers,
   // PitQueue is a FIFO data structure to fill pits without having to use the
   // more expensive priority queue
   PitQueue pit;
-  pitqueue_init(&pit, nxy(dim));
+  pitqueue_init(&pit, (int) nxy(dim));
 
   // The priority queue data structure (keeps stuff sorted)
   PFPQueue open;
@@ -227,7 +227,7 @@ void compute_sfgraph_priority_flood(float* topo, GF_UINT* Sreceivers,
     float SD = 0.;
 
     // for all the neighbours ...
-    for (GF_UINT n = 0; n < N_neighbour(D8); ++n) {
+    for (uint8_t n = 0; n < N_neighbour(D8); ++n) {
       // Checking if the neighbour belongs to the grid
       if (check_bound_neighbour(node, n, dim, BCs, D8) == false) {
         continue;
@@ -264,9 +264,9 @@ void compute_sfgraph_priority_flood(float* topo, GF_UINT* Sreceivers,
         // I raise its elevation if is in pit
         // nextafter maskes sure I pick the next floating point data
         // corresponding to the current precision
-        if (topo[nnode] <= nextafter(topo[node], FLT_MAX)) {
+        if (topo[nnode] <= nextafter((GF_FLOAT) topo[node], (GF_FLOAT) FLT_MAX)) {
           // raise
-          topo[nnode] = nextafter(topo[node], FLT_MAX);
+          topo[nnode] = nextafter((GF_FLOAT) topo[node], (GF_FLOAT) FLT_MAX);
           // put in pit queue
           pitqueue_enqueue(&pit, nnode);
           // Affect current node as neighbours Sreceiver
@@ -294,19 +294,19 @@ void compute_sfgraph_priority_flood(float* topo, GF_UINT* Sreceivers,
 
   // Back calculating the number of steepest receivers and inverting the
   // receivers
-  for (GF_UINT node = 0; node < dim[0] * dim[1]; ++node) {
-    if (node != (GF_UINT)Sreceivers[node]) {
-      Sdonors[Sreceivers[node] * N_neighbour(D8) + NSdonors[Sreceivers[node]]] =
-          node;
-      ++NSdonors[Sreceivers[node]];
+  for (GF_UINT tnode = 0; tnode < dim[0] * dim[1]; ++tnode) {
+    if (tnode != (GF_UINT)Sreceivers[tnode]) {
+      Sdonors[Sreceivers[tnode] * N_neighbour(D8) + NSdonors[Sreceivers[tnode]]] =
+          tnode;
+      ++NSdonors[Sreceivers[tnode]];
     }
   }
 
   // Finally calculating Braun and Willett 2013
   GF_UINT istack = 0;
-  for (GF_UINT node = 0; node < dim[0] * dim[1]; ++node) {
-    if (node == (GF_UINT)Sreceivers[node]) {
-      recursive_stack(node, Sdonors, Stack, NSdonors, &istack, D8);
+  for (GF_UINT tnode = 0; tnode < dim[0] * dim[1]; ++tnode) {
+    if (tnode == (GF_UINT)Sreceivers[tnode]) {
+      recursive_stack(tnode, Sdonors, Stack, NSdonors, &istack, D8);
     }
   }
 }

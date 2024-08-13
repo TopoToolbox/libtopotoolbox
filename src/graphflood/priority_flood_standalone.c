@@ -39,7 +39,7 @@ void compute_priority_flood(float* topo, uint8_t* BCs, GF_UINT* dim, bool D8) {
   // PitQueue is a FIFO data structure to fill pits without having to use the
   // more expensive priority queue
   PitQueue pit;
-  pitqueue_init(&pit, nxy(dim));
+  pitqueue_init(&pit, (int) nxy(dim));
 
   // The priority queue data structure (keeps stuff sorted)
   PFPQueue open;
@@ -83,7 +83,7 @@ void compute_priority_flood(float* topo, uint8_t* BCs, GF_UINT* dim, bool D8) {
     }
 
     // for all the neighbours ...
-    for (GF_UINT n = 0; n < N_neighbour(D8); ++n) {
+    for (uint8_t n = 0; n < N_neighbour(D8); ++n) {
       // Checking if the neighbour belongs to the grid
       if (check_bound_neighbour(node, n, dim, BCs, D8) == false) {
         continue;
@@ -103,9 +103,9 @@ void compute_priority_flood(float* topo, uint8_t* BCs, GF_UINT* dim, bool D8) {
         // I raise its elevation if is in pit
         // nextafter maskes sure I pick the next floating point data
         // corresponding to the current precision
-        if (topo[nnode] <= nextafter(topo[node], FLT_MAX)) {
+        if (topo[nnode] <= nextafter( (GF_FLOAT) topo[node], (GF_FLOAT) FLT_MAX)) {
           // raise
-          topo[nnode] = nextafter(topo[node], FLT_MAX);
+          topo[nnode] = nextafter( (GF_FLOAT) topo[node], (GF_FLOAT) FLT_MAX);
           // put in pit queue
           pitqueue_enqueue(&pit, nnode);
           // Affect current node as neighbours Sreceiver
@@ -184,7 +184,7 @@ void compute_priority_flood_plus_topological_ordering(float* topo,
     ++istack;
 
     // for all the neighbours ...
-    for (GF_UINT n = 0; n < N_neighbour(D8); ++n) {
+    for (uint8_t n = 0; n < N_neighbour(D8); ++n) {
       // Checking if the neighbour belongs to the grid
       if (check_bound_neighbour(node, n, dim, BCs, D8) == false) {
         continue;
@@ -204,9 +204,9 @@ void compute_priority_flood_plus_topological_ordering(float* topo,
         // I raise its elevation if is in pit
         // nextafter maskes sure I pick the next floating point data
         // corresponding to the current precision
-        if (topo[nnode] <= nextafter(topo[node], FLT_MAX) + 1e-4) {
+        if (topo[nnode] <= nextafter((GF_FLOAT) topo[node], (GF_FLOAT) FLT_MAX) + 1e-4) {
           // raise
-          topo[nnode] = nextafter(topo[node], FLT_MAX) + 1e-4;
+          topo[nnode] = nextafter((GF_FLOAT) topo[node], (GF_FLOAT) FLT_MAX) + 1e-4;
           // put in pqueue
           pfpq_push(&open, nnode, topo[nnode]);
           // Affect current node as neighbours Sreceiver

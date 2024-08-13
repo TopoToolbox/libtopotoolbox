@@ -69,7 +69,7 @@ void _graphflood_full_sfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs,
       // Calculating the Volumetric discharge based on Manning's friction
       // equation
       GF_FLOAT tQwout = distToReceivers[node] / manning[node] *
-                        pow(Zw[node] - Z[node], 5. / 3.) * sqrt(tSw);
+                        (GF_FLOAT)pow(Zw[node] - Z[node], 5. / 3.) * sqrt(tSw);
 
       // Applying the divergence
       Zw[node] =
@@ -103,7 +103,7 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs,
   (D8 == false) ? generate_offsetdx_D4(offdx, dx)
                 : generate_offsetdx_D8(offdx, dx);
 
-  GF_FLOAT dxy = sqrt(2) * dx;
+  GF_FLOAT dxy = (GF_FLOAT) sqrt(2) * dx;
   GF_FLOAT cell_area = dx * dx;
 
   // Creating an array of Zw (hydraulic surface = Z + hw)
@@ -149,7 +149,7 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs,
 
       // Now calculating the gradients: local, steepest and weighted
       GF_FLOAT sumslope = 0., maxslope = 0., dxmaxdir = dx;
-      for (GF_UINT n = 0; n < N_neighbour(D8); ++n) {
+      for (uint8_t n = 0; n < N_neighbour(D8); ++n) {
         // Checking if the neighbour belongs to the grid
         if (check_bound_neighbour(node, n, dim, BCs, D8) == false) {
           weights[n] = 0;
@@ -164,7 +164,7 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs,
           continue;
         }
 
-        GF_FLOAT tSw = max_float(1e-4, (Zw[node] - Zw[nnode]) / offdx[n]);
+        GF_FLOAT tSw = max_float((GF_FLOAT)1e-4, (Zw[node] - Zw[nnode]) / offdx[n]);
 
         weights[n] = tSw * ((dx == offdx[n] || D8 == false) ? dx : dxy);
 
@@ -193,7 +193,7 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs,
       // Calculating the Volumetric discharge based on Manning's friction
       // equation
       GF_FLOAT tQwout = dxmaxdir / manning[node] *
-                        pow(Zw[node] - Z[node], 5. / 3.) * sqrt(maxslope);
+                        (GF_FLOAT)pow(Zw[node] - Z[node], 5. / 3.) * sqrt(maxslope);
 
       // if(Qwin[node] > 0){
       // 	printf("%f\n", Qwin[node]);
