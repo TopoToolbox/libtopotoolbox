@@ -74,7 +74,7 @@ PriorityQueue pq_create(ptrdiff_t max_size, ptrdiff_t *heap, ptrdiff_t *back,
 
   if (flag) {
     q.count = max_size;
-    pq_deletemin(&q);
+    build_heap(&q);
   }
 
   return q;
