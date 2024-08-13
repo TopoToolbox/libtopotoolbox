@@ -208,11 +208,11 @@ void compute_priority_flood_plus_topological_ordering(float* topo,
         // corresponding to the current precision
         if (topo[nnode] <=
             (GF_FLOAT)(nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX) +
-                            1e-4)) {
+                       1e-4)) {
           // raise
           topo[nnode] =
               (GF_FLOAT)(nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX) +
-                            1e-4);
+                         1e-4);
           // put in pqueue
           pfpq_push(&open, nnode, topo[nnode]);
           // Affect current node as neighbours Sreceiver
