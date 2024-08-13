@@ -264,9 +264,11 @@ void compute_sfgraph_priority_flood(float* topo, GF_UINT* Sreceivers,
         // I raise its elevation if is in pit
         // nextafter maskes sure I pick the next floating point data
         // corresponding to the current precision
-        if (topo[nnode] <= nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX)) {
+        if (topo[nnode] <=
+            (GF_FLOAT)nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX)) {
           // raise
-          topo[nnode] = nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX);
+          topo[nnode] =
+              (GF_FLOAT)nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX);
           // put in pit queue
           pitqueue_enqueue(&pit, nnode);
           // Affect current node as neighbours Sreceiver

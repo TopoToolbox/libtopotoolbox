@@ -68,8 +68,9 @@ void _graphflood_full_sfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs,
 
       // Calculating the Volumetric discharge based on Manning's friction
       // equation
-      GF_FLOAT tQwout = distToReceivers[node] / manning[node] *
-                        (GF_FLOAT)pow(Zw[node] - Z[node], 5. / 3.) * sqrt(tSw);
+      GF_FLOAT tQwout =
+          (GF_FLOAT)(distToReceivers[node] / manning[node] *
+                     pow(Zw[node] - Z[node], 5. / 3.) * sqrt(tSw));
 
       // Applying the divergence
       Zw[node] =
@@ -177,7 +178,7 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs,
       }
 
       // Transferring the flux
-      GF_FLOAT sumtransfer = 0.;
+      // GF_FLOAT sumtransfer = 0.; // DEBUG to keep
       if (sumslope > 0) {
         for (GF_UINT n = 0; n < N_neighbour(D8); ++n) {
           if (weights[n] == 0) continue;
@@ -193,9 +194,9 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs,
 
       // Calculating the Volumetric discharge based on Manning's friction
       // equation
-      GF_FLOAT tQwout = dxmaxdir / manning[node] *
-                        (GF_FLOAT)pow(Zw[node] - Z[node], 5. / 3.) *
-                        sqrt(maxslope);
+      GF_FLOAT tQwout =
+          (GF_FLOAT)(dxmaxdir / manning[node] *
+                     pow(Zw[node] - Z[node], 5. / 3.) * sqrt(maxslope));
 
       // if(Qwin[node] > 0){
       // 	printf("%f\n", Qwin[node]);

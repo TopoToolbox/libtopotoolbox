@@ -103,9 +103,11 @@ void compute_priority_flood(float* topo, uint8_t* BCs, GF_UINT* dim, bool D8) {
         // I raise its elevation if is in pit
         // nextafter maskes sure I pick the next floating point data
         // corresponding to the current precision
-        if (topo[nnode] <= nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX)) {
+        if (topo[nnode] <=
+            (GF_FLOAT)nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX)) {
           // raise
-          topo[nnode] = nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX);
+          topo[nnode] =
+              (GF_FLOAT)nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX);
           // put in pit queue
           pitqueue_enqueue(&pit, nnode);
           // Affect current node as neighbours Sreceiver
@@ -205,10 +207,12 @@ void compute_priority_flood_plus_topological_ordering(float* topo,
         // nextafter maskes sure I pick the next floating point data
         // corresponding to the current precision
         if (topo[nnode] <=
-            nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX) + 1e-4) {
+            (GF_FLOAT)nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX) +
+                1e-4) {
           // raise
           topo[nnode] =
-              nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX) + 1e-4;
+              (GF_FLOAT)nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX) +
+              1e-4;
           // put in pqueue
           pfpq_push(&open, nnode, topo[nnode]);
           // Affect current node as neighbours Sreceiver
