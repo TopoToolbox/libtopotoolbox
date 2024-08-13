@@ -78,7 +78,7 @@ Row major representation
 | |3| |
 */
 void generate_offsetdx_D8(GF_FLOAT* off, GF_FLOAT dx) {
-  GF_FLOAT diag = (GF_FLOAT) sqrt(2) * dx;
+  GF_FLOAT diag = (GF_FLOAT)sqrt(2) * dx;
   // creating a generic array to assign to the pointer
   off[0] = diag;
   off[1] = dx;
@@ -96,10 +96,10 @@ D4 version.
 */
 void generate_offset_D4_flat(GF_INT* off, GF_UINT* dim) {
   // creating a generic array to assign to the pointer
-  off[0] = - (GF_INT) dim[1];
+  off[0] = -(GF_INT)dim[1];
   off[1] = -1;
   off[2] = 1;
-  off[3] = (GF_INT) dim[1];
+  off[3] = (GF_INT)dim[1];
 }
 
 /*
@@ -108,9 +108,9 @@ D8 version.
 */
 void generate_offset_D8_flat(GF_INT* off, GF_UINT* dim) {
   // creating a generic array to assign to the pointer
-  off[0] = - (GF_INT) dim[1] - 1;
-  off[1] = - (GF_INT) dim[1] + 0;
-  off[2] = - (GF_INT) dim[1] + 1;
+  off[0] = -(GF_INT)dim[1] - 1;
+  off[1] = -(GF_INT)dim[1] + 0;
+  off[2] = -(GF_INT)dim[1] + 1;
   off[3] = -1;
   off[4] = 1;
   off[5] = dim[1] - 1;

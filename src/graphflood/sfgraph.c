@@ -167,7 +167,7 @@ void compute_sfgraph_priority_flood(float* topo, GF_UINT* Sreceivers,
   // PitQueue is a FIFO data structure to fill pits without having to use the
   // more expensive priority queue
   PitQueue pit;
-  pitqueue_init(&pit, (int) nxy(dim));
+  pitqueue_init(&pit, (int)nxy(dim));
 
   // The priority queue data structure (keeps stuff sorted)
   PFPQueue open;
@@ -264,9 +264,9 @@ void compute_sfgraph_priority_flood(float* topo, GF_UINT* Sreceivers,
         // I raise its elevation if is in pit
         // nextafter maskes sure I pick the next floating point data
         // corresponding to the current precision
-        if (topo[nnode] <= nextafter((GF_FLOAT) topo[node], (GF_FLOAT) FLT_MAX)) {
+        if (topo[nnode] <= nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX)) {
           // raise
-          topo[nnode] = nextafter((GF_FLOAT) topo[node], (GF_FLOAT) FLT_MAX);
+          topo[nnode] = nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX);
           // put in pit queue
           pitqueue_enqueue(&pit, nnode);
           // Affect current node as neighbours Sreceiver
@@ -296,8 +296,8 @@ void compute_sfgraph_priority_flood(float* topo, GF_UINT* Sreceivers,
   // receivers
   for (GF_UINT tnode = 0; tnode < dim[0] * dim[1]; ++tnode) {
     if (tnode != (GF_UINT)Sreceivers[tnode]) {
-      Sdonors[Sreceivers[tnode] * N_neighbour(D8) + NSdonors[Sreceivers[tnode]]] =
-          tnode;
+      Sdonors[Sreceivers[tnode] * N_neighbour(D8) +
+              NSdonors[Sreceivers[tnode]]] = tnode;
       ++NSdonors[Sreceivers[tnode]];
     }
   }
