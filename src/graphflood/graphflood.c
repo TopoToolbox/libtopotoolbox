@@ -91,7 +91,7 @@ void _graphflood_full_sfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 }
 
 
-void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Precipitations, GF_FLOAT* manning, GF_UINT* dim, GF_FLOAT dt, GF_FLOAT dx, bool SFD, bool D8, int N_iterations){
+void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Precipitations, GF_FLOAT* manning, GF_UINT* dim, GF_FLOAT dt, GF_FLOAT dx, bool SFD, bool D8, GF_UINT N_iterations){
 
 	
 	// Initialising the offset for neighbouring operations
@@ -230,7 +230,7 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 	See topotoolbox.h for full instructions
 */
 TOPOTOOLBOX_API
-void graphflood_full(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Precipitations, GF_FLOAT* manning, GF_UINT* dim, GF_FLOAT dt, GF_FLOAT dx, bool SFD, bool D8, int N_iterations) {
+void graphflood_full(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Precipitations, GF_FLOAT* manning, GF_UINT* dim, GF_FLOAT dt, GF_FLOAT dx, bool SFD, bool D8, GF_UINT N_iterations) {
 
 	// Runs the single flow version of the algorithm
 	if(SFD)

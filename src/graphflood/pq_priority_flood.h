@@ -23,6 +23,7 @@ typedef struct {
 
 // Initialize the priority queue with a given capacity
 static inline bool pfpq_init(PFPQueue* pq, GF_UINT capacity) {
+	// This line tries to suppress warnings about potentially uninitialised varibles in the struct
 	memset(pq, 0, sizeof(*pq));
 	pq->data = (PFElement*)malloc(capacity * sizeof(PFElement));
 	if (pq->data == NULL) {
