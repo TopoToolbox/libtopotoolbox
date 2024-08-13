@@ -203,14 +203,14 @@ uint8_t has 256 possibilities so there is plenty of space for more options
 I know BCs is not used so far here but that's future proof for periodic conditions or other edge cases
 */
 void check_bound(GF_UINT node, GF_UINT* dim, uint8_t* BCs, bool* valid ){
-	if(node < 0 || node >= dim[0] * dim[1])
+	if(node >= dim[0] * dim[1])
 		*valid = false;
 }
 
 void check_top_customs(GF_UINT node, uint8_t n, GF_UINT* dim, uint8_t* BCs, bool* valid, bool D8){
 
 	// Checking if the node is on the first row and trying to target above
-	if (node < dim[1] && node >=0) {
+	if (node < dim[1]) {
 		if( (D8 && n < 3) || (D8 == false && n == 0))
 			*valid = false;
 	}

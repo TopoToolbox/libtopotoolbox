@@ -24,7 +24,7 @@ inline float min_float(float a, float b) {
 /*
 Internal function running graphflood in its full vanilla version in single flow direction
 */
-void _graphflood_full_sfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Precipitations, GF_FLOAT* manning, GF_UINT* dim, GF_FLOAT dt, GF_FLOAT dx, bool SFD, bool D8, int N_iterations){
+void _graphflood_full_sfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Precipitations, GF_FLOAT* manning, GF_UINT* dim, GF_FLOAT dt, GF_FLOAT dx, bool SFD, bool D8, GF_UINT N_iterations){
 
 	// Creating an array of Zw (hydraulic surface = Z + hw)
 	GF_FLOAT* Zw = (GF_FLOAT*)malloc(sizeof(GF_FLOAT) * nxy(dim));
@@ -189,9 +189,11 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Pre
 				}
 			}
 
-			if(abs(sumtransfer - 1.) > 0.01 && can_out(node,BCs) == false){
-				printf("HAPPENS - %f\n",abs(sumtransfer - 1.));
-			}
+
+			// DEBUG STATEMENT: to keep so far even if commented. Will remove when ok.
+			// if(fabs(sumtransfer - 1.) > 0.01 && can_out(node,BCs) == false){
+			// 	printf("HAPPENS - %f\n",abs(sumtransfer - 1.));
+			// }
 
 
 			// Calculating the Volumetric discharge based on Manning's friction equation

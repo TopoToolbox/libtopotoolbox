@@ -493,7 +493,7 @@ void compute_weighted_drainage_area_single_flow(GF_FLOAT* output, GF_FLOAT* weig
 	@param[in]     SFD: single flow direction if True, multiple flow if false
 */
 TOPOTOOLBOX_API
-void graphflood_full(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Precipitations, GF_FLOAT* manning, GF_UINT* dim, GF_FLOAT dt, GF_FLOAT dx, bool SFD, bool D8, int N_iterations);
+void graphflood_full(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs, GF_FLOAT* Precipitations, GF_FLOAT* manning, GF_UINT* dim, GF_FLOAT dt, GF_FLOAT dx, bool SFD, bool D8, GF_UINT N_iterations);
 
 
 #endif  // TOPOTOOLBOX_H

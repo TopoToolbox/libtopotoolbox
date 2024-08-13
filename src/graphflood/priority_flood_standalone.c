@@ -187,8 +187,7 @@ void compute_priority_flood_plus_topological_ordering(float* topo, GF_UINT* stac
 	// Here we go: Starting the main process
 	// Processing stops once all the nodes - nodata have been visited once (i.e. pit fifo and PQ empty)
 	GF_UINT node;
-
-	GF_FLOAT current_elev = pfpq_top_priority(&open);
+	GF_FLOAT current_elev;
 	while(pfpq_empty(&open) == false){
 
 		// printf("DEBUG::A3\n");

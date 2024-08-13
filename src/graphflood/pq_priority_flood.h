@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include "graphflood/define_types.h"
 
@@ -22,6 +23,7 @@ typedef struct {
 
 // Initialize the priority queue with a given capacity
 static inline bool pfpq_init(PFPQueue* pq, GF_UINT capacity) {
+	memset(pq, 0, sizeof(*pq));
 	pq->data = (PFElement*)malloc(capacity * sizeof(PFElement));
 	if (pq->data == NULL) {
 		return false;  // Allocation failed
