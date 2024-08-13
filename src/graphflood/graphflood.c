@@ -183,7 +183,7 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs,
         for (GF_UINT n = 0; n < N_neighbour(D8); ++n) {
           if (weights[n] == 0) continue;
           Qwin[node + offset[n]] += weights[n] / sumslope * Qwin[node];
-          sumtransfer += weights[n] / sumslope;
+          // sumtransfer += weights[n] / sumslope;
         }
       }
 
