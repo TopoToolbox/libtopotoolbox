@@ -56,6 +56,8 @@ html_static_path = ['_static']
 html_logo = 'logo.png'
 
 html_theme_options = {
+    "repository_url": "https://github.com/TopoToolbox/libtopotoolbox",
+    "use_repository_button": True,
 }
 
 # Breathe configuration

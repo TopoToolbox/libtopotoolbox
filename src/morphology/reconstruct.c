@@ -1,7 +1,47 @@
 #include "reconstruct.h"
 
+#include <assert.h>
+#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
+
+// FIFO circular queue implementation
+//
+// The queue can hold a maximum of length - 1 elements.
+typedef struct {
+  ptrdiff_t *buffer;
+  ptrdiff_t length;
+  ptrdiff_t head;
+  ptrdiff_t tail;
+} PixelQueue;
+
+// Add v to the queue.
+// Returns 1 if successful, 0 if the queue is full.
+int32_t enqueue(PixelQueue *q, ptrdiff_t v) {
+  int32_t res = 0;
+  ptrdiff_t next = (q->tail + 1) % q->length;
+  if (next != q->head) {
+    // Queue is not full
+    q->buffer[q->tail] = v;
+    q->tail = next;
+    res = 1;
+  }
+  return res;
+}
+
+// Remove and return the first element of the queue.
+//
+// Returns a pointer to that element or NULL if the queue is empty.
+ptrdiff_t *dequeue(PixelQueue *q) {
+  ptrdiff_t *p = 0;
+  if (q->head == q->tail) {
+    // Queue is empty
+    return p;
+  }
+  p = &q->buffer[q->head];
+  q->head = (q->head + 1) % q->length;
+  return p;
+}
 
 /*
   Perform a partial reconstruction by scanning in the forward
@@ -88,7 +128,8 @@ ptrdiff_t forward_scan(float *marker, float *mask, ptrdiff_t dims[2]) {
   The new marker pixel value is constrained to lie below the
   corresponding pixel in `mask`.
  */
-ptrdiff_t backward_scan(float *marker, float *mask, ptrdiff_t dims[2]) {
+ptrdiff_t backward_scan(float *marker, PixelQueue *queue, float *mask,
+                        ptrdiff_t dims[2]) {
   // Offsets for the four neighbors
   ptrdiff_t j_offset[4] = {1, 1, 1, 0};
   ptrdiff_t i_offset[4] = {-1, 0, 1, 1};
@@ -127,9 +168,79 @@ ptrdiff_t backward_scan(float *marker, float *mask, ptrdiff_t dims[2]) {
         count++;
         marker[p] = z;
       }
+
+      if (queue) {
+        // Scan the neighborhood again to check if the pixel should be
+        // added to the queue
+        for (ptrdiff_t neighbor = 0; neighbor < 4; neighbor++) {
+          ptrdiff_t neighbor_i = i + i_offset[neighbor];
+          ptrdiff_t neighbor_j = j + j_offset[neighbor];
+          ptrdiff_t q = neighbor_j * dims[0] + neighbor_i;
+
+          // Skip pixels outside the boundary
+          if (neighbor_i < 0 || neighbor_i >= dims[0] || neighbor_j < 0 ||
+              neighbor_j >= dims[1]) {
+            continue;
+          }
+
+          if (marker[q] < marker[p] && marker[q] < mask[q]) {
+            if (enqueue(queue, p) == 0) {
+              // In hybrid mode, we don't need to count the changes:
+              // Instead, we use the return value to signal if we need
+              // to repeat the scan because the queue filled up.
+              return -1;
+            };
+          }
+        }
+      }
     }
   }
   return count;
+}
+
+/*
+  Propagates changes via a breadth-first search of image.
+ */
+int32_t propagate(float *marker, PixelQueue *queue, float *mask,
+                  ptrdiff_t dims[2]) {
+  int32_t repeat_flag = 0;
+
+  ptrdiff_t j_offset[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
+  ptrdiff_t i_offset[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
+
+  // p will be NULL if the queue is empty
+  ptrdiff_t *p = dequeue(queue);
+  while (p) {
+    ptrdiff_t i = (*p) % dims[0];
+    ptrdiff_t j = (*p) / dims[0];
+    float pz = marker[*p];
+
+    for (ptrdiff_t neighbor = 0; neighbor < 8; neighbor++) {
+      ptrdiff_t neighbor_i = i + i_offset[neighbor];
+      ptrdiff_t neighbor_j = j + j_offset[neighbor];
+      ptrdiff_t q = neighbor_j * dims[0] + neighbor_i;
+
+      if (neighbor_i < 0 || neighbor_i >= dims[0] || neighbor_j < 0 ||
+          neighbor_j >= dims[1]) {
+        continue;
+      }
+
+      if ((marker[q] < pz) && (mask[q] != marker[q])) {
+        // Update the neighbor only if it meets the above criteria
+        marker[q] = fminf(pz, mask[q]);
+
+        if (enqueue(queue, q) == 0) {
+          // If enqueuing a pixel fails because the queue is full, set
+          // the repeat flag and skip this pixel.
+          repeat_flag = 1;
+        }
+      }
+    }
+
+    p = dequeue(queue);
+  }
+
+  return repeat_flag;
 }
 
 /*
@@ -160,6 +271,32 @@ void reconstruct(float *marker, float *mask, ptrdiff_t dims[2]) {
   for (int32_t iteration = 0; iteration < max_iterations && n > 0;
        iteration++) {
     n = forward_scan(marker, mask, dims);
-    n += backward_scan(marker, mask, dims);
+    n += backward_scan(marker, NULL, mask, dims);
   }
+}
+
+/*
+  Grayscale reconstruction using the hybrid algorithm of Vincent(1993).
+
+  Requires a ptrdiff_t array of the same size as the marker and mask
+  arrays for use as the backing store of a PixelQueue. The PixelQueue
+  can only store dims[0]*dims[1] - 1 pixels. In the unlikely event
+  that it fills up, either during the `backward_scan` step or the
+  `propagate` step, the `repeat` flag is set, and the process is
+  repeated to ensure that the algorithm converges.
+ */
+void reconstruct_hybrid(float *marker, ptrdiff_t *queue, float *mask,
+                        ptrdiff_t dims[2]) {
+  PixelQueue q = {0};
+  q.buffer = queue;
+  q.length = dims[0] * dims[1];
+
+  int32_t repeat = 0;
+  do {
+    forward_scan(marker, mask, dims);
+    // Backward scan returns -1 if the queue fills up, in which case
+    // we need to repeat the scan.
+    repeat |= (backward_scan(marker, &q, mask, dims) == -1);
+    repeat |= propagate(marker, &q, mask, dims);
+  } while (repeat);
 }

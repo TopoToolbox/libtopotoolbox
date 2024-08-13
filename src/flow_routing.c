@@ -215,3 +215,26 @@ void flow_routing_d8_carve(ptrdiff_t *source, uint8_t *direction, float *dem,
     }
   }
 }
+
+TOPOTOOLBOX_API
+void flow_routing_targets(ptrdiff_t *target, ptrdiff_t *source,
+                          uint8_t *direction, ptrdiff_t dims[2]) {
+  ptrdiff_t offsets[8] = {dims[0],  dims[0] + 1,  1,  -dims[0] + 1,
+                          -dims[0], -dims[0] - 1, -1, dims[0] - 1};
+
+  for (ptrdiff_t j = 0; j < dims[1]; j++) {
+    for (ptrdiff_t i = 0; i < dims[0]; i++) {
+      ptrdiff_t node = source[j * dims[0] + i];
+
+      uint8_t flowdir = direction[node];
+
+      uint8_t v = flowdir;
+      uint8_t r = 0;
+      while (v >>= 1) {
+        r++;
+      }
+
+      target[j * dims[0] + i] = node + offsets[r];
+    }
+  }
+}
