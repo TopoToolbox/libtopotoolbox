@@ -29,7 +29,7 @@ typedef struct {
 // Function to initialize the queue with a given capacity
 static inline bool pitqueue_init(PitQueue* q, int capacity) {
 
-    memset(q, 0, sizeof(*pq));
+    memset(q, 0, sizeof(*q));
     q->buffer = (GF_UINT*)malloc(capacity * sizeof(GF_UINT));
     if (q->buffer == NULL) {
         return false;  // Allocation failed
