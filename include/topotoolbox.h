@@ -819,7 +819,6 @@ void compute_drainage_area_single_flow(GF_FLOAT *output, GF_UINT *Sreceivers,
 TOPOTOOLBOX_API
 void gradient8(float *output, float *dem, float cellsize, int use_mp,
                ptrdiff_t dims[2]);
-// TODO: Finish documentation
 /**
    @brief Compute  the gradient for each cell in the provided DEM array.
    The gradient is calculated as the maximum slope between the cell and its
