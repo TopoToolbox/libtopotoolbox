@@ -559,8 +559,8 @@ int32_t random_dem_test(ptrdiff_t dims[2], uint32_t seed) {
   gwdt(dist, prev, costs, flats, heap, back, dims);
   test_gwdt(dist, prev, costs, flats, dims);
 
-  gradient8(gradient, dem, cellsize, 't', 0, dims);
-  gradient8(gradient_mp, dem, cellsize, 't', 1, dims);
+  gradient8(gradient, dem, cellsize, 0, dims);
+  gradient8(gradient_mp, dem, cellsize, 1, dims);
   test_gradient8(gradient, dem, cellsize, dims);
   test_gradient8_mp(gradient, gradient_mp, dims);
 

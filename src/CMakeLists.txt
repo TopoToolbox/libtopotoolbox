@@ -50,6 +50,7 @@ endif()
 
 find_package(OpenMP)
 if (OpenMP_C_FOUND)
+  target_compile_options(topotoolbox PUBLIC -DTOPOTOOLBOX_OPENMP_VERSION=${OpenMP_C_VERSION_MAJOR}${OpenMP_C_VERSION_MINOR})
   target_link_libraries(topotoolbox PUBLIC OpenMP::OpenMP_C)
 endif()
 

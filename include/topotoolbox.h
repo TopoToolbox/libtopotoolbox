@@ -27,6 +27,10 @@
 #define TOPOTOOLBOX_VERSION_MINOR 0
 #define TOPOTOOLBOX_VERSION_PATCH 0
 
+#ifndef TOPOTOOLBOX_OPENMP_VERSION
+#define TOPOTOOLBOX_OPENMP_VERSION 0
+#endif
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -813,7 +817,7 @@ void compute_drainage_area_single_flow(GF_FLOAT *output, GF_UINT *Sreceivers,
    @param[in]  dx: spatial step
 */
 TOPOTOOLBOX_API
-void gradient8(float *output, float *dem, float cellsize, char unit, int use_mp,
+void gradient8(float *output, float *dem, float cellsize, int use_mp,
                ptrdiff_t dims[2]);
 // TODO: Finish documentation
 /**
@@ -828,9 +832,6 @@ void gradient8(float *output, float *dem, float cellsize, char unit, int use_mp,
    1D array. This array represents the elevation values of each cell.
    @param[in]  cellsize: The spatial resolution of the DEM (i.e., the size of
    each cell).
-   @param[in]  unit: Specifies the unit of the output gradient values.
-                     't' for tangent, 'r' for radian, 'd' for degree, 's' for
-   sine, and 'p' for percent.
    @param[in]  use_mp: If set to 1, enables parallel processing using OpenMP.
                        If set to 0, the function runs on a single thread.
    @param[in]  dims: An array specifying the dimensions of the DEM.
