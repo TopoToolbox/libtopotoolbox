@@ -428,10 +428,20 @@ int32_t test_routeflowd8_tsort(uint8_t *marks, ptrdiff_t *source,
   return 0;
 }
 
-int32_t test_flowaccumulation_max(float *acc, ptrdiff_t dims[2]) {
+int32_t test_flow_accumulation_max(float *acc, ptrdiff_t dims[2]) {
   for (ptrdiff_t j = 0; j < dims[1]; j++) {
     for (ptrdiff_t i = 0; i < dims[0]; i++) {
       assert(acc[j * dims[0] + i] < (dims[0] * dims[1]));
+    }
+  }
+  return 0;
+}
+
+int32_t test_flow_accumulation_multimethod(float *acc1, float *acc2,
+                                           ptrdiff_t dims[2]) {
+  for (ptrdiff_t j = 0; j < dims[1]; j++) {
+    for (ptrdiff_t i = 0; i < dims[0]; i++) {
+      assert(acc1[j * dims[0] + i] == acc2[j * dims[0] + i]);
     }
   }
   return 0;
@@ -534,12 +544,20 @@ int32_t random_dem_test(ptrdiff_t dims[2], uint32_t seed) {
   float *accum = new float[dims[0] * dims[1]]();
   assert(accum != NULL);
 
+  float *accum2 = new float[dims[0] * dims[1]]();
+  assert(accum != NULL);
+
+  float *fraction = new float[dims[0] * dims[1]]();
+  assert(fraction != NULL);
+
   ptrdiff_t *target = new ptrdiff_t[dims[0] * dims[1]];
   assert(target != NULL);
 
   for (uint32_t col = 0; col < dims[1]; col++) {
     for (uint32_t row = 0; row < dims[0]; row++) {
       dem[col * dims[0] + row] = 100.0f * pcg4d(row, col, seed, 1);
+
+      fraction[col * dims[0] + row] = 1.0f;
     }
   }
 
@@ -579,11 +597,15 @@ int32_t random_dem_test(ptrdiff_t dims[2], uint32_t seed) {
   test_routeflowd8_direction(direction, filled_dem, dist, flats, dims);
   test_routeflowd8_tsort(marks, source, direction, dims);
 
-  flow_accumulation(accum, source, direction, NULL, dims);
-  test_flowaccumulation_max(accum, dims);
-
   flow_routing_targets(target, source, direction, dims);
   test_flow_routing_targets(target, source, direction, dims);
+
+  flow_accumulation(accum, source, direction, NULL, dims);
+  test_flow_accumulation_max(accum, dims);
+
+  flow_accumulation_edgelist(accum2, source, target, fraction, NULL,
+                             dims[0] * dims[1], dims);
+  test_flow_accumulation_multimethod(accum, accum2, dims);
 
   delete[] dem;
   delete[] filled_dem;
@@ -599,6 +621,8 @@ int32_t random_dem_test(ptrdiff_t dims[2], uint32_t seed) {
   delete[] direction;
   delete[] marks;
   delete[] accum;
+  delete[] accum2;
+  delete[] fraction;
   delete[] target;
   delete[] gradient;
   delete[] gradient_mp;

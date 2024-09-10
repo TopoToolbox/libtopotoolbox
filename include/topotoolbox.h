@@ -710,6 +710,65 @@ TOPOTOOLBOX_API
 void flow_accumulation(float *acc, ptrdiff_t *source, uint8_t *direction,
                        float *weights, ptrdiff_t dims[2]);
 
+/**
+   @brief Compute flow accumulation based on a weighted edge list
+
+   Accumulates flow by summing contributing areas along flow paths.
+
+   @param[out] acc The computed flow accumulation
+   @parblock
+   A pointer to a `float` array of size `dims[0]` x `dims[1]`
+   @endparblock
+
+   @param[in] source The source pixel for each edge
+   @parblock
+   A pointer to a `ptrdiff_t` array of size `edge_count`
+
+   The source pixels must be in a topological order.
+   @endparblock
+
+   @param[in] direction The target pixel for each edge
+   @parblock
+   A pointer to a `ptrdiff_t` array of size `edge_count`
+   @endparblock
+
+   @param[in] fraction The fraction of flow transported along each edge
+   @parblock
+   A pointer to a `float` array of size `edge_count`
+
+   The fraction for each edge should be a value between zero and one,
+   and the fractions for every edge with the same source pixel should
+   sum to one.
+   @endparblock
+
+   @param[in] weights Initial water depths
+   @parblock
+   A pointer to a `float` array of size `dims[0]` x `dims[1]`
+
+   The initial weights can be used to represent spatially variable
+   precipitation.
+
+   If a null pointer is passed, a default weight of 1.0 for every
+   pixel is used. In this case the resulting flow accumulation is the
+   upstream area in number of pixels.
+   @endparblock
+
+   @param[in] edge_count The number of edges in the edge list
+
+   @param[in] dims The dimensions of the arrays
+   @parblock
+   A pointer to a `ptrdiff_t` array of size 2
+
+   The fastest changing dimension should be provided first. For column-major
+   arrays, `dims = {nrows,ncols}`. For row-major arrays, `dims = {ncols,nrows}`.
+   @endparblock
+ */
+TOPOTOOLBOX_API
+void flow_accumulation_edgelist(float *acc, ptrdiff_t *source,
+                                ptrdiff_t *target, float *fraction,
+                                float *weights, ptrdiff_t edge_count,
+                                ptrdiff_t dims[2]);
+
 #include "graphflood/define_types.h"
 
 /**
