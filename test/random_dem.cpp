@@ -495,63 +495,45 @@ int32_t random_dem_test(ptrdiff_t dims[2], uint32_t seed) {
 
   // Input DEM
   float *dem = new float[dims[0] * dims[1]];
-  assert(dem != NULL);
 
   // Output for fillsinks
   float *filled_dem = new float[dims[0] * dims[1]];
-  assert(filled_dem != NULL);
 
   ptrdiff_t *queue = new ptrdiff_t[dims[0] * dims[1]];
-  assert(queue != NULL);
 
   // Output for identifyflats
   int32_t *flats = new int32_t[dims[0] * dims[1]];
-  assert(flats != NULL);
 
   // Outputs for compute_costs
   ptrdiff_t *conncomps = new ptrdiff_t[dims[0] * dims[1]];
-  assert(conncomps != NULL);
   float *costs = new float[dims[0] * dims[1]];
-  assert(costs != NULL);
 
   // Outputs and intermediate needs for gwdt
   float *dist = new float[dims[0] * dims[1]];
-  assert(dist != NULL);
   ptrdiff_t *heap = new ptrdiff_t[dims[0] * dims[1]];
-  assert(heap != NULL);
   ptrdiff_t *back = new ptrdiff_t[dims[0] * dims[1]];
-  assert(back != NULL);
   ptrdiff_t *prev = new ptrdiff_t[dims[0] * dims[1]];
-  assert(prev != NULL);
 
   // Outputs for gradient8
   float *gradient = new float[dims[0] * dims[1]];
-  assert(gradient != NULL);
   float *gradient_mp = new float[dims[0] * dims[1]];
-  assert(gradient_mp != NULL);
   float cellsize = 10.0;
 
   // Outputs for routeflowd8
   ptrdiff_t *source = new ptrdiff_t[dims[0] * dims[1]];
-  assert(source != NULL);
   uint8_t *direction = new uint8_t[dims[0] * dims[1]];
-  assert(direction != NULL);
+
   // marks is only used for testing
   uint8_t *marks =
       new uint8_t[dims[0] * dims[1]]();  // Initialize marks to zero
-  assert(marks != NULL);
 
   float *accum = new float[dims[0] * dims[1]]();
-  assert(accum != NULL);
 
   float *accum2 = new float[dims[0] * dims[1]]();
-  assert(accum != NULL);
 
   float *fraction = new float[dims[0] * dims[1]]();
-  assert(fraction != NULL);
 
   ptrdiff_t *target = new ptrdiff_t[dims[0] * dims[1]];
-  assert(target != NULL);
 
   for (uint32_t col = 0; col < dims[1]; col++) {
     for (uint32_t row = 0; row < dims[0]; row++) {
