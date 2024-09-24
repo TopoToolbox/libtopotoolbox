@@ -938,5 +938,5 @@ TOPOTOOLBOX_API
 void graphflood_full(GF_FLOAT *Z, GF_FLOAT *hw, uint8_t *BCs,
                      GF_FLOAT *Precipitations, GF_FLOAT *manning, GF_UINT *dim,
                      GF_FLOAT dt, GF_FLOAT dx, bool SFD, bool D8,
-                     GF_UINT N_iterations);
+                     GF_UINT N_iterations, GF_FLOAT step);
 #endif  // TOPOTOOLBOX_H
