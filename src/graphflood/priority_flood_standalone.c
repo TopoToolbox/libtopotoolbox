@@ -26,7 +26,7 @@ LSS: runs priority floods (Barnes 2014) + epsilon on a topogrpahy
 Fills it in place, and take into D8/D4 topology and custom boundary conditions
 */
 TOPOTOOLBOX_API
-void compute_priority_flood(float* topo, uint8_t* BCs, GF_UINT* dim, bool D8) {
+void compute_priority_flood(GF_FLOAT* topo, uint8_t* BCs, GF_UINT* dim, bool D8, GF_FLOAT step) {
   // Initialising the offset for neighbouring operations
   GF_INT offset[8];
   (D8 == false) ? generate_offset_D4_flat(offset, dim)
@@ -104,10 +104,10 @@ void compute_priority_flood(float* topo, uint8_t* BCs, GF_UINT* dim, bool D8) {
         // nextafter maskes sure I pick the next floating point data
         // corresponding to the current precision
         if (topo[nnode] <=
-            (GF_FLOAT)nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX)) {
+            (GF_FLOAT)nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX)) + step {
           // raise
           topo[nnode] =
-              (GF_FLOAT)nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX);
+              (GF_FLOAT)nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX) + step;
           // put in pit queue
           pitqueue_enqueue(&pit, nnode);
           // Affect current node as neighbours Sreceiver
@@ -134,10 +134,12 @@ pit (no fifo queue) By experience the slowing down factor is small for most
 cases ( low amount of depressions, ~10% max slow down)
 */
 TOPOTOOLBOX_API
-void compute_priority_flood_plus_topological_ordering(float* topo,
+void compute_priority_flood_plus_topological_ordering(GF_FLOAT* topo,
                                                       GF_UINT* stack,
                                                       uint8_t* BCs,
-                                                      GF_UINT* dim, bool D8) {
+                                                      GF_UINT* dim, 
+                                                      bool D8,
+                                                      GF_FLOAT step) {
   // Initialising the offset for neighbouring operations
   GF_INT offset[8];
   (D8 == false) ? generate_offset_D4_flat(offset, dim)
@@ -208,11 +210,11 @@ void compute_priority_flood_plus_topological_ordering(float* topo,
         // corresponding to the current precision
         if (topo[nnode] <=
             (GF_FLOAT)(nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX) +
-                       1e-4)) {
+                       step)) {
           // raise
           topo[nnode] =
               (GF_FLOAT)(nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX) +
-                         1e-4);
+                         step);
           // put in pqueue
           pfpq_push(&open, nnode, topo[nnode]);
           // Affect current node as neighbours Sreceiver
