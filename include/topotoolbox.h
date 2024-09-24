@@ -846,11 +846,12 @@ void compute_sfgraph_priority_flood(GF_FLOAT *topo, GF_UINT *Sreceivers,
    @param[in]     dim: [rows,columns] if row major and [columns, rows] if
    column major
    @param[in]     D8: true for topology including cardinals + diagonals,
-   @param[in]     step: delta_Z to apply minimum elevation increase and avoid flats,
-   false for cardinals only
+   @param[in]     step: delta_Z to apply minimum elevation increase and avoid
+   flats, false for cardinals only
 */
 TOPOTOOLBOX_API
-void compute_priority_flood(GF_FLOAT *topo, uint8_t *BCs, GF_UINT *dim, bool D8, GF_FLOAT step);
+void compute_priority_flood(GF_FLOAT *topo, uint8_t *BCs, GF_UINT *dim, bool D8,
+                            GF_FLOAT step);
 
 /**
    @brief Fills the depressions in place in the topography using Priority
@@ -866,8 +867,8 @@ void compute_priority_flood(GF_FLOAT *topo, uint8_t *BCs, GF_UINT *dim, bool D8,
    @param[in]     dim: [rows,columns] if row major and [columns, rows] if
    column major
    @param[in]     D8: true for topology including cardinals + diagonals,
-   @param[in]     step: delta_Z to apply minimum elevation increase and avoid flats,
-   false for cardinals only
+   @param[in]     step: delta_Z to apply minimum elevation increase and avoid
+   flats, false for cardinals only
 */
 TOPOTOOLBOX_API
 void compute_priority_flood_plus_topological_ordering(GF_FLOAT *topo,
