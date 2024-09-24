@@ -942,4 +942,34 @@ void graphflood_full(GF_FLOAT *Z, GF_FLOAT *hw, uint8_t *BCs,
                      GF_FLOAT *Precipitations, GF_FLOAT *manning, GF_UINT *dim,
                      GF_FLOAT dt, GF_FLOAT dx, bool SFD, bool D8,
                      GF_UINT N_iterations, GF_FLOAT step);
+/**
+   @brief Label drainage basins based on the flow directions provided
+   by a topologically sorted edge list.
+
+   @param[out] basins The drainage basin label
+   @parblock
+   A pointer to a `ptrdiff_t` array of size `dims[0]` x `dims[1]`
+   @endparblock
+
+   @param[out] source The source pixel for each edge
+   @parblock
+   A pointer to a `ptrdiff_t` array of size `dims[0]` x `dims[1]`
+   @endparblock
+
+   @param[in] target The target pixel for each edge
+   @parblock
+   A pointer to a `ptrdiff_t` array of size `dims[0]` x `dims[1]`
+   @endparblock
+
+   @param[in] dims The dimensions of the arrays
+   @parblock
+   A pointer to a `ptrdiff_t` array of size 2
+
+   The fastest changing dimension should be provided first. For column-major
+   arrays, `dims = {nrows,ncols}`. For row-major arrays, `dims = {ncols,nrows}`.
+   @endparblock
+ */
+TOPOTOOLBOX_API
+void drainagebasins(ptrdiff_t *basins, ptrdiff_t *source, ptrdiff_t *target,
+                    ptrdiff_t dims[2]);
 #endif  // TOPOTOOLBOX_H

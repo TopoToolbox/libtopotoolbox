@@ -17,6 +17,7 @@ add_library(topotoolbox
   graphflood/graphflood.c
   flow_routing.c
   flow_accumulation.c
+  drainagebasins.c
 )
 
 # Define the include directory
