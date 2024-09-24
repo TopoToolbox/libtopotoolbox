@@ -21,7 +21,7 @@ direction
 void _graphflood_full_sfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs,
                           GF_FLOAT* Precipitations, GF_FLOAT* manning,
                           GF_UINT* dim, GF_FLOAT dt, GF_FLOAT dx, bool SFD,
-                          bool D8, GF_UINT N_iterations) {
+                          bool D8, GF_UINT N_iterations, GF_FLOAT step) {
 
 
   // Creating an array of Zw (hydraulic surface = Z + hw)
