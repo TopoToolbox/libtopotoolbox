@@ -146,7 +146,7 @@ void compute_sfgraph_priority_flood(float* topo, GF_UINT* Sreceivers,
                                     GF_FLOAT* distToReceivers, GF_UINT* Sdonors,
                                     uint8_t* NSdonors, GF_UINT* Stack,
                                     uint8_t* BCs, GF_UINT* dim, float dx,
-                                    bool D8) {
+                                    bool D8, GF_FLOAT step) {
   // Initialising the offset for neighbouring operations
   GF_INT offset[8];
   (D8 == false) ? generate_offset_D4_flat(offset, dim)
@@ -265,10 +265,10 @@ void compute_sfgraph_priority_flood(float* topo, GF_UINT* Sreceivers,
         // nextafter maskes sure I pick the next floating point data
         // corresponding to the current precision
         if (topo[nnode] <=
-            (GF_FLOAT)nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX)) {
+            (GF_FLOAT)nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX) + step) {
           // raise
           topo[nnode] =
-              (GF_FLOAT)nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX);
+              (GF_FLOAT)nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX) + step;
           // put in pit queue
           pitqueue_enqueue(&pit, nnode);
           // Affect current node as neighbours Sreceiver

@@ -834,7 +834,7 @@ void compute_sfgraph_priority_flood(GF_FLOAT *topo, GF_UINT *Sreceivers,
                                     GF_FLOAT *distToReceivers, GF_UINT *Sdonors,
                                     uint8_t *NSdonors, GF_UINT *Stack,
                                     uint8_t *BCs, GF_UINT *dim, GF_FLOAT dx,
-                                    bool D8);
+                                    bool D8, GF_FLOAT step);
 
 /**
    @brief Fills the depressions in place in the topography using Priority
