@@ -22,8 +22,6 @@ void _graphflood_full_sfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs,
                           GF_FLOAT* Precipitations, GF_FLOAT* manning,
                           GF_UINT* dim, GF_FLOAT dt, GF_FLOAT dx, bool SFD,
                           bool D8, GF_UINT N_iterations, GF_FLOAT step) {
-
-
   // Creating an array of Zw (hydraulic surface = Z + hw)
   GF_FLOAT* Zw = (GF_FLOAT*)malloc(sizeof(GF_FLOAT) * nxy(dim));
   for (GF_UINT i = 0; i < nxy(dim); ++i) Zw[i] = Z[i] + hw[i];
@@ -127,7 +125,8 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs,
 
   for (GF_UINT iteration = 0; iteration < N_iterations; ++iteration) {
     // First priority flooding and calculating stack
-    compute_priority_flood_plus_topological_ordering(Zw, Stack, BCs, dim, D8, step);
+    compute_priority_flood_plus_topological_ordering(Zw, Stack, BCs, dim, D8,
+                                                     step);
 
     // reintialising Qw
     for (GF_UINT i = 0; i < nxy(dim); ++i) {
