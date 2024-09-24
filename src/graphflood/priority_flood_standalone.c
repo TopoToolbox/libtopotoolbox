@@ -104,7 +104,7 @@ void compute_priority_flood(GF_FLOAT* topo, uint8_t* BCs, GF_UINT* dim, bool D8,
         // nextafter maskes sure I pick the next floating point data
         // corresponding to the current precision
         if (topo[nnode] <=
-            (GF_FLOAT)nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX)) + step {
+            (GF_FLOAT)nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX) + step) {
           // raise
           topo[nnode] =
               (GF_FLOAT)nextafter((GF_FLOAT)topo[node], (GF_FLOAT)FLT_MAX) + step;
