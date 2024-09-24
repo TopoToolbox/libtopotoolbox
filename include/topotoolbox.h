@@ -934,6 +934,8 @@ void compute_weighted_drainage_area_single_flow(GF_FLOAT *output,
    @param[in]     D8: true for topology including cardinals + diagonals,
    false for cardinals only
    @param[in]     N_iterations: number of iterations of the flooding algorithm
+   @param[in]     step: delta_Z to apply minimum elevation increase and avoid
+   flats, false for cardinals only
 */
 TOPOTOOLBOX_API
 void graphflood_full(GF_FLOAT *Z, GF_FLOAT *hw, uint8_t *BCs,
