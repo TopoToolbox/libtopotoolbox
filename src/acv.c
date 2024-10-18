@@ -10,17 +10,31 @@
 
 #include "topotoolbox.h"
 
-/**
- * output: zeros like dem
- * dz_avg: zeros like dem
- * acv: zeros like dem
- * dem: dem matrix with shape of dims[0] x dims[1]
- * dims: the dims
- */
+/*
+The anisotropic coefficient of variation (ACV) describes the general
+geometry of the local land surface and can be used to destinguish elongated 
+from oval land forms.
+
+output:   zeros like DEM
+dz_avg:   zeros like DEM
+acv:      zeros like DEm
+dem:      DEM matrix
+dims[2]:  dimensions of DEM
+
+TODO: how should references be added?
+
+References:
+    Olaya, V. 2009: Basic land-surface parameters. In: Geomorphometry. 
+    Concepts, Software, Applications, Hengl, T. & Reuter, H. I. (Eds.),
+    Elsevier, 33, 141-169.
+
+Original Author: Wolfgang Schwanghart (w.schwanghart[at]geo.uni-potsdam.de)
+
+*/
 
 TOPOTOOLBOX_API
 void acv(float *output, float *dz_avg, float *anisotropic_cov, float *dem,
-         ptrdiff_t dims[2]) {
+         int use_mp, ptrdiff_t dims[2]) {
   float filter_1[5][5] = {{1, 0, 1, 0, 1},
                           {0, 0, 0, 0, 0},
                           {1, 0, 0, 0, -1},
@@ -73,6 +87,7 @@ void acv(float *output, float *dz_avg, float *anisotropic_cov, float *dem,
   // on the results of previous filter applications. So the result for each
   // cell is not dependent on the result of any other cell.
   ptrdiff_t i;
+  #pragma omp parallel for if (use_mp)
   for (i = 0; i < dims[0]; i++) {
     for (ptrdiff_t j = 0; j < dims[1]; j++) {
       ptrdiff_t location = i * dims[1] + j;
