@@ -967,15 +967,40 @@ void graphflood_full(GF_FLOAT *Z, GF_FLOAT *hw, uint8_t *BCs,
                      GF_FLOAT dt, GF_FLOAT dx, bool SFD, bool D8,
                      GF_UINT N_iterations, GF_FLOAT step);
 
-
-TOPOTOOLBOX_API
-void acv();
 /**
- @brief
+ @brief The anisotropic coefficient of variation (ACV) describes the general
+ geometry of the local land surface and can be used to destinguish elongated 
+ from oval land forms.
 
- @param[out]
- @param[in]    padded_dem
- @param[in]    dims
+ @param[out]   output: The computed anisotropic of variation (ACV)
+ @parblock
+ A pointer to a `float` array of size `dims[0]` x `dims[1]`
+ @endparblock
+
+ @param[in]    dz_avg: Holds temporary values for computation
+ @parblock
+ A pointer to a `float` array of size `dims[0]` x `dims[1]`
+ @endparblock
+
+ @param[in]    anisotropic_cov: holds temporary values for computation
+ @parblock
+ A pointer to a `float` array of size `dims[0]` x `dims[1]`
+ @endparblock
+
+ @param[in]    dem: The input digital elevation model
+ @parblock
+ A pointer to a `float` array of size `dims[0]` x `dims[1]`
+ @endparblock
+
+
+ @param[in]    dims: The horizontal dimensions of the arrays
+ @parblock
+ A pointer to a `ptrdiff_t` array of size 2
+ @endparblock
+
 */
+TOPOTOOLBOX_API
+void acv(float *output, float *dz_avg, float *anisotropic_cov, float *dem,
+         int use_mp, ptrdiff_t dims[2]);
 
 #endif  // TOPOTOOLBOX_H
