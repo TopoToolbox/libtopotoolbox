@@ -21,64 +21,67 @@ acv:      zeros like DEm
 dem:      DEM matrix
 dims[2]:  dimensions of DEM
 
-TODO: how should references be added?
-
 References:
     Olaya, V. 2009: Basic land-surface parameters. In: Geomorphometry. 
     Concepts, Software, Applications, Hengl, T. & Reuter, H. I. (Eds.),
     Elsevier, 33, 141-169.
 
-Original Author: Wolfgang Schwanghart (w.schwanghart[at]geo.uni-potsdam.de)
+Author: 
+  Theophil Bringezu (theophil.bringezu[at]uni-potsdam.de)
+
+Original MATLAB version by:
+  Wolfgang Schwanghart (w.schwanghart[at]geo.uni-potsdam.de)
 
 */
 
 TOPOTOOLBOX_API
 void acv(float *output, float *dz_avg, float *anisotropic_cov, float *dem,
          int use_mp, ptrdiff_t dims[2]) {
+          
   float filter_1[5][5] = {{1, 0, 1, 0, 1},
                           {0, 0, 0, 0, 0},
                           {1, 0, 0, 0, -1},
                           {0, 0, 0, 0, 0},
                           {-1, 0, -1, 0, -1}};
 
-  float filter_2[4][5][5] = {{// filter 0
+  float filter_2[4][5][5] = {{// f_num 0
                               {0, 0, 0, 0, 0},
                               {0, 0, 0, 0, 0},
                               {1, 0, 0, 0, -1},
                               {0, 0, 0, 0, 0},
                               {0, 0, 0, 0, 0}},
-                             {// filter 1
+                             {// f_num 1
                               {1, 0, 0, 0, 0},
                               {0, 0, 0, 0, 0},
                               {0, 0, 0, 0, 0},
                               {0, 0, 0, 0, 0},
                               {0, 0, 0, 0, -1}},
-                             {// filter 2
+                             {// f_num 2
                               {0, 0, -1, 0, 0},
                               {0, 0, 0, 0, 0},
                               {0, 0, 0, 0, 0},
                               {0, 0, 0, 0, 0},
                               {0, 0, -1, 0, 0}},
-                             {// filter 3
+                             {// f_num 3
                               {0, 0, 0, 0, -1},
                               {0, 0, 0, 0, 0},
                               {0, 0, 0, 0, 0},
                               {0, 0, 0, 0, 0},
                               {1, 0, 0, 0, 0}}};
 
-  float filter_3[4][3][3] = {{// filter 0
+  float filter_3[4][3][3] = {{// f_num 0
                               {0, 0, 0},
                               {1, 0, -1},
                               {0, 0, 0}},
-                             {// filter 1
+                             {// f_num 1
                               {1, 0, 0},
                               {0, 0, 0},
                               {0, 0, -1}},
-                             {// filter 2
+                             {// f_num 2
                               {0, 1, 0},
                               {0, 0, 0},
                               {0, -1, 0}},
-                             {// filter 3
+                             {// f_num 3
                               {0, 0, 1},
                               {0, 0, 0},
                               {-1, 0, 0}}};
