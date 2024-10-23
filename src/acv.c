@@ -96,16 +96,15 @@ void acv(float *output, float *dz_avg, float *anisotropic_cov, float *dem,
       ptrdiff_t location = i * dims[1] + j;
       float sum = 0.0;
       printf("Processing pixel (i=%td, j=%td)\n", i, j);
-      // Filter 1 : Apply 5x5 filter, therefor starting at -2 and ending at 2
+      // Filter 1 : Apply 5x5 filter
       for (ptrdiff_t m = 0; m < 5; m++) {
         for (ptrdiff_t n = 0; n < 5; n++) {
           // TODO: ensure the right borders are checked here
           if (m + i -2< 0 || n + j-2 < 0 || m + i-2 >= dims[0] || n + j -2>= dims[1]) {
-            //printf("m+i=%f, n+j=%f", m+i, n+j);
             continue;
           }
           sum += filter_1[m][n] * dem[(i + m-2) * dims[1] + (j + n-2)];
-          printf("[%td][%td] -> %f\n",i+m, j+n, sum);
+          printf("[%td][%td] +%f -> %f\n",i+m, j+n, filter_1[m][n] * dem[(i + m-2) * dims[1] + (j + n-2)],sum);
         }
       }
       // dz_AVG  = conv2(dem,k,'valid')/4;
@@ -115,14 +114,14 @@ void acv(float *output, float *dz_avg, float *anisotropic_cov, float *dem,
       // Filter 2 : Apply all four 5x5 filters, 'f_num' to index filters
       for (ptrdiff_t f_num = 0; f_num < 4; f_num++) {
         // starting at '-2' and ending at '2' since it's a 5x5 filter
-        for (ptrdiff_t m = -2; m <= 2; m++) {
-          for (ptrdiff_t n = -2; n <= 2; n++) {
+        for (ptrdiff_t m = 0; m < 5; m++) {
+          for (ptrdiff_t n = 0; n < 5; n++) {
             // TODO: ensure the right borders are checked here
-            if (m + i < 0 || n + j < 0 || m + i >= dims[0] ||
-                n + j >= dims[1]) {
+            if (m + i-2 < 0 || n + j-2 < 0 || m + i -2>= dims[0] ||
+                n + j-2 >= dims[1]) {
               continue;
             }
-            sum += filter_2[f_num][m][n] * dem[(i + m) * dims[1] + (j + n)];
+            sum += filter_2[f_num][m][n] * dem[(i + m-2) * dims[1] + (j + n-2)];
           }
         }
         // ACV = ACV + (conv2(dem,F{r},'valid') - dz_AVG).^2;
@@ -132,16 +131,15 @@ void acv(float *output, float *dz_avg, float *anisotropic_cov, float *dem,
       // Filter 3 : Apply all four 3x3 filters, 'f_num' to index filters
       for (ptrdiff_t f_num = 0; f_num < 4; f_num++) {
         sum = 0.0;
-        // starting at '-1' and ending at '1' since it's a 3x3 filter
-        for (ptrdiff_t m = -1; m <= 1; m++) {
-          for (ptrdiff_t n = -1; n <= 1; n++) {
+        for (ptrdiff_t m = 0; m < 3; m++) {
+          for (ptrdiff_t n = 0; n < 3; n++) {
             // TODO: ensure the right borders are checked here
-            if (m + i < 0 || n + j < 0 || m + i >= dims[0] ||
-                n + j >= dims[1]) {
+            if (m + i -1 < 0 || n + j -1 < 0 || m + i-1 >= dims[0] ||
+                n + j-1 >= dims[1]) {
               continue;  // Skip out-of-bound pixels (same as += 0)
             }
-            sum += filter_3[f_num][m + 1][n + 1] *
-                   dem[(i + m) * dims[1] + (j + n)];
+            sum += filter_3[f_num][m][n] *
+                   dem[(i + m-1) * dims[1] + (j + n-1)];
           }
         }
         // Sum up the results of each filter layer
