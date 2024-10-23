@@ -103,6 +103,9 @@ void acv(float *output, float *dz_avg, float *anisotropic_cov, float *dem,
           if (m + i -2< 0 || n + j-2 < 0 || m + i-2 >= dims[0] || n + j -2>= dims[1]) {
             continue;
           }
+          if (filter_1[m][n] == 0){
+            continue;
+          }
           sum += filter_1[m][n] * dem[(i + m-2) * dims[1] + (j + n-2)];
           printf("[%td][%td] +%f -> %f\n",i+m, j+n, filter_1[m][n] * dem[(i + m-2) * dims[1] + (j + n-2)],sum);
         }
@@ -121,7 +124,11 @@ void acv(float *output, float *dz_avg, float *anisotropic_cov, float *dem,
                 n + j-2 >= dims[1]) {
               continue;
             }
+            if (filter_2[m][n] == 0){
+            continue;
+            }
             sum += filter_2[f_num][m][n] * dem[(i + m-2) * dims[1] + (j + n-2)];
+            printf("[%td][%td] +%f -> %f\n",i+m, j+n, filter_2[f_num][m][n] * dem[(i + m-2) * dims[1] + (j + n-2)],sum);
           }
         }
         // ACV = ACV + (conv2(dem,F{r},'valid') - dz_AVG).^2;
@@ -138,8 +145,12 @@ void acv(float *output, float *dz_avg, float *anisotropic_cov, float *dem,
                 n + j-1 >= dims[1]) {
               continue;  // Skip out-of-bound pixels (same as += 0)
             }
+            if (filter_3[m][n] == 0){
+            continue;
+            }
             sum += filter_3[f_num][m][n] *
                    dem[(i + m-1) * dims[1] + (j + n-1)];
+            printf("[%td][%td] +%f -> %f\n",i+m, j+n, filter_3[f_num][m][n] * dem[(i + m-2) * dims[1] + (j + n-2)],sum);
           }
         }
         // Sum up the results of each filter layer
