@@ -101,10 +101,11 @@ void acv(float *output, float *dz_avg, float *anisotropic_cov, float *dem,
         for (ptrdiff_t n = -2; n <= 2; n++) {
           // TODO: ensure the right borders are checked here
           if (m + i < 0 || n + j < 0 || m + i >= dims[0] || n + j >= dims[1]) {
-            printf("m+i=%f, n+j=%f", m+i, n+j);
+            //printf("m+i=%f, n+j=%f", m+i, n+j);
             continue;
           }
           sum += filter_1[m][n] * dem[(i + m) * dims[1] + (j + n)];
+          printf("[%td][%td] -> %f\n",i+m, j+n, sum);
         }
       }
       // dz_AVG  = conv2(dem,k,'valid')/4;
