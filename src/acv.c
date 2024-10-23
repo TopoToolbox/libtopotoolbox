@@ -116,7 +116,6 @@ void acv(float *output, float *dz_avg, float *anisotropic_cov, float *dem,
 
       // Filter 2 : Apply all four 5x5 filters, 'f_num' to index filters
       for (ptrdiff_t f_num = 0; f_num < 4; f_num++) {
-        // starting at '-2' and ending at '2' since it's a 5x5 filter
         for (ptrdiff_t m = 0; m < 5; m++) {
           for (ptrdiff_t n = 0; n < 5; n++) {
             // TODO: ensure the right borders are checked here
@@ -124,7 +123,7 @@ void acv(float *output, float *dz_avg, float *anisotropic_cov, float *dem,
                 n + j-2 >= dims[1]) {
               continue;
             }
-            if (filter_2[m][n] == 0){
+            if (filter_2[f_num][m][n] == 0){
             continue;
             }
             sum += filter_2[f_num][m][n] * dem[(i + m-2) * dims[1] + (j + n-2)];
@@ -145,7 +144,7 @@ void acv(float *output, float *dz_avg, float *anisotropic_cov, float *dem,
                 n + j-1 >= dims[1]) {
               continue;  // Skip out-of-bound pixels (same as += 0)
             }
-            if (filter_3[m][n] == 0){
+            if (filter_3[f_num][m][n] == 0){
             continue;
             }
             sum += filter_3[f_num][m][n] *
