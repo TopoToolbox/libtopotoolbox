@@ -97,14 +97,14 @@ void acv(float *output, float *dz_avg, float *anisotropic_cov, float *dem,
       float sum = 0.0;
       printf("Processing pixel (i=%td, j=%td)\n", i, j);
       // Filter 1 : Apply 5x5 filter, therefor starting at -2 and ending at 2
-      for (ptrdiff_t m = -2; m <= 2; m++) {
-        for (ptrdiff_t n = -2; n <= 2; n++) {
+      for (ptrdiff_t m = 0; m < 5; m++) {
+        for (ptrdiff_t n = 0; n < 5; n++) {
           // TODO: ensure the right borders are checked here
-          if (m + i < 0 || n + j < 0 || m + i >= dims[0] || n + j >= dims[1]) {
+          if (m + i -2< 0 || n + j-2 < 0 || m + i-2 >= dims[0] || n + j -2>= dims[1]) {
             //printf("m+i=%f, n+j=%f", m+i, n+j);
             continue;
           }
-          sum += filter_1[m][n] * dem[(i + m) * dims[1] + (j + n)];
+          sum += filter_1[m][n] * dem[(i + m-2) * dims[1] + (j + n-2)];
           printf("[%td][%td] -> %f\n",i+m, j+n, sum);
         }
       }
