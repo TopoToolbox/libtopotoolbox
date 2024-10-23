@@ -116,6 +116,7 @@ void acv(float *output, float *dz_avg, float *anisotropic_cov, float *dem,
 
       // Filter 2 : Apply all four 5x5 filters, 'f_num' to index filters
       for (ptrdiff_t f_num = 0; f_num < 4; f_num++) {
+        sum = 0.0;
         for (ptrdiff_t m = 0; m < 5; m++) {
           for (ptrdiff_t n = 0; n < 5; n++) {
             // TODO: ensure the right borders are checked here
