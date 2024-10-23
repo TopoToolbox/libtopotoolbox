@@ -27,10 +27,10 @@ References:
     Elsevier, 33, 141-169.
 
 Author: 
-  Theophil Bringezu (theophil.bringezu[at]uni-potsdam.de)
+    Theophil Bringezu (theophil.bringezu[at]uni-potsdam.de)
 
 Original MATLAB version by:
-  Wolfgang Schwanghart (w.schwanghart[at]geo.uni-potsdam.de)
+    Wolfgang Schwanghart (w.schwanghart[at]geo.uni-potsdam.de)
 
 */
 
@@ -95,6 +95,7 @@ void acv(float *output, float *dz_avg, float *anisotropic_cov, float *dem,
     for (ptrdiff_t j = 0; j < dims[1]; j++) {
       ptrdiff_t location = i * dims[1] + j;
       float sum = 0.0;
+      printf("Processing pixel (i=%td, j=%td)\n", i, j);
       // Filter 1 : Apply 5x5 filter, therefor starting at -2 and ending at 2
       for (ptrdiff_t m = -2; m <= 2; m++) {
         for (ptrdiff_t n = -2; n <= 2; n++) {
@@ -107,6 +108,7 @@ void acv(float *output, float *dz_avg, float *anisotropic_cov, float *dem,
       }
       // dz_AVG  = conv2(dem,k,'valid')/4;
       dz_avg[location] = sum / 4;
+      printf("dz_avg[%td] = %f\n", location, dz_avg[location]);
 
       // Filter 2 : Apply all four 5x5 filters, 'f_num' to index filters
       for (ptrdiff_t f_num = 0; f_num < 4; f_num++) {
@@ -123,6 +125,7 @@ void acv(float *output, float *dz_avg, float *anisotropic_cov, float *dem,
         }
         // ACV = ACV + (conv2(dem,F{r},'valid') - dz_AVG).^2;
         anisotropic_cov[location] += pow(sum - dz_avg[location], 2.0f);
+        printf("After filter_2[%td], anisotropic_cov[%td] = %f\n", f_num, location, anisotropic_cov[location]);
       }
       // Filter 3 : Apply all four 3x3 filters, 'f_num' to index filters
       for (ptrdiff_t f_num = 0; f_num < 4; f_num++) {
@@ -142,6 +145,7 @@ void acv(float *output, float *dz_avg, float *anisotropic_cov, float *dem,
         // Sum up the results of each filter layer
         // ACV = ACV + (conv2(dem,F{r},'valid') - dz_AVG).^2;
         anisotropic_cov[location] += pow(sum - dz_avg[location], 2.0f);
+        printf("After filter_3[%td], anisotropic_cov[%td] = %f\n", f_num, location, anisotropic_cov[location]);
       }
 
       // dz_AVG = max(abs(dz_AVG),0.001);
@@ -150,10 +154,13 @@ void acv(float *output, float *dz_avg, float *anisotropic_cov, float *dem,
       } else {
         dz_avg[location] = 0.001f;
       }
+      printf("Final dz_avg[%td] = %f\n", location, dz_avg[location]);
+
 
       // C = log(1 + sqrt(ACV./8)./dz_AVG);
       output[location] = logf(1.0f + sqrtf(anisotropic_cov[location] / 8.0f) /
                                          dz_avg[location]);
+      printf("Final output[%td] = %f\n", location, output[location]);
     }
   }
 }
