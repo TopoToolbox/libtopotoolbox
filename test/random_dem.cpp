@@ -504,6 +504,30 @@ int32_t test_flow_routing_targets(ptrdiff_t *target, ptrdiff_t *source,
   return 0;
 }
 
+/*
+  A source pixel and its downstream neighbor should be part of the
+  same basin, which should have an index greater than 0.
+ */
+int32_t test_drainagebasins(ptrdiff_t *basins, ptrdiff_t *source,
+                            ptrdiff_t *target, ptrdiff_t dims[2]) {
+  for (ptrdiff_t j = 0; j < dims[1]; j++) {
+    for (ptrdiff_t i = 0; i < dims[0]; i++) {
+      ptrdiff_t src = source[j * dims[0] + i];
+      ptrdiff_t tgt = target[j * dims[0] + i];
+
+      assert(src < dims[0] * dims[1]);
+      assert(src >= 0);
+      assert(tgt < dims[0] * dims[1]);
+      if (tgt >= 0) {
+        // Only check connectivity if source has a downstream neighbor
+        assert(basins[src] == basins[tgt]);
+        assert(basins[src] > 0);
+      }
+    }
+  }
+  return 0;
+}
+
 struct FlowRoutingData {
   std::array<ptrdiff_t, 2> dims;
   float cellsize;
@@ -547,6 +571,8 @@ struct FlowRoutingData {
   std::vector<float> accum;
   std::vector<float> accum2;
 
+  std::vector<ptrdiff_t> basins;
+
   FlowRoutingData(ptrdiff_t input_dims[2], float cs, uint32_t seed)
       : dims({input_dims[0], input_dims[1]}),
         cellsize(cs),
@@ -569,7 +595,8 @@ struct FlowRoutingData {
         marks(dims[0] * dims[1]),
         target(dims[0] * dims[1]),
         accum(dims[0] * dims[1]),
-        accum2(dims[0] * dims[1]) {
+        accum2(dims[0] * dims[1]),
+        basins(dims[0] * dims[1]) {
     // Initialize DEM, boundary conditions for fillsinks and fraction
     for (uint32_t col = 0; col < dims[1]; col++) {
       for (uint32_t row = 0; row < dims[0]; row++) {
@@ -641,7 +668,6 @@ struct FlowRoutingData {
 
   void gradient8() {
     ProfileFunction(prof);
-
     tt::gradient8(gradient.data(), dem.data(), cellsize, 0, dims.data());
   }
 
@@ -649,6 +675,13 @@ struct FlowRoutingData {
     ProfileFunction(prof);
 
     tt::gradient8(gradient_mp.data(), dem.data(), cellsize, 1, dims.data());
+  }
+
+  void drainagebasins() {
+    ProfileFunction(prof);
+
+    tt::drainagebasins(basins.data(), source.data(), target.data(),
+                       dims.data());
   }
 
   void runtests(bool hybrid) {
@@ -682,6 +715,11 @@ struct FlowRoutingData {
 
     test_flow_routing_targets(target.data(), source.data(), direction.data(),
                               dims.data());
+
+    // Compute and test drainage basins
+    drainagebasins();
+    test_drainagebasins(basins.data(), source.data(), target.data(),
+                        dims.data());
 
     // route_flow and route_flow_hybrid only run the edgelist variant
     // of flow_accumulation, so we must run it explicitly.
