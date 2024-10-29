@@ -15,10 +15,8 @@ The anisotropic coefficient of variation (ACV) describes the general
 geometry of the local land surface and can be used to destinguish elongated
 from oval land forms.
 
-output:   zeros like DEM
-dz_avg:   zeros like DEM
-acv:      zeros like DEm
-dem:      DEM matrix
+output:   Empty (or filled with zeros), same shape as dem 
+dem:      DEM matrix, passed from python in order='C'
 dims[2]:  dimensions of DEM
 
 References:
@@ -36,17 +34,11 @@ Original MATLAB version by:
 
 TOPOTOOLBOX_API
 void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
-  /*float filter_1[5][5] = {{1, 0, 1, 0, 1},
+  float filter_1[5][5] = {{1, 0, 1, 0, 1},
                           {0, 0, 0, 0, 0},
                           {1, 0, 0, 0, -1},
                           {0, 0, 0, 0, 0},
-                          {-1, 0, -1, 0, -1}};*/
-
-  float filter_1[5][5] = {{1, 2, 3, 4, 5},
-                          {6, 7, 8, 9, 10},
-                          {11, 12, 13, 14, 15},
-                          {16, 17, 18, 19, 20},
-                          {21, 22, 23, 24, 25}};
+                          {-1, 0, -1, 0, -1}};
 
   float filter_2[4][5][5] = {{// f_num 0
                               {0, 0, 0, 0, 0},
@@ -98,7 +90,6 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
       float sum = 0.0;
       float dz_avg = 0.0;
       float anisotropic_cov = 0.0;
-      printf("DEM: i=%td, j=%td -> %f \n", i, j, dem[location]);
 
       // Filter 1 : Apply 5x5 filter
       for (ptrdiff_t m = 0; m < 5; m++) {
@@ -111,8 +102,6 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
             continue;
           }
           sum += filter_1[m][n] * dem[(i + m - 2) * dims[1] + (j + n - 2)];
-
-          printf("Filter: m=%td, n=%td -> %f | DEM[%td] -> %f\n", m, n, filter_1[m][n], (i + m - 2) * dims[1] + (j + n - 2), dem[(i + m - 2) * dims[1] + (j + n - 2)]);
         }
       }
       // dz_AVG  = conv2(dem,k,'valid')/4;
@@ -156,14 +145,8 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
         // ACV = ACV + (conv2(dem,F{r},'valid') - dz_AVG).^2;
         anisotropic_cov += pow(sum - dz_avg, 2.0f);
       }
-
-      // TODO: maybe use fmaxf() function
       // dz_AVG = max(abs(dz_AVG),0.001);
-      if (fabsf(dz_avg) > 0.001f) {
-        dz_avg = fabsf(dz_avg);
-      } else {
-        dz_avg = 0.001f;
-      }
+      dz_avg = fmaxf(0.001f, fabsf(dz_avg));
 
       // C = log(1 + sqrt(ACV./8)./dz_AVG);
       output[location] = logf(1.0f + sqrtf(anisotropic_cov / 8.0f) / dz_avg);
