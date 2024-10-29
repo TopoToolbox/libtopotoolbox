@@ -977,21 +977,10 @@ void graphflood_full(GF_FLOAT *Z, GF_FLOAT *hw, uint8_t *BCs,
  A pointer to a `float` array of size `dims[0]` x `dims[1]`
  @endparblock
 
- @param[in]    dz_avg: Holds temporary values for computation
- @parblock
- A pointer to a `float` array of size `dims[0]` x `dims[1]`
- @endparblock
-
- @param[in]    anisotropic_cov: holds temporary values for computation
- @parblock
- A pointer to a `float` array of size `dims[0]` x `dims[1]`
- @endparblock
-
  @param[in]    dem: The input digital elevation model
  @parblock
  A pointer to a `float` array of size `dims[0]` x `dims[1]`
  @endparblock
-
 
  @param[in]    dims: The horizontal dimensions of the arrays
  @parblock
@@ -1000,7 +989,6 @@ void graphflood_full(GF_FLOAT *Z, GF_FLOAT *hw, uint8_t *BCs,
 
 */
 TOPOTOOLBOX_API
-void acv(float *output, float *dz_avg, float *anisotropic_cov, float *dem,
-         int use_mp, ptrdiff_t dims[2]);
+void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]);
 
 #endif  // TOPOTOOLBOX_H
