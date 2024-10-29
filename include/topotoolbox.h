@@ -969,7 +969,7 @@ void graphflood_full(GF_FLOAT *Z, GF_FLOAT *hw, uint8_t *BCs,
 
 /**
  @brief The anisotropic coefficient of variation (ACV) describes the general
- geometry of the local land surface and can be used to destinguish elongated 
+ geometry of the local land surface and can be used to destinguish elongated
  from oval land forms.
 
  @param[out]   output: The computed anisotropic of variation (ACV)
@@ -981,6 +981,8 @@ void graphflood_full(GF_FLOAT *Z, GF_FLOAT *hw, uint8_t *BCs,
  @parblock
  A pointer to a `float` array of size `dims[0]` x `dims[1]`
  @endparblock
+
+ @param[in]    use_mp: If 1 then multiprocessing will be used to compute result
 
  @param[in]    dims: The horizontal dimensions of the arrays
  @parblock

@@ -15,8 +15,9 @@ The anisotropic coefficient of variation (ACV) describes the general
 geometry of the local land surface and can be used to destinguish elongated
 from oval land forms.
 
-output:   Empty (or filled with zeros), same shape as dem 
+output:   Empty (or filled with zeros), same shape as dem
 dem:      DEM matrix, passed from python in order='C'
+use_mp:   If 1 then multiprocessing will be used to compute result
 dims[2]:  dimensions of DEM
 
 References:
@@ -133,7 +134,7 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
           for (ptrdiff_t n = 0; n < 3; n++) {
             if (m + i - 1 < 0 || n + j - 1 < 0 || m + i - 1 >= dims[0] ||
                 n + j - 1 >= dims[1]) {
-              continue; 
+              continue;
             }
             if (filter_3[f_num][m][n] == 0) {
               continue;
