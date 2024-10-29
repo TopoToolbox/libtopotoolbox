@@ -98,7 +98,7 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
       float sum = 0.0;
       float dz_avg = 0.0;
       float anisotropic_cov = 0.0;
-      printf("Cell value: i=%td, j=%td -> %f \n", i, j, dem[location]);
+      printf("DEM: i=%td, j=%td -> %f \n", i, j, dem[location]);
 
       // Filter 1 : Apply 5x5 filter
       for (ptrdiff_t m = 0; m < 5; m++) {
@@ -112,7 +112,7 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
           }
           sum += filter_1[m][n] * dem[(i + m - 2) * dims[1] + (j + n - 2)];
 
-          printf("Filter value: m=%td, n=%td -> %f\n", m, n, filter_1[m][n]);
+          printf("Filter: m=%td, n=%td -> %f | DEM[%td] -> %f\n", m, n, filter_1[m][n], (i + m - 2) * dims[1] + (j + n - 2), dem[(i + m - 2) * dims[1] + (j + n - 2)]);
         }
       }
       // dz_AVG  = conv2(dem,k,'valid')/4;
@@ -132,10 +132,6 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
             }
             sum += filter_2[f_num][m][n] *
                    dem[(i + m - 2) * dims[1] + (j + n - 2)];
-            printf("[%td][%td] + %f -> sum: %f\n", i + m, j + n,
-                   filter_2[f_num][m][n] *
-                       dem[(i + m - 2) * dims[1] + (j + n - 2)],
-                   sum);
           }
         }
         // ACV = ACV + (conv2(dem,F{r},'valid') - dz_AVG).^2;
