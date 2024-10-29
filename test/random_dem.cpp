@@ -356,7 +356,7 @@ int32_t test_gradient8_mp(float *gradient, float *gradient_mp,
   
 */
 int32_t test_acv(){
-  return 0
+  return 0;
 }
 /*
   Flow direction should point downstream or across flats
