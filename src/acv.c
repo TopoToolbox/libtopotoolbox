@@ -112,7 +112,7 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
           }
           sum += filter_1[m][n] * dem[(i + m - 2) * dims[1] + (j + n - 2)];
 
-          printf("Filter value: m=%td, n=%td -> %f", m, n, filter_1[m][n]);
+          printf("Filter value: m=%td, n=%td -> %f\n", m, n, filter_1[m][n]);
         }
       }
       // dz_AVG  = conv2(dem,k,'valid')/4;
