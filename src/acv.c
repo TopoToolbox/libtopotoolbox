@@ -125,7 +125,7 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
           }
         }
         // ACV = ACV + (conv2(dem,F{r},'valid') - dz_AVG).^2;
-        anisotropic_cov += pow(sum - dz_avg, 2.0f);
+        anisotropic_cov += powf(sum - dz_avg, 2.0f);
       }
       // Filter 3 : Apply all four 3x3 filters, 'f_num' to index filters
       for (ptrdiff_t f_num = 0; f_num < 4; f_num++) {
@@ -144,7 +144,7 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
           }
         }
         // ACV = ACV + (conv2(dem,F{r},'valid') - dz_AVG).^2;
-        anisotropic_cov += pow(sum - dz_avg, 2.0f);
+        anisotropic_cov += powf(sum - dz_avg, 2.0f);
       }
       // dz_AVG = max(abs(dz_AVG),0.001);
       dz_avg = fmaxf(0.001f, fabsf(dz_avg));
