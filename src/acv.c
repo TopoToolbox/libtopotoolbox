@@ -12,7 +12,7 @@
 
 /*
 The anisotropic coefficient of variation (ACV) describes the general
-geometry of the local land surface and can be used to destinguish elongated 
+geometry of the local land surface and can be used to destinguish elongated
 from oval land forms.
 
 output:   zeros like DEM
@@ -22,11 +22,11 @@ dem:      DEM matrix
 dims[2]:  dimensions of DEM
 
 References:
-    Olaya, V. 2009: Basic land-surface parameters. In: Geomorphometry. 
+    Olaya, V. 2009: Basic land-surface parameters. In: Geomorphometry.
     Concepts, Software, Applications, Hengl, T. & Reuter, H. I. (Eds.),
     Elsevier, 33, 141-169.
 
-Author: 
+Author:
     Theophil Bringezu (theophil.bringezu[at]uni-potsdam.de)
 
 Original MATLAB version by:
@@ -35,14 +35,18 @@ Original MATLAB version by:
 */
 
 TOPOTOOLBOX_API
-void acv(float *output, float *dz_avg, float *anisotropic_cov, float *dem,
-         int use_mp, ptrdiff_t dims[2]) {
-          
-  float filter_1[5][5] = {{1, 0, 1, 0, 1},
+void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
+  /*float filter_1[5][5] = {{1, 0, 1, 0, 1},
                           {0, 0, 0, 0, 0},
                           {1, 0, 0, 0, -1},
                           {0, 0, 0, 0, 0},
-                          {-1, 0, -1, 0, -1}};
+                          {-1, 0, -1, 0, -1}};*/
+
+  float filter_1[5][5] = {{1, 2, 3, 4, 5},
+                          {6, 7, 8, 9, 10},
+                          {11, 12, 13, 14, 15},
+                          {16, 17, 18, 19, 20},
+                          {21, 22, 23, 24, 25}};
 
   float filter_2[4][5][5] = {{// f_num 0
                               {0, 0, 0, 0, 0},
@@ -86,92 +90,87 @@ void acv(float *output, float *dz_avg, float *anisotropic_cov, float *dem,
                               {0, 0, 0},
                               {-1, 0, 0}}};
 
-  // Loop through all pixels, the value of each pixel will be calculated based
-  // on the results of previous filter applications. So the result for each
-  // cell is not dependent on the result of any other cell.
   ptrdiff_t i;
-  #pragma omp parallel for if (use_mp)
+#pragma omp parallel for if (use_mp)
   for (i = 0; i < dims[0]; i++) {
     for (ptrdiff_t j = 0; j < dims[1]; j++) {
       ptrdiff_t location = i * dims[1] + j;
       float sum = 0.0;
-      printf("Processing pixel (i=%td, j=%td)\n", i, j);
+      float dz_avg = 0.0;
+      float anisotropic_cov = 0.0;
+      printf("Cell value: i=%td, j=%td -> %f \n", i, j, dem[location]);
+
       // Filter 1 : Apply 5x5 filter
       for (ptrdiff_t m = 0; m < 5; m++) {
         for (ptrdiff_t n = 0; n < 5; n++) {
-          // TODO: ensure the right borders are checked here
-          if (m + i -2< 0 || n + j-2 < 0 || m + i-2 >= dims[0] || n + j -2>= dims[1]) {
+          if (m + i - 2 < 0 || n + j - 2 < 0 || m + i - 2 >= dims[0] ||
+              n + j - 2 >= dims[1]) {
             continue;
           }
-          if (filter_1[m][n] == 0){
+          if (filter_1[m][n] == 0) {
             continue;
           }
-          sum += filter_1[m][n] * dem[(i + m-2) * dims[1] + (j + n-2)];
-          printf("[%td][%td] +%f -> %f\n",i+m, j+n, filter_1[m][n] * dem[(i + m-2) * dims[1] + (j + n-2)],sum);
+          sum += filter_1[m][n] * dem[(i + m - 2) * dims[1] + (j + n - 2)];
+
+          printf("Filter value: m=%td, n=%td -> %f", m, n, filter_1[m][n]);
         }
       }
       // dz_AVG  = conv2(dem,k,'valid')/4;
-      dz_avg[location] = sum / 4;
-      printf("dz_avg[%td] = %f\n", location, dz_avg[location]);
+      dz_avg = sum / 4;
 
       // Filter 2 : Apply all four 5x5 filters, 'f_num' to index filters
       for (ptrdiff_t f_num = 0; f_num < 4; f_num++) {
         sum = 0.0;
         for (ptrdiff_t m = 0; m < 5; m++) {
           for (ptrdiff_t n = 0; n < 5; n++) {
-            // TODO: ensure the right borders are checked here
-            if (m + i-2 < 0 || n + j-2 < 0 || m + i -2>= dims[0] ||
-                n + j-2 >= dims[1]) {
+            if (m + i - 2 < 0 || n + j - 2 < 0 || m + i - 2 >= dims[0] ||
+                n + j - 2 >= dims[1]) {
               continue;
             }
-            if (filter_2[f_num][m][n] == 0){
-            continue;
+            if (filter_2[f_num][m][n] == 0) {
+              continue;
             }
-            sum += filter_2[f_num][m][n] * dem[(i + m-2) * dims[1] + (j + n-2)];
-            printf("[%td][%td] +%f -> %f\n",i+m, j+n, filter_2[f_num][m][n] * dem[(i + m-2) * dims[1] + (j + n-2)],sum);
+            sum += filter_2[f_num][m][n] *
+                   dem[(i + m - 2) * dims[1] + (j + n - 2)];
+            printf("[%td][%td] + %f -> sum: %f\n", i + m, j + n,
+                   filter_2[f_num][m][n] *
+                       dem[(i + m - 2) * dims[1] + (j + n - 2)],
+                   sum);
           }
         }
         // ACV = ACV + (conv2(dem,F{r},'valid') - dz_AVG).^2;
-        anisotropic_cov[location] += pow(sum - dz_avg[location], 2.0f);
-        printf("After filter_2[%td], anisotropic_cov[%td] = %f\n", f_num, location, anisotropic_cov[location]);
+        anisotropic_cov += pow(sum - dz_avg, 2.0f);
       }
       // Filter 3 : Apply all four 3x3 filters, 'f_num' to index filters
       for (ptrdiff_t f_num = 0; f_num < 4; f_num++) {
         sum = 0.0;
         for (ptrdiff_t m = 0; m < 3; m++) {
           for (ptrdiff_t n = 0; n < 3; n++) {
-            // TODO: ensure the right borders are checked here
-            if (m + i -1 < 0 || n + j -1 < 0 || m + i-1 >= dims[0] ||
-                n + j-1 >= dims[1]) {
-              continue;  // Skip out-of-bound pixels (same as += 0)
+            if (m + i - 1 < 0 || n + j - 1 < 0 || m + i - 1 >= dims[0] ||
+                n + j - 1 >= dims[1]) {
+              continue; 
             }
-            if (filter_3[f_num][m][n] == 0){
-            continue;
+            if (filter_3[f_num][m][n] == 0) {
+              continue;
             }
             sum += filter_3[f_num][m][n] *
-                   dem[(i + m-1) * dims[1] + (j + n-1)];
-            printf("[%td][%td] +%f -> %f\n",i+m, j+n, filter_3[f_num][m][n] * dem[(i + m-2) * dims[1] + (j + n-2)],sum);
+                   dem[(i + m - 1) * dims[1] + (j + n - 1)];
           }
         }
-        // Sum up the results of each filter layer
         // ACV = ACV + (conv2(dem,F{r},'valid') - dz_AVG).^2;
-        anisotropic_cov[location] += pow(sum - dz_avg[location], 2.0f);
-        printf("After filter_3[%td], anisotropic_cov[%td] = %f\n", f_num, location, anisotropic_cov[location]);
+        anisotropic_cov += pow(sum - dz_avg, 2.0f);
       }
 
+      // TODO: maybe use fmaxf() function
       // dz_AVG = max(abs(dz_AVG),0.001);
-      if (fabsf(dz_avg[location]) > 0.001f) {
-        dz_avg[location] = fabsf(dz_avg[location]);
+      if (fabsf(dz_avg) > 0.001f) {
+        dz_avg = fabsf(dz_avg);
       } else {
-        dz_avg[location] = 0.001f;
+        dz_avg = 0.001f;
       }
-      printf("Final dz_avg[%td] = %f\n", location, dz_avg[location]);
-
 
       // C = log(1 + sqrt(ACV./8)./dz_AVG);
-      output[location] = logf(1.0f + sqrtf(anisotropic_cov[location] / 8.0f) /
-                                         dz_avg[location]);
-      printf("Final output[%td] = %f\n", location, output[location]);
+      output[location] = logf(1.0f + sqrtf(anisotropic_cov / 8.0f) / dz_avg);
     }
   }
 }
