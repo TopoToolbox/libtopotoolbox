@@ -170,75 +170,75 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
   }
 }
 
-  /*
-    ptrdiff_t i;
-  #pragma omp parallel for if (use_mp)
-    for (i = 0; i < dims[0]; i++) {
-      for (ptrdiff_t j = 0; j < dims[1]; j++) {
-        ptrdiff_t location = i * dims[1] + j;
-        float sum = 0.0;
-        float dz_avg = 0.0;
-        float anisotropic_cov = 0.0;
+/*
+  ptrdiff_t i;
+#pragma omp parallel for if (use_mp)
+  for (i = 0; i < dims[0]; i++) {
+    for (ptrdiff_t j = 0; j < dims[1]; j++) {
+      ptrdiff_t location = i * dims[1] + j;
+      float sum = 0.0;
+      float dz_avg = 0.0;
+      float anisotropic_cov = 0.0;
 
-        // Filter 1 : Apply 5x5 filter
+      // Filter 1 : Apply 5x5 filter
+      for (ptrdiff_t m = 0; m < 5; m++) {
+        for (ptrdiff_t n = 0; n < 5; n++) {
+          if (m + i - 2 < 0 || n + j - 2 < 0 || m + i - 2 >= dims[0] ||
+              n + j - 2 >= dims[1]) {
+            continue;
+          }
+          if (filter_1[m][n] == 0) {
+            continue;
+          }
+          sum += filter_1[m][n] * dem[(i + m - 2) * dims[1] + (j + n - 2)];
+        }
+      }
+      // dz_AVG  = conv2(dem,k,'valid')/4;
+      dz_avg = sum / 4;
+
+      // Filter 2 : Apply all four 5x5 filters, 'f_num' to index filters
+      for (ptrdiff_t f_num = 0; f_num < 4; f_num++) {
+        sum = 0.0;
         for (ptrdiff_t m = 0; m < 5; m++) {
           for (ptrdiff_t n = 0; n < 5; n++) {
             if (m + i - 2 < 0 || n + j - 2 < 0 || m + i - 2 >= dims[0] ||
                 n + j - 2 >= dims[1]) {
               continue;
             }
-            if (filter_1[m][n] == 0) {
+            if (filter_2[f_num][m][n] == 0) {
               continue;
             }
-            sum += filter_1[m][n] * dem[(i + m - 2) * dims[1] + (j + n - 2)];
+            sum += filter_2[f_num][m][n] *
+                   dem[(i + m - 2) * dims[1] + (j + n - 2)];
           }
         }
-        // dz_AVG  = conv2(dem,k,'valid')/4;
-        dz_avg = sum / 4;
-
-        // Filter 2 : Apply all four 5x5 filters, 'f_num' to index filters
-        for (ptrdiff_t f_num = 0; f_num < 4; f_num++) {
-          sum = 0.0;
-          for (ptrdiff_t m = 0; m < 5; m++) {
-            for (ptrdiff_t n = 0; n < 5; n++) {
-              if (m + i - 2 < 0 || n + j - 2 < 0 || m + i - 2 >= dims[0] ||
-                  n + j - 2 >= dims[1]) {
-                continue;
-              }
-              if (filter_2[f_num][m][n] == 0) {
-                continue;
-              }
-              sum += filter_2[f_num][m][n] *
-                     dem[(i + m - 2) * dims[1] + (j + n - 2)];
-            }
-          }
-          // ACV = ACV + (conv2(dem,F{r},'valid') - dz_AVG).^2;
-          anisotropic_cov += powf(sum - dz_avg, 2.0f);
-        }
-        // Filter 3 : Apply all four 3x3 filters, 'f_num' to index filters
-        for (ptrdiff_t f_num = 0; f_num < 4; f_num++) {
-          sum = 0.0;
-          for (ptrdiff_t m = 0; m < 3; m++) {
-            for (ptrdiff_t n = 0; n < 3; n++) {
-              if (m + i - 1 < 0 || n + j - 1 < 0 || m + i - 1 >= dims[0] ||
-                  n + j - 1 >= dims[1]) {
-                continue;
-              }
-              if (filter_3[f_num][m][n] == 0) {
-                continue;
-              }
-              sum += filter_3[f_num][m][n] *
-                     dem[(i + m - 1) * dims[1] + (j + n - 1)];
-            }
-          }
-          // ACV = ACV + (conv2(dem,F{r},'valid') - dz_AVG).^2;
-          anisotropic_cov += powf(sum - dz_avg, 2.0f);
-        }
-        // dz_AVG = max(abs(dz_AVG),0.001);
-        dz_avg = fmaxf(0.001f, fabsf(dz_avg));
-
-        // C = log(1 + sqrt(ACV./8)./dz_AVG);
-        output[location] = logf(1.0f + sqrtf(anisotropic_cov / 8.0f) / dz_avg);
+        // ACV = ACV + (conv2(dem,F{r},'valid') - dz_AVG).^2;
+        anisotropic_cov += powf(sum - dz_avg, 2.0f);
       }
+      // Filter 3 : Apply all four 3x3 filters, 'f_num' to index filters
+      for (ptrdiff_t f_num = 0; f_num < 4; f_num++) {
+        sum = 0.0;
+        for (ptrdiff_t m = 0; m < 3; m++) {
+          for (ptrdiff_t n = 0; n < 3; n++) {
+            if (m + i - 1 < 0 || n + j - 1 < 0 || m + i - 1 >= dims[0] ||
+                n + j - 1 >= dims[1]) {
+              continue;
+            }
+            if (filter_3[f_num][m][n] == 0) {
+              continue;
+            }
+            sum += filter_3[f_num][m][n] *
+                   dem[(i + m - 1) * dims[1] + (j + n - 1)];
+          }
+        }
+        // ACV = ACV + (conv2(dem,F{r},'valid') - dz_AVG).^2;
+        anisotropic_cov += powf(sum - dz_avg, 2.0f);
+      }
+      // dz_AVG = max(abs(dz_AVG),0.001);
+      dz_avg = fmaxf(0.001f, fabsf(dz_avg));
+
+      // C = log(1 + sqrt(ACV./8)./dz_AVG);
+      output[location] = logf(1.0f + sqrtf(anisotropic_cov / 8.0f) / dz_avg);
     }
+  }
 }*/
