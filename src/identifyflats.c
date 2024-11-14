@@ -1,5 +1,6 @@
 #define TOPOTOOLBOX_BUILD
 
+#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -59,10 +60,14 @@ ptrdiff_t identifyflats(int32_t *output, float *dem, ptrdiff_t dims[2]) {
         // neighbor_i and neighbor_j are valid indices because we
         // skipped border pixels above
         float neighbor_height = dem[neighbor_j * dims[0] + neighbor_i];
-        min_height =
-            min_height < neighbor_height ? min_height : neighbor_height;
+
+        neighbor_height = isnan(neighbor_height) ? -INFINITY : neighbor_height;
+
+        min_height = fminf(min_height, neighbor_height);
       }
 
+      // If dem_height is a NaN, this will automatically fail, and the
+      // pixel will not be counted as a flat
       if (dem_height == min_height) {
         // Pixel is a flat
         output[j * dims[0] + i] |= 1;

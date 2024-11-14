@@ -15,7 +15,7 @@ The :doc:`api` contains more information on the functions provided by libtopotoo
 
 Bindings for libtopotoolbox in higher-level programming languages provide a user-friendly interface to the library and enable data import and export, visualization and interaction with the geospatial data analysis ecosystems of those languages. Bindings are currently implemented for
 
-- `MATLAB <https://github.com/TopoToolbox/topotoolbox>`_
+- `MATLAB <https://github.com/TopoToolbox/topotoolbox3>`_
 - `Python <https://github.com/TopoToolbox/pytopotoolbox>`_
 
 Contributing

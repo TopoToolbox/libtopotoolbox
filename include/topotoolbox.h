@@ -814,6 +814,68 @@ TOPOTOOLBOX_API
 void gradient8(float *output, float *dem, float cellsize, int use_mp,
                ptrdiff_t dims[2]);
 
+/**
+   @brief Integrate a `float` quantity over a stream network using
+   trapezoidal integration.
+
+   @param[out] integral The integrated output
+   @parblock
+   A pointer to a `float` array representing a node attribute list
+
+   If the stream network has N nodes, this array should have a length
+   N. This value must not be less than the largest value in either the
+   `source` or `target` arrays.
+   @endparblock
+
+   @param[in] integrand The quantity to be integrated
+   @parblock
+   A pointer to a `float` array representing a node attribute list
+
+   If the stream network has N nodes, this array should have a length
+   N. This value must not be less than the largest value in either the
+   `source` or `target` arrays.
+   @endparblock
+
+   @param[in] source The source node of each edge in the stream
+                     network
+   @parblock
+   A pointer to a `ptrdiff_t` array of size `edge_count`
+
+   The source nodes must be in topological order. The labels must
+   correspond to the 1-based indices of the nodes in the
+   node-attribute lists `integral` and `integrand`.
+   @endparblock
+
+   @param[in] target The target nodes of each edge in the stream
+                     network
+   @parblock
+   A pointer to a `ptrdiff_t` array of size `edge_count`
+
+   The labels must correspond to the 1-based indices of the nodes in
+   the node-attribute lists `integral` and `integrand`.
+   @endparblock
+
+   @param[in] weight The weight assigned to each edge in the stream network
+   @parblock
+   A pointer to a `float` array of size `edge_count`
+
+   For most applications of integration along the stream network, this
+   will be the geometric distance between the source and target pixels
+   in the desired units.
+   @endparblock
+
+   @param[in] edge_count The number of edges in the stream network
+ */
+TOPOTOOLBOX_API
+void streamquad_trapz_f32(float *integral, float *integrand, ptrdiff_t *source,
+                          ptrdiff_t *target, float *weight,
+                          ptrdiff_t edge_count);
+
+TOPOTOOLBOX_API
+void streamquad_trapz_f64(double *integral, double *integrand,
+                          ptrdiff_t *source, ptrdiff_t *target, float *weight,
+                          ptrdiff_t edge_count);
+
 /*
   Graphflood
 */

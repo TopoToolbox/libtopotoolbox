@@ -7,6 +7,7 @@
 #include <ctime>
 #include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 // Include topotoolbox.h in its own namespace to help prevent naming
@@ -404,8 +405,6 @@ int32_t test_routeflowd8_direction(uint8_t *direction, float *filled_dem,
 /*
   source should be a topological sort of the
   graph defined by direction.
-
-  This is O(N^2) and very slow.
  */
 int32_t test_routeflowd8_tsort(uint8_t *marks, ptrdiff_t *source,
                                uint8_t *direction, ptrdiff_t dims[2]) {
@@ -508,6 +507,37 @@ int32_t test_flow_routing_targets(ptrdiff_t *target, ptrdiff_t *source,
   return 0;
 }
 
+/*
+  Compute the upstream distance by computing shortest paths in the
+  flow network and compare them to the distances computed by streamquad_trapz
+  and recorded in node_distance.
+ */
+int32_t test_stream_distance(float *node_distance, ptrdiff_t *stream_grid,
+                             float *distance, ptrdiff_t *source,
+                             ptrdiff_t *target, float cellsize,
+                             ptrdiff_t dims[2]) {
+  for (ptrdiff_t edge = dims[0] * dims[1] - 1; edge >= 0; edge--) {
+    ptrdiff_t u = source[edge];
+    ptrdiff_t v = target[edge];
+    if (v >= 0) {
+      float w = llabs(u - v) == 1 || llabs(u - v) == dims[0] ? 1.0f : SQRT2f;
+      w *= cellsize;
+
+      distance[u] = distance[v] + w;
+    }
+  }
+
+  for (ptrdiff_t j = 0; j < dims[1]; j++) {
+    for (ptrdiff_t i = 0; i < dims[0]; i++) {
+      ptrdiff_t node = stream_grid[j * dims[0] + i];
+      if (node > 0) {
+        assert(node_distance[node - 1] == distance[j * dims[0] + i]);
+      }
+    }
+  }
+  return 0;
+}
+
 struct FlowRoutingData {
   std::array<ptrdiff_t, 2> dims;
   float cellsize;
@@ -551,6 +581,14 @@ struct FlowRoutingData {
   std::vector<float> accum;
   std::vector<float> accum2;
 
+  // stream network
+  std::vector<std::tuple<ptrdiff_t, ptrdiff_t, float>> stream_edges;
+  std::vector<ptrdiff_t> stream_source;
+  std::vector<ptrdiff_t> stream_target;
+  std::vector<float> stream_weight;
+  std::vector<ptrdiff_t> stream_grid;
+  ptrdiff_t stream_node_count;
+
   FlowRoutingData(ptrdiff_t input_dims[2], float cs, uint32_t seed)
       : dims({input_dims[0], input_dims[1]}),
         cellsize(cs),
@@ -573,7 +611,8 @@ struct FlowRoutingData {
         marks(dims[0] * dims[1]),
         target(dims[0] * dims[1]),
         accum(dims[0] * dims[1]),
-        accum2(dims[0] * dims[1]) {
+        accum2(dims[0] * dims[1]),
+        stream_grid(dims[0] * dims[1]) {
     // Initialize DEM, boundary conditions for fillsinks and fraction
     for (uint32_t col = 0; col < dims[1]; col++) {
       for (uint32_t row = 0; row < dims[0]; row++) {
@@ -655,6 +694,49 @@ struct FlowRoutingData {
     tt::gradient8(gradient_mp.data(), dem.data(), cellsize, 1, dims.data());
   }
 
+  void streamnetwork(float threshold) {
+    // Process the flow direction and accumulation data to create a
+    // stream network
+    ptrdiff_t node_index = 1;
+
+    for (ptrdiff_t e = (dims[0] * dims[1] - 1); e >= 0; e--) {
+      ptrdiff_t u = source[e];
+      ptrdiff_t v = target[e];
+
+      if (accum2[u] >= threshold) {
+        // Pixel u is in the stream network
+
+        // Map pixel u to the node index
+        stream_grid[u] = node_index++;
+
+        if (v >= 0) {
+          // u is not a sink/outlet
+
+          // Compute distance between source and target pixels.
+          // If the difference between u is 1 or dims[0], then they
+          // are 4 neighbors, otherwise they are 8 neighbors.
+          float w = llabs(u - v) == 1 || llabs(u - v) == dims[0]
+                        ? 1.0f * cellsize
+                        : SQRT2f * cellsize;
+
+          // Add (u,v) to the edge list
+          stream_edges.push_back(std::tuple(stream_grid[u], stream_grid[v], w));
+        }
+      }
+    }
+
+    // Fill the source and target vector by reversing stream_edges
+    stream_source.reserve(stream_edges.size());
+    stream_target.reserve(stream_edges.size());
+    for (auto e = stream_edges.rbegin(); e != stream_edges.rend(); e++) {
+      stream_source.push_back(std::get<0>(*e));
+      stream_target.push_back(std::get<1>(*e));
+      stream_weight.push_back(std::get<2>(*e));
+    }
+
+    stream_node_count = node_index - 1;
+  }
+
   void runtests(bool hybrid) {
     if (hybrid) {
       route_flow_hybrid();
@@ -696,6 +778,18 @@ struct FlowRoutingData {
 
     test_flow_accumulation_multimethod(accum.data(), accum2.data(),
                                        dims.data());
+
+    // Generate stream network
+    streamnetwork(dims[0] * dims[1] / 20.0f);
+
+    std::vector<float> integrand(stream_node_count, 1.0f);
+    std::vector<float> integral(stream_node_count, 0.0f);
+    std::vector<float> distance(dims[0] * dims[1], 0.0f);
+    tt::streamquad_trapz_f32(integral.data(), integrand.data(),
+                             stream_source.data(), stream_target.data(),
+                             stream_weight.data(), stream_source.size());
+    test_stream_distance(integral.data(), stream_grid.data(), distance.data(),
+                         source.data(), target.data(), cellsize, dims.data());
   }
 };
 

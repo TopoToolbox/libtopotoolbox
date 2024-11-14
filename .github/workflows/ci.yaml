@@ -18,10 +18,16 @@ jobs:
           clang-format-version: '14'
   debug-build:
     runs-on: ubuntu-latest
+    env:
+      snapshot_version: v1.3.0
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - name: Install OpenMP
         run: sudo apt-get install -y libomp-dev
+      - name: Install GDAL
+        run: sudo apt install libgdal-dev
       - name: Install doxygen
         run: |
           sudo apt update
@@ -29,6 +35,21 @@ jobs:
       - name: Install Python build dependencies
         run: |
           pip install -r ${{github.workspace}}/docs/requirements.txt
+      - name: Cache snapshot data
+        id: cache-snapshots-debug
+        uses: actions/cache@v4
+        with:
+          path: test/snapshots
+          key: snapshots-${{ env.snapshot_version }}
+      - name: Download and extract snapshot data
+        if: steps.cache-snapshots-debug.outputs.cache-hit != 'true'
+        working-directory: test/snapshots
+        shell: bash
+        run: |
+          curl -L -o snapshot_data.tar.gz \
+          "https://github.com/TopoToolbox/snapshot_data/releases/download/$snapshot_version/snapshot_data.tar.gz"
+          tar -xzf snapshot_data.tar.gz
+          shasum -c --status sha256sum.txt
       - name: Configure
         run: >
           cmake -B ${{github.workspace}}/build/debug
@@ -45,6 +66,8 @@ jobs:
         run: ctest --test-dir ${{github.workspace}}/build/debug -C Debug --output-on-failure
   release-build:
     runs-on: ${{ matrix.os }}
+    env:
+      snapshot_version: v1.3.0
     strategy:
       fail-fast: false
       matrix:
@@ -70,6 +93,8 @@ jobs:
             c_compiler: cl
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - name: Install OpenMP on Ubuntu
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get install -y libomp-dev
@@ -79,6 +104,10 @@ jobs:
       - name: Set OpenMP_ROOT on macOS
         if: matrix.os == 'macos-latest'
         run: echo "OpenMP_ROOT=$(brew --prefix)/opt/libomp" >> $GITHUB_ENV
+      - name: Install GDAL on Ubuntu
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt install libgdal-dev
+        ## TODO: Install GDAL on Windows and macos
       - name: Install ninja on windows
         uses: seanmiddleditch/gha-setup-ninja@master
         if: matrix.os == 'windows-latest'
@@ -90,6 +119,22 @@ jobs:
         run: |
           echo "CMAKE_GENERATOR=Ninja" >> "$env:GITHUB_ENV" &&
           echo "CMAKE_CONFIGURATION_TYPES=Release" >> "$env:GITHUB_ENV"
+      - name: Cache snapshot data
+        if: matrix.os == 'ubuntu-latest'
+        id: cache-snapshots-release
+        uses: actions/cache@v4
+        with:
+          path: test/snapshots
+          key: snapshots-${{ env.snapshot_version }}
+      - name: Download and extract snapshot data
+        if: matrix.os == 'ubuntu-latest' && steps.cache-snapshots-release.outputs.cache-hit != 'true'
+        working-directory: test/snapshots
+        shell: bash
+        run: |
+          curl -L -o snapshot_data.tar.gz \
+          "https://github.com/TopoToolbox/snapshot_data/releases/download/$snapshot_version/snapshot_data.tar.gz"
+          tar -xzf snapshot_data.tar.gz
+          shasum -c --status sha256sum.txt
       - name: Configure static library
         run: >
           cmake -B ${{github.workspace}}/build/static

@@ -18,6 +18,7 @@ add_library(topotoolbox
   graphflood/graphflood.c
   flow_routing.c
   flow_accumulation.c
+  streamquad.c
 )
 
 # Define the include directory
