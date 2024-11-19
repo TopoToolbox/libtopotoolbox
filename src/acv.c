@@ -140,11 +140,8 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
           if (true_col >= dims[1]) true_col = dims[1] - 1;
 
           ptrdiff_t true_index = true_row * dims[0] + true_col;
-          printf(
-              "row: %td, col: %td, true_row: %td, ture_col: %td, true_index: "
-              "%f\n",
-              row, col, true_row, true_col, dem[true_index]);
           sum += filter_1[k_index] * dem[true_index];
+          printf("k_index: %td = %f\n", k_index,sum);
         }
       }
       // dz_AVG  = conv2(dem,k,'valid')/4;
