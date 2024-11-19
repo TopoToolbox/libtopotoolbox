@@ -107,7 +107,6 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
                           {0, 0, 0, 1, 0, -1, 0, 0, 0},
                           {0, 0, -1, 0, 0, 0, 1, 0, 0}};
 
-  ptrdiff_t size_of_dem = dims[0] * dims[1];
   // for 5x5 kernel
   ptrdiff_t k5_rows[5] = {-2, -1, 0, 1, 2};
   ptrdiff_t k5_cols[5] = {-2 * dims[0], -dims[0], 0, dims[0], 2 * dims[0]};
@@ -130,7 +129,7 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
       // filter_1
       for (ptrdiff_t k = 0; k < 25; k++) {
         if (filter_1[k == 0]) continue;
-        ptrdiff_t to_dem_row = row + k5_cols[k / 5];
+        ptrdiff_t to_dem_row = row + k5_rows[k / 5];
         ptrdiff_t to_dem_col = col + k5_cols[k % 5];
         printf("k: %td, row: %td, col: %td\n", k, to_dem_row, to_dem_col);
 
@@ -152,7 +151,7 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
         sum = 0.0f;
         for (ptrdiff_t k = 0; k < 25; k++) {
           if (filter_2[n][k == 0]) continue;
-          ptrdiff_t to_dem_row = row + k5_cols[k / 5];
+          ptrdiff_t to_dem_row = row + k5_rows[k / 5];
           ptrdiff_t to_dem_col = col + k5_cols[k % 5];
 
           // if out of bounds set dem value to closest cell in dem
@@ -172,8 +171,8 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
       for (ptrdiff_t n = 0; n < 4; n++) {
         sum = 0.0f;
         for (ptrdiff_t k = 0; k < 9; k++) {
-          if (filter_2[n][k == 0]) continue;
-          ptrdiff_t to_dem_row = row + k3_cols[k / 3];
+          if (filter_3[n][k == 0]) continue;
+          ptrdiff_t to_dem_row = row + k3_rows[k / 3];
           ptrdiff_t to_dem_col = col + k3_cols[k % 3];
 
           // if out of bounds set dem value to closest cell in dem
