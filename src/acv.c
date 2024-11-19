@@ -3,6 +3,8 @@
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
+// TODO: remove stdio.h after testing
+#include <stdio.h>
 
 #if TOPOTOOLBOX_OPENMP_VERSION > 0
 #include <omp.h>
@@ -144,9 +146,6 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
       }
       // dz_AVG  = conv2(dem,k,'valid')/4;
       dz_avg = sum / 4.0f;
-
-      // ! temp break for testing
-      break;
 
       // filter_2
       for (ptrdiff_t n = 0; n < 4; n++) {
