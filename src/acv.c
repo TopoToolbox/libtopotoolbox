@@ -127,22 +127,23 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
       float anisotropic_cov = 0.0f;
 
       // filter_1
-      for (ptrdiff_t k = 0; k < 25; k++) {
-        if (filter_1[k] == 0.0f) continue;
-        ptrdiff_t to_dem_row = row + k5_rows[k / 5];
-        ptrdiff_t to_dem_col = col + k5_cols[k % 5];
-        printf("k: %td, row in dem: %td, col in dem: %td\n", k, to_dem_row,
-               to_dem_col);
+      for (ptrdiff_t k_col = -2; k_col < 5; k_col++) {
+        for (ptrdiff_t k_row = -2; k_row < 5; k_row++) {
 
-        // if out of bounds set dem value to closest cell in dem
-        if (to_dem_row < 0) to_dem_row = 0;
-        if (to_dem_row >= dims[0]) to_dem_row = dims[0] - 1;
-        if (to_dem_col < 0) to_dem_col = 0;
-        if (to_dem_col >= dims[1]) to_dem_col = dims[1] - 1;
+          ptrdiff_t k_index = k_col * 5 + k_row;
+          if (filter_1[k_index] == 0.0f) continue;
 
-        ptrdiff_t kernel_to_dem = to_dem_row * dims[0] + to_dem_col;
-        printf("value of dem: %f\n", dem[kernel_to_dem]);
-        sum += filter_1[k] * dem[kernel_to_dem];
+          ptrdiff_t true_row = row + k_row;
+          if (true_row < 0) true_row = 0;
+          if (true_row >= dims[0]) true_row = dims[0] - 1;
+          ptrdiff_t true_col = col + k_col;
+          if (true_col < 0) true_col = 0;
+          if (true_col >= dims[1]) true_col = dims[1] - 1;
+
+          ptrdiff_t true_index = true_row * dims[0] + true_col;
+          printf("value of dem: %f\n", dem[true_index]);
+          sum += filter_1[k_index] * dem[true_index];
+        }
       }
       // dz_AVG  = conv2(dem,k,'valid')/4;
       dz_avg = sum / 4.0f;
