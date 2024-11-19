@@ -114,45 +114,23 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
   ptrdiff_t k3_cols[3] = {-dims[0], 0, dims[0]};
 
   // ACV:
-  ptrdiff_t i;
+
+  ptrdiff_t col;
 #pragma omp parallel for if (use_mp)
-  for (i = 0; i < size_of_dem; i++) {
-    ptrdiff_t row = i / dims[0];  // automatic floor because of datatype
-    ptrdiff_t col = i % dims[0];
-    
-    printf("row: %td, col: %td\n", row, col);
+  for (col = 0; col < dims[1]; col++) {
+    for (ptrdiff_t row = 0; col < dims[0]; row++) {
+      printf("row: %td, col: %td\n", row, col);
 
-    float sum = 0.0f;
-    float dz_avg = 0.0f;
-    float anisotropic_cov = 0.0f;
+      float sum = 0.0f;
+      float dz_avg = 0.0f;
+      float anisotropic_cov = 0.0f;
 
-    // filter_1
-    for (ptrdiff_t k = 0; k < 25; k++) {
-      if (filter_1[k == 0]) continue;
-      ptrdiff_t to_dem_row = row + k5_cols[k / 5];
-      ptrdiff_t to_dem_col = col + k5_cols[k % 5];
-      printf("k: %td, row: %td, col: %td\n", k, to_dem_row, to_dem_col);
-
-      // if out of bounds set dem value to closest cell in dem
-      if (to_dem_row < 0) to_dem_row = 0;
-      if (to_dem_row >= dims[0]) to_dem_row = dims[0] - 1;
-      if (to_dem_col < 0) to_dem_col = 0;
-      if (to_dem_col >= dims[1]) to_dem_col = dims[1] - 1;
-
-      ptrdiff_t kernel_to_dem = to_dem_row * dims[0] + to_dem_col;
-      printf("calc: %f  * %f", filter_1[k], dem[kernel_to_dem]);
-      sum += filter_1[k] * dem[kernel_to_dem];
-    }
-    // dz_AVG  = conv2(dem,k,'valid')/4;
-    dz_avg = sum / 4.0f;
-
-    // filter_2
-    for (ptrdiff_t n = 0; n < 4; n++) {
-      sum = 0.0f;
+      // filter_1
       for (ptrdiff_t k = 0; k < 25; k++) {
-        if (filter_2[n][k == 0]) continue;
+        if (filter_1[k == 0]) continue;
         ptrdiff_t to_dem_row = row + k5_cols[k / 5];
         ptrdiff_t to_dem_col = col + k5_cols[k % 5];
+        printf("k: %td, row: %td, col: %td\n", k, to_dem_row, to_dem_col);
 
         // if out of bounds set dem value to closest cell in dem
         if (to_dem_row < 0) to_dem_row = 0;
@@ -161,101 +139,53 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
         if (to_dem_col >= dims[1]) to_dem_col = dims[1] - 1;
 
         ptrdiff_t kernel_to_dem = to_dem_row * dims[0] + to_dem_col;
-        sum += filter_2[n][k] * dem[kernel_to_dem];
-      }
-      // ACV = ACV + (conv2(dem,F{r},'valid') - dz_AVG).^2;
-      anisotropic_cov += powf(sum - dz_avg, 2.0f);
-    }
-
-    // filter_3
-    for (ptrdiff_t n = 0; n < 4; n++) {
-      sum = 0.0f;
-      for (ptrdiff_t k = 0; k < 9; k++) {
-        if (filter_2[n][k == 0]) continue;
-        ptrdiff_t to_dem_row = row + k3_cols[k / 3];
-        ptrdiff_t to_dem_col = col + k3_cols[k % 3];
-
-        // if out of bounds set dem value to closest cell in dem
-        if (to_dem_row < 0) to_dem_row = 0;
-        if (to_dem_row >= dims[0]) to_dem_row = dims[0] - 1;
-        if (to_dem_col < 0) to_dem_col = 0;
-        if (to_dem_col >= dims[1]) to_dem_col = dims[1] - 1;
-
-        ptrdiff_t kernel_to_dem = to_dem_row * dims[0] + to_dem_col;
-        
-        sum += filter_2[n][k] * dem[kernel_to_dem];
-      }
-      // ACV = ACV + (conv2(dem,F{r},'valid') - dz_AVG).^2;
-      anisotropic_cov += powf(sum - dz_avg, 2.0f);
-    }
-    // dz_AVG = max(abs(dz_AVG),0.001);
-    dz_avg = fmaxf(0.001f, fabsf(dz_avg));
-
-    // C = log(1 + sqrt(ACV./8)./dz_AVG);
-    output[i] = logf(1.0f + sqrtf(anisotropic_cov / 8.0f) / dz_avg);
-  }
-}
-
-/*
-  ptrdiff_t i;
-#pragma omp parallel for if (use_mp)
-  for (i = 0; i < dims[0]; i++) {
-    for (ptrdiff_t j = 0; j < dims[1]; j++) {
-      ptrdiff_t location = i * dims[1] + j;
-      float sum = 0.0;
-      float dz_avg = 0.0;
-      float anisotropic_cov = 0.0;
-
-      // Filter 1 : Apply 5x5 filter
-      for (ptrdiff_t m = 0; m < 5; m++) {
-        for (ptrdiff_t n = 0; n < 5; n++) {
-          if (m + i - 2 < 0 || n + j - 2 < 0 || m + i - 2 >= dims[0] ||
-              n + j - 2 >= dims[1]) {
-            continue;
-          }
-          if (filter_1[m][n] == 0) {
-            continue;
-          }
-          sum += filter_1[m][n] * dem[(i + m - 2) * dims[1] + (j + n - 2)];
-        }
+        printf("calc: %f  * %f", filter_1[k], dem[kernel_to_dem]);
+        sum += filter_1[k] * dem[kernel_to_dem];
       }
       // dz_AVG  = conv2(dem,k,'valid')/4;
-      dz_avg = sum / 4;
+      dz_avg = sum / 4.0f;
 
-      // Filter 2 : Apply all four 5x5 filters, 'f_num' to index filters
-      for (ptrdiff_t f_num = 0; f_num < 4; f_num++) {
-        sum = 0.0;
-        for (ptrdiff_t m = 0; m < 5; m++) {
-          for (ptrdiff_t n = 0; n < 5; n++) {
-            if (m + i - 2 < 0 || n + j - 2 < 0 || m + i - 2 >= dims[0] ||
-                n + j - 2 >= dims[1]) {
-              continue;
-            }
-            if (filter_2[f_num][m][n] == 0) {
-              continue;
-            }
-            sum += filter_2[f_num][m][n] *
-                   dem[(i + m - 2) * dims[1] + (j + n - 2)];
-          }
+      // ! temp break for testing
+      break;
+
+      // filter_2
+      for (ptrdiff_t n = 0; n < 4; n++) {
+        sum = 0.0f;
+        for (ptrdiff_t k = 0; k < 25; k++) {
+          if (filter_2[n][k == 0]) continue;
+          ptrdiff_t to_dem_row = row + k5_cols[k / 5];
+          ptrdiff_t to_dem_col = col + k5_cols[k % 5];
+
+          // if out of bounds set dem value to closest cell in dem
+          if (to_dem_row < 0) to_dem_row = 0;
+          if (to_dem_row >= dims[0]) to_dem_row = dims[0] - 1;
+          if (to_dem_col < 0) to_dem_col = 0;
+          if (to_dem_col >= dims[1]) to_dem_col = dims[1] - 1;
+
+          ptrdiff_t kernel_to_dem = to_dem_row * dims[0] + to_dem_col;
+          sum += filter_2[n][k] * dem[kernel_to_dem];
         }
         // ACV = ACV + (conv2(dem,F{r},'valid') - dz_AVG).^2;
         anisotropic_cov += powf(sum - dz_avg, 2.0f);
       }
-      // Filter 3 : Apply all four 3x3 filters, 'f_num' to index filters
-      for (ptrdiff_t f_num = 0; f_num < 4; f_num++) {
-        sum = 0.0;
-        for (ptrdiff_t m = 0; m < 3; m++) {
-          for (ptrdiff_t n = 0; n < 3; n++) {
-            if (m + i - 1 < 0 || n + j - 1 < 0 || m + i - 1 >= dims[0] ||
-                n + j - 1 >= dims[1]) {
-              continue;
-            }
-            if (filter_3[f_num][m][n] == 0) {
-              continue;
-            }
-            sum += filter_3[f_num][m][n] *
-                   dem[(i + m - 1) * dims[1] + (j + n - 1)];
-          }
+
+      // filter_3
+      for (ptrdiff_t n = 0; n < 4; n++) {
+        sum = 0.0f;
+        for (ptrdiff_t k = 0; k < 9; k++) {
+          if (filter_2[n][k == 0]) continue;
+          ptrdiff_t to_dem_row = row + k3_cols[k / 3];
+          ptrdiff_t to_dem_col = col + k3_cols[k % 3];
+
+          // if out of bounds set dem value to closest cell in dem
+          if (to_dem_row < 0) to_dem_row = 0;
+          if (to_dem_row >= dims[0]) to_dem_row = dims[0] - 1;
+          if (to_dem_col < 0) to_dem_col = 0;
+          if (to_dem_col >= dims[1]) to_dem_col = dims[1] - 1;
+
+          ptrdiff_t kernel_to_dem = to_dem_row * dims[0] + to_dem_col;
+
+          sum += filter_2[n][k] * dem[kernel_to_dem];
         }
         // ACV = ACV + (conv2(dem,F{r},'valid') - dz_AVG).^2;
         anisotropic_cov += powf(sum - dz_avg, 2.0f);
@@ -264,7 +194,8 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
       dz_avg = fmaxf(0.001f, fabsf(dz_avg));
 
       // C = log(1 + sqrt(ACV./8)./dz_AVG);
-      output[location] = logf(1.0f + sqrtf(anisotropic_cov / 8.0f) / dz_avg);
+      ptrdiff_t index = col * dims[0] + row;
+      output[index] = logf(1.0f + sqrtf(anisotropic_cov / 8.0f) / dz_avg);
     }
   }
-}*/
+}
