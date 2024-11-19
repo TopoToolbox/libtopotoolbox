@@ -128,11 +128,11 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
 
       // filter_1
       for (ptrdiff_t k = 0; k < 25; k++) {
-        printf("k: %td, value in kernel%f\n", k, filter_1[k]);
         if (filter_1[k] == 0.0f) continue;
         ptrdiff_t to_dem_row = row + k5_rows[k / 5];
         ptrdiff_t to_dem_col = col + k5_cols[k % 5];
-        printf("row in dem: %td, col in dem: %td\n", k, to_dem_row, to_dem_col);
+        printf("k: %td, row in dem: %td, col in dem: %td\n", k, to_dem_row,
+               to_dem_col);
 
         // if out of bounds set dem value to closest cell in dem
         if (to_dem_row < 0) to_dem_row = 0;
