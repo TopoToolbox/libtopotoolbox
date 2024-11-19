@@ -129,7 +129,7 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
       // filter_1
       for (ptrdiff_t k = 0; k < 25; k++) {
         printf("k: %td, value in kernel%f\n", k, filter_1[k]);
-        if (filter_1[k == 0]) continue;
+        if (filter_1[k] == 0.0f) continue;
         ptrdiff_t to_dem_row = row + k5_rows[k / 5];
         ptrdiff_t to_dem_col = col + k5_cols[k % 5];
         printf("row in dem: %td, col in dem: %td\n", k, to_dem_row, to_dem_col);
@@ -151,7 +151,7 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
       for (ptrdiff_t n = 0; n < 4; n++) {
         sum = 0.0f;
         for (ptrdiff_t k = 0; k < 25; k++) {
-          if (filter_2[n][k == 0]) continue;
+          if (filter_2[n][k] == 0) continue;
           ptrdiff_t to_dem_row = row + k5_rows[k / 5];
           ptrdiff_t to_dem_col = col + k5_cols[k % 5];
 
@@ -172,7 +172,7 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
       for (ptrdiff_t n = 0; n < 4; n++) {
         sum = 0.0f;
         for (ptrdiff_t k = 0; k < 9; k++) {
-          if (filter_3[n][k == 0]) continue;
+          if (filter_3[n][k] == 0) continue;
           ptrdiff_t to_dem_row = row + k3_rows[k / 3];
           ptrdiff_t to_dem_col = col + k3_cols[k % 3];
 
