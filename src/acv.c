@@ -129,7 +129,6 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
       // filter_1
       for (ptrdiff_t k_col = -2; k_col < 5; k_col++) {
         for (ptrdiff_t k_row = -2; k_row < 5; k_row++) {
-
           ptrdiff_t k_index = k_col * 5 + k_row;
           if (filter_1[k_index] == 0.0f) continue;
 
@@ -141,7 +140,10 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
           if (true_col >= dims[1]) true_col = dims[1] - 1;
 
           ptrdiff_t true_index = true_row * dims[0] + true_col;
-          printf("value of dem: %f\n", dem[true_index]);
+          printf(
+              "row: %td, col: %td, true_row: %td, ture_col: %td, true_index: "
+              "%f\n",
+              row, col, true_row, true_col, dem[true_index]);
           sum += filter_1[k_index] * dem[true_index];
         }
       }
