@@ -129,7 +129,7 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
       for (ptrdiff_t k_col = -2; k_col < 2; k_col++) {
         for (ptrdiff_t k_row = -2; k_row < 2; k_row++) {
           // Add 2 to k_values to counteract the -2 start value 
-          ptrdiff_t k_index = (k_col + 2) * 5 + (k3_rows + 2);
+          ptrdiff_t k_index = (k_col + 2) * 5 + (k_row + 2);
           if (filter_1[k_index] == 0.0f) continue;
 
           ptrdiff_t true_row = row + k_row;
