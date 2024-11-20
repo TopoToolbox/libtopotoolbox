@@ -25,9 +25,9 @@ jobs:
         with:
           submodules: true
       - name: Install OpenMP
-        run: sudo apt-get install -y libomp-dev
+        run: sudo apt update && sudo apt install -y libomp-dev
       - name: Install GDAL
-        run: sudo apt install libgdal-dev
+        run: sudo apt update && sudo apt install libgdal-dev
       - name: Install doxygen
         run: |
           sudo apt update
@@ -97,7 +97,7 @@ jobs:
           submodules: true
       - name: Install OpenMP on Ubuntu
         if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get install -y libomp-dev
+        run: sudo apt update && sudo apt-get install -y libomp-dev
       - name: Install OpenMP on macOS
         if: matrix.os == 'macos-latest'
         run: brew install libomp
@@ -106,7 +106,7 @@ jobs:
         run: echo "OpenMP_ROOT=$(brew --prefix)/opt/libomp" >> $GITHUB_ENV
       - name: Install GDAL on Ubuntu
         if: matrix.os == 'ubuntu-latest'
-        run: sudo apt install libgdal-dev
+        run: sudo apt update && sudo apt install libgdal-dev
         ## TODO: Install GDAL on Windows and macos
       - name: Install ninja on windows
         uses: seanmiddleditch/gha-setup-ninja@master
