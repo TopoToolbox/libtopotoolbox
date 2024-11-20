@@ -128,7 +128,7 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
       // filter_1
       for (ptrdiff_t k_col = -2; k_col < 2; k_col++) {
         for (ptrdiff_t k_row = -2; k_row < 2; k_row++) {
-          // Add 2 to k_values to counteract the -2 start value 
+          // Add 2 to k_values to counteract the -2 start value
           ptrdiff_t k_index = (k_col + 2) * 5 + (k_row + 2);
           if (filter_1[k_index] == 0.0f) continue;
 
@@ -141,9 +141,13 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
 
           ptrdiff_t true_index = true_row * dims[0] + true_col;
           sum += filter_1[k_index] * dem[true_index];
-          printf("k_index: %td = %f\n", k_index, sum);
+          printf("row=%td, col=%td, k_index: %td = %f\n", true_row, true_col,
+                 k_index, sum);
         }
       }
+      printf("%f\n", sum);
+      break;
+      // TODO: remove break
       // dz_AVG  = conv2(dem,k,'valid')/4;
       dz_avg = sum / 4.0f;
 
@@ -196,5 +200,7 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
       ptrdiff_t index = col * dims[0] + row;
       output[index] = logf(1.0f + sqrtf(anisotropic_cov / 8.0f) / dz_avg);
     }
+    break;
+    // TODO: remove break
   }
 }
