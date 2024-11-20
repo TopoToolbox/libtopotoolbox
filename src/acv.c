@@ -116,7 +116,7 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
 
   // ACV:
   ptrdiff_t col;
-#pragma omp parallel for if (use_mp)
+//#pragma omp parallel for if (use_mp)
   for (col = 0; col < dims[1]; col++) {
     for (ptrdiff_t row = 0; row < dims[0]; row++) {
       printf("row: %td, col: %td\n", row, col);
