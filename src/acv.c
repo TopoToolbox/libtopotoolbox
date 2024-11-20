@@ -116,11 +116,9 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
 
   // ACV:
   ptrdiff_t col;
-  //#pragma omp parallel for if (use_mp)
+#pragma omp parallel for if (use_mp)
   for (col = 0; col < dims[1]; col++) {
     for (ptrdiff_t row = 0; row < dims[0]; row++) {
-      printf("row: %td, col: %td\n", row, col);
-
       float sum = 0.0f;
       float dz_avg = 0.0f;
       float anisotropic_cov = 0.0f;
@@ -130,9 +128,9 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
         for (ptrdiff_t k_row = -2; k_row <= 2; k_row++) {
           // Add 2 to k_values to counteract the -2 start value
           ptrdiff_t k_index = (k_col + 2) * 5 + (k_row + 2);
-          printf("k_index: %td, kernel_val: %f\n", k_index, filter_1[k_index]);
           if (filter_1[k_index] == 0.0f) continue;
 
+          // If row or col would be out of bounds, set it to appropriate border
           ptrdiff_t true_row = row + k_row;
           if (true_row < 0) true_row = 0;
           if (true_row >= dims[0]) true_row = dims[0] - 1;
@@ -140,57 +138,55 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
           if (true_col < 0) true_col = 0;
           if (true_col >= dims[1]) true_col = dims[1] - 1;
 
+          // Multiply kernel value by respective dem value
           ptrdiff_t true_index = true_row * dims[0] + true_col;
           sum += filter_1[k_index] * dem[true_index];
-          printf("row=%td, col=%td : %f\n", true_row, true_col,
-                 dem[true_index]);
         }
       }
-      break;
-      // TODO: remove break
       // dz_AVG  = conv2(dem,k,'valid')/4;
       dz_avg = sum / 4.0f;
 
       // filter_2
-      for (ptrdiff_t n = 0; n < 4; n++) {
+      for (ptrdiff_t n = 0; n < 5; n++) {
         sum = 0.0f;
-        for (ptrdiff_t k = 0; k < 25; k++) {
-          if (filter_2[n][k] == 0) continue;
-          ptrdiff_t to_dem_row = row + k5_rows[k / 5];
-          ptrdiff_t to_dem_col = col + k5_cols[k % 5];
+        for (ptrdiff_t k_col = -2; k_col <= 2; k_col++) {
+          for (ptrdiff_t k_row = -2; k_row <= 2; k_row++) {
+            ptrdiff_t k_index = (k_col + 2) * 5 + (k_row + 2);
+            if (filter_2[n][k_index] == 0.0f) continue;
 
-          // if out of bounds set dem value to closest cell in dem
-          if (to_dem_row < 0) to_dem_row = 0;
-          if (to_dem_row >= dims[0]) to_dem_row = dims[0] - 1;
-          if (to_dem_col < 0) to_dem_col = 0;
-          if (to_dem_col >= dims[1]) to_dem_col = dims[1] - 1;
+            ptrdiff_t true_row = row + k_row;
+            if (true_row < 0) true_row = 0;
+            if (true_row >= dims[0]) true_row = dims[0] - 1;
+            ptrdiff_t true_col = col + k_col;
+            if (true_col < 0) true_col = 0;
+            if (true_col >= dims[1]) true_col = dims[1] - 1;
 
-          ptrdiff_t kernel_to_dem = to_dem_row * dims[0] + to_dem_col;
-          sum += filter_2[n][k] * dem[kernel_to_dem];
+            ptrdiff_t true_index = true_row * dims[0] + true_col;
+            sum += filter_2[n][k_index] * dem[true_index];
+          }
         }
-        // ACV = ACV + (conv2(dem,F{r},'valid') - dz_AVG).^2;
         anisotropic_cov += powf(sum - dz_avg, 2.0f);
       }
 
       // filter_3
-      for (ptrdiff_t n = 0; n < 4; n++) {
+      for (ptrdiff_t n = 0; n < 5; n++) {
         sum = 0.0f;
-        for (ptrdiff_t k = 0; k < 9; k++) {
-          if (filter_3[n][k] == 0) continue;
-          ptrdiff_t to_dem_row = row + k3_rows[k / 3];
-          ptrdiff_t to_dem_col = col + k3_cols[k % 3];
+        for (ptrdiff_t k_col = -1; k_col <= 1; k_col++) {
+          for (ptrdiff_t k_row = -1; k_row <= 1; k_row++) {
+            ptrdiff_t k_index = (k_col + 2) * 5 + (k_row + 2);
+            if (filter_3[n][k_index] == 0.0f) continue;
 
-          // if out of bounds set dem value to closest cell in dem
-          if (to_dem_row < 0) to_dem_row = 0;
-          if (to_dem_row >= dims[0]) to_dem_row = dims[0] - 1;
-          if (to_dem_col < 0) to_dem_col = 0;
-          if (to_dem_col >= dims[1]) to_dem_col = dims[1] - 1;
+            ptrdiff_t true_row = row + k_row;
+            if (true_row < 0) true_row = 0;
+            if (true_row >= dims[0]) true_row = dims[0] - 1;
+            ptrdiff_t true_col = col + k_col;
+            if (true_col < 0) true_col = 0;
+            if (true_col >= dims[1]) true_col = dims[1] - 1;
 
-          ptrdiff_t kernel_to_dem = to_dem_row * dims[0] + to_dem_col;
-
-          sum += filter_2[n][k] * dem[kernel_to_dem];
+            ptrdiff_t true_index = true_row * dims[0] + true_col;
+            sum += filter_3[n][k_index] * dem[true_index];
+          }
         }
-        // ACV = ACV + (conv2(dem,F{r},'valid') - dz_AVG).^2;
         anisotropic_cov += powf(sum - dz_avg, 2.0f);
       }
       // dz_AVG = max(abs(dz_AVG),0.001);
@@ -200,7 +196,5 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
       ptrdiff_t index = col * dims[0] + row;
       output[index] = logf(1.0f + sqrtf(anisotropic_cov / 8.0f) / dz_avg);
     }
-    break;
-    // TODO: remove break
   }
 }
