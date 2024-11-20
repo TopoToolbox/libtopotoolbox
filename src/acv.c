@@ -115,7 +115,6 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
   ptrdiff_t k3_cols[3] = {-dims[0], 0, dims[0]};
 
   // ACV:
-
   ptrdiff_t col;
 #pragma omp parallel for if (use_mp)
   for (col = 0; col < dims[1]; col++) {
@@ -127,9 +126,10 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
       float anisotropic_cov = 0.0f;
 
       // filter_1
-      for (ptrdiff_t k_col = -2; k_col < 5; k_col++) {
-        for (ptrdiff_t k_row = -2; k_row < 5; k_row++) {
-          ptrdiff_t k_index = k_col * 5 + k_row;
+      for (ptrdiff_t k_col = -2; k_col < 2; k_col++) {
+        for (ptrdiff_t k_row = -2; k_row < 2; k_row++) {
+          // Add 2 to k_values to counteract the -2 start value 
+          ptrdiff_t k_index = (k_col + 2) * 5 + (k3_rows + 2);
           if (filter_1[k_index] == 0.0f) continue;
 
           ptrdiff_t true_row = row + k_row;
@@ -141,7 +141,7 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
 
           ptrdiff_t true_index = true_row * dims[0] + true_col;
           sum += filter_1[k_index] * dem[true_index];
-          printf("k_index: %td = %f\n", k_index,sum);
+          printf("k_index: %td = %f\n", k_index, sum);
         }
       }
       // dz_AVG  = conv2(dem,k,'valid')/4;
