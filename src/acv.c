@@ -107,13 +107,6 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
                           {0, 0, 0, 1, 0, -1, 0, 0, 0},
                           {0, 0, -1, 0, 0, 0, 1, 0, 0}};
 
-  // for 5x5 kernel
-  ptrdiff_t k5_rows[5] = {-2, -1, 0, 1, 2};
-  ptrdiff_t k5_cols[5] = {-2 * dims[0], -dims[0], 0, dims[0], 2 * dims[0]};
-  // for 3x3 kernel
-  ptrdiff_t k3_rows[3] = {-1, 0, 1};
-  ptrdiff_t k3_cols[3] = {-dims[0], 0, dims[0]};
-
   // ACV:
   ptrdiff_t col;
 #pragma omp parallel for if (use_mp)
