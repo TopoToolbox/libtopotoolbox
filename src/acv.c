@@ -140,7 +140,7 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
       dz_avg = sum / 4.0f;
 
       // filter_2
-      for (ptrdiff_t n = 0; n < 5; n++) {
+      for (ptrdiff_t n = 0; n < 4; n++) {
         sum = 0.0f;
         for (ptrdiff_t k_col = -2; k_col <= 2; k_col++) {
           for (ptrdiff_t k_row = -2; k_row <= 2; k_row++) {
@@ -162,7 +162,7 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
       }
 
       // filter_3
-      for (ptrdiff_t n = 0; n < 5; n++) {
+      for (ptrdiff_t n = 0; n < 4; n++) {
         sum = 0.0f;
         for (ptrdiff_t k_col = -1; k_col <= 1; k_col++) {
           for (ptrdiff_t k_row = -1; k_row <= 1; k_row++) {
