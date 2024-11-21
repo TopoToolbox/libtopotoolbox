@@ -183,17 +183,34 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
         sum = 0.0f;
         for (ptrdiff_t k_col = -2; k_col <= 2; k_col++) {
           for (ptrdiff_t k_row = -2; k_row <= 2; k_row++) {
+            // if filter cell is zero skip this filter cell
             ptrdiff_t k_index = (k_col + 2) * 5 + (k_row + 2);
-            if (filter_2[n][k_index] == 0.0f) continue;
+            if (filter_1[k_index] == 0.0f) continue;
 
-            ptrdiff_t true_row = row + k_row;
-            if (true_row < 0) true_row = 0;
-            if (true_row >= dims[0]) true_row = dims[0] - 1;
-            ptrdiff_t true_col = col + k_col;
-            if (true_col < 0) true_col = 0;
-            if (true_col >= dims[1]) true_col = dims[1] - 1;
+            ptrdiff_t true_row, true_col, true_index, search_pos;
+            int out_of_bounds;
+            // If out of bounds or isnan find nearest replacement value using
+            // Euclidean distance transform. (search_order[25][2])
+            search_pos = 0;
+            do {
+              true_col = col + k_col + search_order[search_pos][1];
+              true_row = row + k_row + search_order[search_pos][0];
+              out_of_bounds = (true_row < 0 || true_row >= dims[0] ||
+                               true_col < 0 || true_col >= dims[1]);
+              true_index = true_row * dims[0] + true_col;
 
-            ptrdiff_t true_index = true_row * dims[0] + true_col;
+              if (out_of_bounds) {
+                search_pos++;
+                continue;
+              } else if (isnan(dem[true_index])) {
+                search_pos++;
+                continue;
+              } else {
+                // valid position found
+                break;
+              }
+              // While loop will terminate because cell at `index` is valid.
+            } while (true);
             sum += filter_2[n][k_index] * dem[true_index];
           }
         }
@@ -206,16 +223,34 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
         for (ptrdiff_t k_col = -1; k_col <= 1; k_col++) {
           for (ptrdiff_t k_row = -1; k_row <= 1; k_row++) {
             ptrdiff_t k_index = (k_col + 1) * 3 + (k_row + 1);
-            if (filter_3[n][k_index] == 0.0f) continue;
+            // if filter cell is zero skip this filter cell
 
-            ptrdiff_t true_row = row + k_row;
-            if (true_row < 0) true_row = 0;
-            if (true_row >= dims[0]) true_row = dims[0] - 1;
-            ptrdiff_t true_col = col + k_col;
-            if (true_col < 0) true_col = 0;
-            if (true_col >= dims[1]) true_col = dims[1] - 1;
+            if (filter_1[k_index] == 0.0f) continue;
 
-            ptrdiff_t true_index = true_row * dims[0] + true_col;
+            ptrdiff_t true_row, true_col, true_index, search_pos;
+            int out_of_bounds;
+            // If out of bounds or isnan find nearest replacement value using
+            // Euclidean distance transform. (search_order[25][2])
+            search_pos = 0;
+            do {
+              true_col = col + k_col + search_order[search_pos][1];
+              true_row = row + k_row + search_order[search_pos][0];
+              out_of_bounds = (true_row < 0 || true_row >= dims[0] ||
+                               true_col < 0 || true_col >= dims[1]);
+              true_index = true_row * dims[0] + true_col;
+
+              if (out_of_bounds) {
+                search_pos++;
+                continue;
+              } else if (isnan(dem[true_index])) {
+                search_pos++;
+                continue;
+              } else {
+                // valid position found
+                break;
+              }
+              // While loop will terminate because cell at `index` is valid.
+            } while (true);
             sum += filter_3[n][k_index] * dem[true_index];
           }
         }
