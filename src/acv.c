@@ -3,8 +3,6 @@
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
-// TODO: remove stdio.h after testing
-#include <stdio.h>
 
 #if TOPOTOOLBOX_OPENMP_VERSION > 0
 #include <omp.h>
@@ -107,11 +105,38 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
                           {0, 0, 0, 1, 0, -1, 0, 0, 0},
                           {0, 0, -1, 0, 0, 0, 1, 0, 0}};
 
+  /*{{21, 15, 10, 17, 23},
+     {13,  5,  2,  7, 19},
+     { 9,  1,  0,  4, 12},
+     {14,  6,  3,  8, 20},
+     {22, 16, 11, 18, 24}};
+    search_order = {{row_shift, col_shift}, ...}
+  */
+  ptrdiff_t search_order[25][2] = {
+      {0, 0},   {0, -1}, {-1, 0},  {1, 0},  {0, 1},  // 0 to 4
+      {-1, -1}, {1, -1}, {-1, 1},  {1, 1},           // 5 to 8
+      {0, -2},  {-2, 0}, {2, 0},   {0, 2},           // 9 to 12
+      {-1, -2}, {1, -2}, {-2, -1}, {2, -1},          // 13 to 16
+      {-2, 1},  {2, 1},  {-1, 2},  {1, 2},           // 17 to 20
+      {-2, -2}, {2, -2}, {-2, 2},  {2, 2}            // 21 to 24
+  };
+
   // ACV:
+#if TOPOTOOLBOX_OPENMP_VERSION < 30
   ptrdiff_t col;
 #pragma omp parallel for if (use_mp)
   for (col = 0; col < dims[1]; col++) {
     for (ptrdiff_t row = 0; row < dims[0]; row++) {
+#else
+  ptrdiff_t col, row;
+#pragma omp parallel for collapse(2) if (use_mp)
+  for (col = 0; col < dims[1]; col++) {
+    for (row = 0; row < dims[0]; row++) {
+#endif
+      // Catch NaN cells and skip them
+      ptrdiff_t index = col * dims[0] + row;
+      if (isnan(dem[index])) continue;
+
       float sum = 0.0f;
       float dz_avg = 0.0f;
       float anisotropic_cov = 0.0f;
@@ -119,20 +144,34 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
       // filter_1
       for (ptrdiff_t k_col = -2; k_col <= 2; k_col++) {
         for (ptrdiff_t k_row = -2; k_row <= 2; k_row++) {
-          // Add 2 to k_values to counteract the -2 start value
+          // if filter cell is zero skip this filter cell
           ptrdiff_t k_index = (k_col + 2) * 5 + (k_row + 2);
           if (filter_1[k_index] == 0.0f) continue;
 
-          // If row or col would be out of bounds, set it to appropriate border
-          ptrdiff_t true_row = row + k_row;
-          if (true_row < 0) true_row = 0;
-          if (true_row >= dims[0]) true_row = dims[0] - 1;
-          ptrdiff_t true_col = col + k_col;
-          if (true_col < 0) true_col = 0;
-          if (true_col >= dims[1]) true_col = dims[1] - 1;
+          ptrdiff_t true_row, true_col, true_index, search_pos;
+          int out_of_bounds;
+          // If out of bounds or isnan find nearest replacement value using
+          // Euclidean distance transform. (search_order[25][2])
+          search_pos = 0;
+          do {
+            true_col = col + k_col + search_order[search_pos][1];
+            true_row = row + k_row + search_order[search_pos][0];
+            out_of_bounds = (true_row < 0 || true_row >= dims[0] ||
+                             true_col < 0 || true_col >= dims[1]);
+            true_index = true_row * dims[0] + true_col;
 
-          // Multiply kernel value by respective dem value
-          ptrdiff_t true_index = true_row * dims[0] + true_col;
+            if (out_of_bounds) {
+              search_pos++;
+              continue;
+            } else if (isnan(dem[true_index])) {
+              search_pos++;
+              continue;
+            } else {
+              // valid position found
+              break;
+            }
+            // While loop will terminate because cell at `index` is valid.
+          } while (true);
           sum += filter_1[k_index] * dem[true_index];
         }
       }
@@ -186,7 +225,6 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
       dz_avg = fmaxf(0.001f, fabsf(dz_avg));
 
       // C = log(1 + sqrt(ACV./8)./dz_AVG);
-      ptrdiff_t index = col * dims[0] + row;
       output[index] = logf(1.0f + sqrtf(anisotropic_cov / 8.0f) / dz_avg);
     }
   }
