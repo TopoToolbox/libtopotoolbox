@@ -133,6 +133,7 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
   for (col = 0; col < dims[1]; col++) {
     for (row = 0; row < dims[0]; row++) {
 #endif
+
       // Catch NaN cells and skip them
       ptrdiff_t index = col * dims[0] + row;
       if (isnan(dem[index])) continue;
@@ -158,7 +159,7 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
             true_row = row + k_row + search_order[search_pos][0];
             out_of_bounds = (true_row < 0 || true_row >= dims[0] ||
                              true_col < 0 || true_col >= dims[1]);
-            true_index = true_row * dims[0] + true_col;
+            true_index = true_col * dims[0] + true_row;
 
             if (out_of_bounds) {
               search_pos++;
@@ -197,7 +198,7 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
               true_row = row + k_row + search_order[search_pos][0];
               out_of_bounds = (true_row < 0 || true_row >= dims[0] ||
                                true_col < 0 || true_col >= dims[1]);
-              true_index = true_row * dims[0] + true_col;
+              true_index = true_col * dims[0] + true_row;
 
               if (out_of_bounds) {
                 search_pos++;
@@ -237,7 +238,7 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
               true_row = row + k_row + search_order[search_pos][0];
               out_of_bounds = (true_row < 0 || true_row >= dims[0] ||
                                true_col < 0 || true_col >= dims[1]);
-              true_index = true_row * dims[0] + true_col;
+              true_index = true_col * dims[0] + true_row;
 
               if (out_of_bounds) {
                 search_pos++;
