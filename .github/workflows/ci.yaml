@@ -19,7 +19,7 @@ jobs:
   debug-build:
     runs-on: ubuntu-latest
     env:
-      snapshot_version: v1.3.0
+      snapshot_version: v1.4.0
     steps:
       - uses: actions/checkout@v4
         with:

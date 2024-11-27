@@ -70,12 +70,14 @@ struct SnapshotData {
   std::vector<float> filled_dem;
   std::vector<int32_t> flats;
   std::vector<int32_t> sills;
+  std::vector<float> acv;
 
   // Output arrays
   std::vector<float> test_dem;
   std::vector<float> test_filled_dem;
   std::vector<int32_t> test_flats;
   std::vector<int32_t> test_sills;
+  std::vector<float> test_acv;
 
   // Intermediate arrays
   std::vector<uint8_t> bc;
@@ -111,6 +113,12 @@ struct SnapshotData {
       assert(dims[0] == dims_check[0] && dims[1] == dims_check[1]);
     }
 
+    if (exists(snapshot_path / "acv.tif")) {
+      load_data_from_file<float, GDT_Float32>(snapshot_path / "acv.tif", acv,
+                                              dims_check);
+      assert(dims[0] == dims_check[0] && dims[1] == dims_check[1]);
+    }
+
     // Allocate and resize output and intermediate arrays
     if (dem.size() > 0) {
       if (filled_dem.size() > 0) {
@@ -121,10 +129,13 @@ struct SnapshotData {
       if (flats.size() > 0 && sills.size() > 0) {
         test_flats.resize(dims[0] * dims[1]);
       }
+      if (acv.size() > 0) {
+        test_acv.resize(dims[0] * dims[1]);
+      }
     }
   }
 
-  int test_fillsinks() {
+  int run_fillsinks() {
     // Initialize bcs
     for (ptrdiff_t j = 0; j < dims[1]; j++) {
       for (ptrdiff_t i = 0; i < dims[0]; i++) {
@@ -161,7 +172,7 @@ struct SnapshotData {
     return 0;
   }
 
-  int test_identifyflats() {
+  int run_identifyflats() {
     // identifyflats
     //
     // Use the snapshot filled DEM rather than the generated one in
@@ -188,11 +199,28 @@ struct SnapshotData {
     return 0;
   }
 
+  int run_acv() {
+    // acv
+    tt::acv(test_acv.data(), dem.data(), 0, dims.data());
+
+    for (ptrdiff_t j = 0; j < dims[1]; j++) {
+      for (ptrdiff_t i = 0; i < dims[0]; i++) {
+        if (test_acv[j * dims[0] + i] != acv[j * dims[0] + i]) {
+          write_data_to_file<float, GDT_Float32>(
+              path / "test_acv.tif", path / "acv.tif", test_acv, dims);
+          return -1;
+        }
+      }
+    }
+
+    return 0;
+  }
+
   int runtests() {
     int result = 0;
     // fillsinks
     if (test_filled_dem.size() > 0) {
-      if (test_fillsinks() < 0) {
+      if (run_fillsinks() < 0) {
         result = -1;
 
         std::cout << "[FAILURE] (fillsinks)     " << path << std::endl;
@@ -202,12 +230,22 @@ struct SnapshotData {
     }
 
     if (flats.size() > 0 && sills.size() > 0) {
-      if (test_identifyflats() < 0) {
+      if (run_identifyflats() < 0) {
         result = -1;
 
         std::cout << "[FAILURE] (identifyflats) " << path << std::endl;
       } else {
         std::cout << "[SUCCESS] (identifyflats) " << path << std::endl;
+      }
+    }
+
+    if (acv.size() > 0) {
+      if (run_acv() < 0) {
+        result = -1;
+
+        std::cout << "[FAILURE] (acv) " << path << std::endl;
+      } else {
+        std::cout << "[SUCCESS] (acv) " << path << std::endl;
       }
     }
 
