@@ -185,7 +185,7 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
           for (ptrdiff_t k_row = -2; k_row <= 2; k_row++) {
             // if filter cell is zero skip this filter cell
             ptrdiff_t k_index = (k_col + 2) * 5 + (k_row + 2);
-            if (filter_1[k_index] == 0.0f) continue;
+            if (filter_2[n][k_index] == 0.0f) continue;
 
             ptrdiff_t true_row, true_col, true_index, search_pos;
             int out_of_bounds;
@@ -222,10 +222,9 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
         sum = 0.0f;
         for (ptrdiff_t k_col = -1; k_col <= 1; k_col++) {
           for (ptrdiff_t k_row = -1; k_row <= 1; k_row++) {
-            ptrdiff_t k_index = (k_col + 1) * 3 + (k_row + 1);
             // if filter cell is zero skip this filter cell
-
-            if (filter_1[k_index] == 0.0f) continue;
+            ptrdiff_t k_index = (k_col + 1) * 3 + (k_row + 1);
+            if (filter_3[n][k_index] == 0.0f) continue;
 
             ptrdiff_t true_row, true_col, true_index, search_pos;
             int out_of_bounds;
