@@ -145,7 +145,7 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
       // filter_1
       for (ptrdiff_t k_col = -2; k_col <= 2; k_col++) {
         for (ptrdiff_t k_row = -2; k_row <= 2; k_row++) {
-          // if filter cell is zero skip this filter cell
+          // if filter cell is zero skip this filter cell (sum += 0.0f)
           ptrdiff_t k_index = (k_col + 2) * 5 + (k_row + 2);
           if (filter_1[k_index] == 0.0f) continue;
 
@@ -154,25 +154,24 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
           // If out of bounds or isnan find nearest replacement value using
           // Euclidean distance transform. (search_order[25][2])
           search_pos = 0;
-          do {
+          while (true) {
             true_col = col + k_col + search_order[search_pos][1];
             true_row = row + k_row + search_order[search_pos][0];
             out_of_bounds = (true_row < 0 || true_row >= dims[0] ||
                              true_col < 0 || true_col >= dims[1]);
-            true_index = true_col * dims[0] + true_row;
-
             if (out_of_bounds) {
               search_pos++;
               continue;
-            } else if (isnan(dem[true_index])) {
+            }
+            true_index = true_col * dims[0] + true_row;
+            if (isnan(dem[true_index])) {
               search_pos++;
               continue;
-            } else {
-              // valid position found
-              break;
             }
-            // While loop will terminate because cell at `index` is valid.
-          } while (true);
+            // valid position found. While(true) loop will terminate because
+            // cell at `index` is valid.
+            break;
+          }
           sum += filter_1[k_index] * dem[true_index];
         }
       }
@@ -193,28 +192,28 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
             // If out of bounds or isnan find nearest replacement value using
             // Euclidean distance transform. (search_order[25][2])
             search_pos = 0;
-            do {
+            while (true) {
               true_col = col + k_col + search_order[search_pos][1];
               true_row = row + k_row + search_order[search_pos][0];
               out_of_bounds = (true_row < 0 || true_row >= dims[0] ||
                                true_col < 0 || true_col >= dims[1]);
-              true_index = true_col * dims[0] + true_row;
-
               if (out_of_bounds) {
                 search_pos++;
                 continue;
-              } else if (isnan(dem[true_index])) {
+              }
+              true_index = true_col * dims[0] + true_row;
+              if (isnan(dem[true_index])) {
                 search_pos++;
                 continue;
-              } else {
-                // valid position found
-                break;
               }
-              // While loop will terminate because cell at `index` is valid.
-            } while (true);
+              // valid position found. While(true) loop will terminate because
+              // cell at `index` is valid.
+              break;
+            }
             sum += filter_2[n][k_index] * dem[true_index];
           }
         }
+        // ACV = ACV + (conv2(dem,F{r},'valid') - dz_AVG).^2;
         anisotropic_cov += powf(sum - dz_avg, 2.0f);
       }
 
@@ -233,28 +232,28 @@ void acv(float *output, float *dem, int use_mp, ptrdiff_t dims[2]) {
             // If out of bounds or isnan find nearest replacement value using
             // Euclidean distance transform. (search_order[25][2])
             search_pos = 0;
-            do {
+            while (true) {
               true_col = col + k_col + search_order[search_pos][1];
               true_row = row + k_row + search_order[search_pos][0];
               out_of_bounds = (true_row < 0 || true_row >= dims[0] ||
                                true_col < 0 || true_col >= dims[1]);
-              true_index = true_col * dims[0] + true_row;
-
               if (out_of_bounds) {
                 search_pos++;
                 continue;
-              } else if (isnan(dem[true_index])) {
+              }
+              true_index = true_col * dims[0] + true_row;
+              if (isnan(dem[true_index])) {
                 search_pos++;
                 continue;
-              } else {
-                // valid position found
-                break;
               }
-              // While loop will terminate because cell at `index` is valid.
-            } while (true);
+              // valid position found. While(true) loop will terminate because
+              // cell at `index` is valid.
+              break;
+            }
             sum += filter_3[n][k_index] * dem[true_index];
           }
         }
+        // ACV = ACV + (conv2(dem,F{r},'valid') - dz_AVG).^2;
         anisotropic_cov += powf(sum - dz_avg, 2.0f);
       }
       // dz_AVG = max(abs(dz_AVG),0.001);
