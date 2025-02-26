@@ -79,7 +79,7 @@ void prominence(float **result_values, ptrdiff_t **result_indexes,
   List_Node *current = p_head;
   List_Node *next;
 
-  for (int i = 0; i < counter; i++) {
+  for (ptrdiff_t i = 0; i < counter; i++) {
     // save values and indexes in return arrays
     (*result_values)[i] = current->value;
     (*result_indexes)[i] = current->index;
