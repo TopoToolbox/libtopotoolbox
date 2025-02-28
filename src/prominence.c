@@ -24,7 +24,6 @@ void prominence(float **result_values, ptrdiff_t **result_indexes,
                 ptrdiff_t *result_size, float *dem, float tolerance,
                 ptrdiff_t dims[2]) {
 
-  printf("start of func\n");
   ptrdiff_t size = dims[0] * dims[1];
 
   float min_dem_val = INFINITY;
@@ -56,6 +55,7 @@ void prominence(float **result_values, ptrdiff_t **result_indexes,
         max_index = i;
       }
     }
+    printf("max val: %f\n", max_val);
 
     List_Node *new_node = (List_Node *)malloc(sizeof(List_Node));
     new_node->value = max_val;
@@ -78,7 +78,7 @@ void prominence(float **result_values, ptrdiff_t **result_indexes,
     // P.Z = imreconstruct(P.Z,DEM.Z);
     reconstruct(P, dem, dims);
     counter++;
-    printf("while loop iteration done\n");
+    printf("while loop iteration done\ntail: %f", p_tail->value);
   } while (p_tail->value > tolerance);
   free(P);
   printf("while loop done\n");
@@ -104,5 +104,4 @@ void prominence(float **result_values, ptrdiff_t **result_indexes,
   }
 
   *result_size = counter;
-  printf("done\n");
 }
