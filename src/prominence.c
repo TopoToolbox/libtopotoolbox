@@ -15,29 +15,24 @@ typedef struct List_Node {
   struct List_Node *next;
 } List_Node;
 
-/*
-
-*/
-
 TOPOTOOLBOX_API
 void prominence(float **result_values, ptrdiff_t **result_indexes,
                 ptrdiff_t *result_size, float *dem, float tolerance,
                 ptrdiff_t dims[2]) {
-
   ptrdiff_t size = dims[0] * dims[1];
 
   float min_dem_val = INFINITY;
   for (ptrdiff_t i = 0; i < size; i++) {
     if (min_dem_val > dem[i]) min_dem_val = dem[i];
   }
-  
+
   float *P = malloc(size * sizeof(float));
   if (!P) {
     return;
   }
   for (ptrdiff_t i = 0; i < size; i++) {
-    //P = GRIDobj(DEM)+min(DEM);
-    //P[i] = dem[i] + min_dem_val;
+    // P = GRIDobj(DEM)+min(DEM);
+    // P[i] = dem[i] + min_dem_val;
     P[i] = min_dem_val;
   }
 
