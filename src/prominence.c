@@ -31,12 +31,14 @@ void prominence(float **result_values, ptrdiff_t **result_indexes,
     if (min_dem_val > dem[i]) min_dem_val = dem[i];
   }
   printf("min_dem_val: %f\n", min_dem_val);
+  //P = GRIDobj(DEM)+min(DEM);
   float *P = malloc(size * sizeof(float));
   if (!P) {
     return;
   }
   for (ptrdiff_t i = 0; i < size; i++) {
-    P[i] = dem[i] + min_dem_val;
+    //P[i] = dem[i] + min_dem_val;
+    P[i] = min_dem_val;
   }
 
   ptrdiff_t counter = 0;
