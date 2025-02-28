@@ -30,7 +30,7 @@ void prominence(float **result_values, ptrdiff_t **result_indexes,
   for (ptrdiff_t i = 0; i < size; i++) {
     if (min_dem_val > dem[i]) min_dem_val = dem[i];
   }
-
+  printf("min_dem_val: %f\n", min_dem_val);
   float *P = malloc(size * sizeof(float));
   if (!P) {
     return;
@@ -70,6 +70,7 @@ void prominence(float **result_values, ptrdiff_t **result_indexes,
       p_tail->next = new_node;
       p_tail = new_node;
     }
+    printf("tail: %f, %td, %p\n", p_tail->value, p_tail->index, p_tail->next);
 
     // P.Z(ix) = DEM.Z(ix);
     // replace new found max value with original dem value
