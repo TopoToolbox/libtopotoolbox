@@ -23,13 +23,19 @@ TOPOTOOLBOX_API
 void prominence(float **result_values, ptrdiff_t **result_indexes,
                 ptrdiff_t *result_size, float *dem, float tolerance,
                 ptrdiff_t dims[2]) {
+
+  printf("start of func\n");
   ptrdiff_t size = dims[0] * dims[1];
-  float min_dem_val = dem[0];
+
+  float min_dem_val = INFINITY;
   for (ptrdiff_t i = 0; i < size; i++) {
     if (min_dem_val > dem[i]) min_dem_val = dem[i];
   }
 
   float *P = malloc(size * sizeof(float));
+  if (!P) {
+    return;
+  }
   for (ptrdiff_t i = 0; i < size; i++) {
     P[i] = dem[i] + min_dem_val;
   }
@@ -38,10 +44,12 @@ void prominence(float **result_values, ptrdiff_t **result_indexes,
   List_Node *p_head = NULL;
   List_Node *p_tail = NULL;
 
+  printf("entering while loop\n");
+
   do {
     // [p(counter),ix(counter)] = max(DEM-P);
-    float max_val = 0;
-    ptrdiff_t max_index;
+    float max_val = -INFINITY;
+    ptrdiff_t max_index = 0;
     for (ptrdiff_t i = 0; i < size; i++) {
       if (max_val < dem[i] - P[i]) {
         max_val = dem[i] - P[i];
@@ -70,12 +78,17 @@ void prominence(float **result_values, ptrdiff_t **result_indexes,
     // P.Z = imreconstruct(P.Z,DEM.Z);
     reconstruct(P, dem, dims);
     counter++;
+    printf("while loop iteration done\n");
   } while (p_tail->value > tolerance);
   free(P);
+  printf("while loop done\n");
 
   // turn linked list into arrays containing results and free the linked list
   *result_values = malloc(counter * sizeof(float));
   *result_indexes = malloc(counter * sizeof(ptrdiff_t));
+  if (!result_values || !result_indexes) {
+    return;
+  }
   List_Node *current = p_head;
   List_Node *next;
 
@@ -91,4 +104,5 @@ void prominence(float **result_values, ptrdiff_t **result_indexes,
   }
 
   *result_size = counter;
+  printf("done\n");
 }
