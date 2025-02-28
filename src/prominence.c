@@ -30,13 +30,13 @@ void prominence(float **result_values, ptrdiff_t **result_indexes,
   for (ptrdiff_t i = 0; i < size; i++) {
     if (min_dem_val > dem[i]) min_dem_val = dem[i];
   }
-  printf("min_dem_val: %f\n", min_dem_val);
-  //P = GRIDobj(DEM)+min(DEM);
+  
   float *P = malloc(size * sizeof(float));
   if (!P) {
     return;
   }
   for (ptrdiff_t i = 0; i < size; i++) {
+    //P = GRIDobj(DEM)+min(DEM);
     //P[i] = dem[i] + min_dem_val;
     P[i] = min_dem_val;
   }
@@ -44,8 +44,6 @@ void prominence(float **result_values, ptrdiff_t **result_indexes,
   ptrdiff_t counter = 0;
   List_Node *p_head = NULL;
   List_Node *p_tail = NULL;
-
-  printf("entering while loop\n");
 
   do {
     // [p(counter),ix(counter)] = max(DEM-P);
@@ -57,8 +55,7 @@ void prominence(float **result_values, ptrdiff_t **result_indexes,
         max_index = i;
       }
     }
-    printf("max val: %f\n", max_val);
-
+    // create new node
     List_Node *new_node = (List_Node *)malloc(sizeof(List_Node));
     new_node->value = max_val;
     new_node->index = max_index;
@@ -72,7 +69,6 @@ void prominence(float **result_values, ptrdiff_t **result_indexes,
       p_tail->next = new_node;
       p_tail = new_node;
     }
-    printf("tail: %f, %td, %p\n", p_tail->value, p_tail->index, p_tail->next);
 
     // P.Z(ix) = DEM.Z(ix);
     // replace new found max value with original dem value
@@ -81,10 +77,9 @@ void prominence(float **result_values, ptrdiff_t **result_indexes,
     // P.Z = imreconstruct(P.Z,DEM.Z);
     reconstruct(P, dem, dims);
     counter++;
-    printf("while loop iteration done\ntail: %f", p_tail->value);
+
   } while (p_tail->value > tolerance);
   free(P);
-  printf("while loop done\n");
 
   // turn linked list into arrays containing results and free the linked list
   *result_values = malloc(counter * sizeof(float));
