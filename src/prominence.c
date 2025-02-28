@@ -16,7 +16,7 @@ typedef struct List_Node {
 } List_Node;
 
 TOPOTOOLBOX_API
-void prominence(float **result_values, ptrdiff_t **result_indexes,
+void prominence(float **result_values, ptrdiff_t **result_indices,
                 ptrdiff_t *result_size, float *dem, float tolerance,
                 ptrdiff_t dims[2]) {
   ptrdiff_t size = dims[0] * dims[1];
@@ -78,17 +78,17 @@ void prominence(float **result_values, ptrdiff_t **result_indexes,
 
   // turn linked list into arrays containing results and free the linked list
   *result_values = malloc(counter * sizeof(float));
-  *result_indexes = malloc(counter * sizeof(ptrdiff_t));
-  if (!result_values || !result_indexes) {
+  *result_indices = malloc(counter * sizeof(ptrdiff_t));
+  if (!result_values || !result_indices) {
     return;
   }
   List_Node *current = p_head;
   List_Node *next;
 
   for (ptrdiff_t i = 0; i < counter; i++) {
-    // save values and indexes in return arrays
+    // save values and indices in return arrays
     (*result_values)[i] = current->value;
-    (*result_indexes)[i] = current->index;
+    (*result_indices)[i] = current->index;
 
     // free the current node
     next = current->next;
