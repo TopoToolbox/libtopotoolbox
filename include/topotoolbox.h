@@ -834,11 +834,11 @@ void gradient8(float *output, float *dem, float cellsize, int use_mp,
 
    @param[out] result_values: Array storing the computed prominences.
    @param[out] result_indices: Array holding the respetive index for each peak.
-   @param[out] result_size: length of the resulting result_values and 
+   @param[out] result_size: length of the resulting result_values and
    result_indices arrays.
    @param[in]  dem: Input digital elevation model as a 2D array flattened into
    a 1D array. This array represents the elevation values of each cell.
-   @param[in]  tolerance: The minimum tolerance for the second to last 
+   @param[in]  tolerance: The minimum tolerance for the second to last
    found peak. Will always find one peak.
    @param[in]  dims: An array specifying the dimensions of the DEM.
                      It should contain two values: [rows, columns].
