@@ -824,29 +824,17 @@ void gradient8(float *output, float *dem, float cellsize, int use_mp,
                ptrdiff_t dims[2]);
 
 /**
-   @brief This function calculates the prominence of peaks in a DEM. The
-   prominence is the minimal amount one would need to descend from a peak
-   before being able to ascend to a higher peak. The function uses image
-   reconstruct (see function imreconstruct) to calculate the prominence.
-   It may take a while to run for large DEMs. The algorithm iteratively finds
-   the next higher prominence and stops if the prominence is less than the
-   tolerance, the second input parameter to the function.
+   @brief Performs a grayscale reconstruction of the `mask` image by the
+   `marker` image using the sequential reconstruction algorithm of Vincent
+   (1993).
 
-   @param[out] result_values: Array storing the computed prominences.
-   @param[out] result_indices: Array holding the respetive index for each peak.
-   @param[out] result_size: length of the resulting result_values and
-   result_indices arrays.
-   @param[in]  dem: Input digital elevation model as a 2D array flattened into
-   a 1D array. This array represents the elevation values of each cell.
-   @param[in]  tolerance: The minimum tolerance for the second to last
-   found peak. Will always find one peak.
-   @param[in]  dims: An array specifying the dimensions of the DEM.
+   @param[out] marker: The marker array is updated with the result in-place.
+   @param[in]  mask: The array holding the mask (for example dem).
+   @param[in]  dims: An array specifying the dimensions of both used arrays.
                      It should contain two values: [rows, columns].
 */
 TOPOTOOLBOX_API
-void prominence(float **result_values, ptrdiff_t **result_indices,
-                ptrdiff_t *result_size, float *dem, float tolerance,
-                ptrdiff_t dims[2]);
+void reconstruct(float *marker, float *mask, ptrdiff_t dims[2]);
 
 /**
    @brief Integrate a `float` quantity over a stream network using
