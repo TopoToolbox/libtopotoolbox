@@ -19,7 +19,6 @@ add_library(topotoolbox
   flow_accumulation.c
   streamquad.c
   drainagebasins.c
-  prominence.c
 )
 
 # Define the include directory
