@@ -9,7 +9,6 @@ This file contains routine to accumulate flow downstream, a way or another
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../morphology/reconstruct.h"
 #include "gf_utils.h"
 #include "graphflood/define_types.h"
 #include "topotoolbox.h"

@@ -5,7 +5,6 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include "../morphology/reconstruct.h"
 #include "gf_utils.h"
 #include "graphflood/define_types.h"
 #include "topotoolbox.h"

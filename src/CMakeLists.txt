@@ -7,7 +7,7 @@ add_library(topotoolbox
   identifyflats.c
   gwdt.c
   gradient8.c
-  morphology/reconstruct.c
+  reconstruct.c
   priority_queue.c
   excesstopography.c
   graphflood/gf_utils.c

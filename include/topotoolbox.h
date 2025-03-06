@@ -837,6 +837,21 @@ TOPOTOOLBOX_API
 void reconstruct(float *marker, float *mask, ptrdiff_t dims[2]);
 
 /**
+   @brief Performs a ggrayscale reconstruction using the hybrid 
+   algorithm of Vincent(1993).
+
+   @param[out] marker: The marker array is updated with the result in-place.
+   @param[in]  queue: A ptrdiff_t array of the same size as the marker and mask
+   arrays.
+   @param[in]  mask: The array holding the mask (for example dem).
+   @param[in]  dims: An array specifying the dimensions of all used arrays.
+                     It should contain two values: [rows, columns].
+*/
+TOPOTOOLBOX_API
+void reconstruct_hybrid(float *marker, ptrdiff_t *queue, float *mask,
+   ptrdiff_t dims[2]);
+
+/**
    @brief Integrate a `float` quantity over a stream network using
    trapezoidal integration.
 

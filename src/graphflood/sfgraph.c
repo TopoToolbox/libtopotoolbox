@@ -13,7 +13,6 @@ A Single flow graph is a data structure describing a Directed Acyclic Graph
 #include <stdint.h>
 #include <stdio.h>
 
-#include "../morphology/reconstruct.h"
 #include "gf_utils.h"
 #include "graphflood/define_types.h"
 #include "pq_priority_flood.h"

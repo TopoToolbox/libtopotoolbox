@@ -1,4 +1,6 @@
-#include "reconstruct.h"
+#define TOPOTOOLBOX_BUILD
+
+#include "topotoolbox.h"
 
 #include <assert.h>
 #include <math.h>
