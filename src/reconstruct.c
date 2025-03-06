@@ -1,11 +1,11 @@
 #define TOPOTOOLBOX_BUILD
 
-#include "topotoolbox.h"
-
 #include <assert.h>
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
+
+#include "topotoolbox.h"
 
 // FIFO circular queue implementation
 //
