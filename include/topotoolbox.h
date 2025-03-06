@@ -837,7 +837,7 @@ TOPOTOOLBOX_API
 void reconstruct(float *marker, float *mask, ptrdiff_t dims[2]);
 
 /**
-   @brief Performs a ggrayscale reconstruction using the hybrid 
+   @brief Performs a ggrayscale reconstruction using the hybrid
    algorithm of Vincent(1993).
 
    @param[out] marker: The marker array is updated with the result in-place.
@@ -849,7 +849,7 @@ void reconstruct(float *marker, float *mask, ptrdiff_t dims[2]);
 */
 TOPOTOOLBOX_API
 void reconstruct_hybrid(float *marker, ptrdiff_t *queue, float *mask,
-   ptrdiff_t dims[2]);
+                        ptrdiff_t dims[2]);
 
 /**
    @brief Integrate a `float` quantity over a stream network using
