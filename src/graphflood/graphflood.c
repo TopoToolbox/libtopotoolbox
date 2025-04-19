@@ -58,6 +58,8 @@ void _graphflood_full_sfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs,
       // Note that a lot of the checks are actually already done by the graph
       // calculation
       if (rec == node) continue;
+      // Boundary condition: if the flow can out I do not touch hw
+      if (can_out(node, BCs)) continue;
       // Additional check: if no water and no input, no need to calculate
       if (Zw[node] == Z[node] && Qwin[node] == 0) continue;
 
@@ -144,6 +146,8 @@ void _graphflood_full_mfd(GF_FLOAT* Z, GF_FLOAT* hw, uint8_t* BCs,
 
       // If no data: pass
       if (is_nodata(node, BCs)) continue;
+      // Boundary condition: if the flow can out I do not touch hw
+      if (can_out(node, BCs)) continue;
 
       // First, incrementing local Qwin
       Qwin[node] += Precipitations[node] * dx * dx;
