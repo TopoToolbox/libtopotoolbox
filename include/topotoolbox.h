@@ -1583,17 +1583,12 @@ void gradient_secondorder(float *p0, float *p1, float *dem, float cellsize,
    A pointer to a float array of size `dims[0] * dims[1]`.
    @endparblock
 
-   @param[out] nx The component of the surface normal in the x direction
+   @param[out] dx The surface gradient in the first dimension
    @parblock
    A pointer to a float array of size `dims[0] * dims[1]`.
    @endparblock
 
-   @param[out] ny The component of the surface normal in the y direction
-   @parblock
-   A pointer to a float array of size `dims[0] * dims[1]`.
-   @endparblock
-
-   @param[out] nz The component of the surface normal in the z direction
+   @param[out] dy The surface gradient in the second dimension
    @parblock
    A pointer to a float array of size `dims[0] * dims[1]`.
    @endparblock
@@ -1630,7 +1625,55 @@ void gradient_secondorder(float *p0, float *p1, float *dem, float cellsize,
    @endparblock
  */
 TOPOTOOLBOX_API
-void hillshade(float *output, float *nx, float *ny, float *nz, float *dem,
-               float azimuth, float altitude, float cellsize,
-               ptrdiff_t dims[2]);
+void hillshade(float *output, float *dx, float *dy, float *dem, float azimuth,
+               float altitude, float cellsize, ptrdiff_t dims[2]);
+
+/**
+   @brief Compute a hillshade of the supplied digital elevation model
+
+   The output of `hillshade_fused` should be identical to that of
+   `hillshade`, but the gradient, surface normal and shading loops
+   have been fused to remove the need for intermediate arrays. This
+   causes a slight performance degradation, but significantly reduces
+   the amount of memory needed.
+
+   @param[out] output The output hillshade
+   @parblock
+   A pointer to a float array of size `dims[0] * dims[1]`.
+   @endparblock
+
+   @param[in] dem The input digital elevation model
+   @parblock
+   A pointer to a float array of size `dims[0] * dims[1]`.
+   @endparblock
+
+   @param[in] azimuth The azimuth angle of the light source
+   @parblock
+   `hillshade` expects the azimuth angle to be provided in radians
+   from the first dimension of the grid towards the second dimension
+   of the grid. This is most likely not identical to the geographic
+   azimuth traditionally measured clockwise from north. Callers should
+   take care to rotate their desired azimuth angle into the grid
+   coordinate system depending on the georeferencing of the grid and
+   the memory layout of the array.
+   @endparblock
+
+   @param[in] altitude The altitude angle of the light source
+   @parblock
+   The altitude angle must be provided in radians above the horizon.
+   @endparblock
+
+   @param[in] cellsize The spatial resolution of the DEM
+
+   @param[in] dims The dimensions of the arrays
+   @parblock
+   A pointer to a `ptrdiff_t` array of size 2
+
+   The fastest changing dimension should be provided first. For column-major
+   arrays, `dims = {nrows,ncols}`. For row-major arrays, `dims = {ncols,nrows}`.
+   @endparblock
+ */
+TOPOTOOLBOX_API
+void hillshade_fused(float *output, float *dem, float azimuth, float altitude,
+                     float cellsize, ptrdiff_t dims[2]);
 #endif  // TOPOTOOLBOX_H

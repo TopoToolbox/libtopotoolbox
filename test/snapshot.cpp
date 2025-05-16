@@ -229,9 +229,8 @@ struct SnapshotData {
     // coordinates decreasing in the second dimension. A bearing of
     // 315 degrees corresponds to 225 degrees (3.927 radians) in the
     // grid coordinate system.
-    tt::hillshade(test_hs.data(), test_nx.data(), test_ny.data(),
-                  test_nz.data(), dem.data(), 3.9269908169872414,
-                  1.047197551196598, cellsize, dims.data());
+    tt::hillshade(test_hs.data(), test_nx.data(), test_ny.data(), dem.data(),
+                  3.9269908169872414, 1.047197551196598, cellsize, dims.data());
 
     for (ptrdiff_t j = 0; j < dims[1]; j++) {
       for (ptrdiff_t i = 0; i < dims[0]; i++) {
@@ -241,6 +240,27 @@ struct SnapshotData {
           write_data_to_file<float, GDT_Float32>(path / "test_hillshade.tif",
                                                  path / "hillshade.tif",
                                                  test_hs, dims);
+          return -1;
+        }
+
+        // Zero the hillshade array so we can reuse it for the
+        // low-memory test
+        test_hs[j * dims[0] + i] = 0.0;
+      }
+    }
+
+    // Test the low-memory version of hillshade
+    tt::hillshade_fused(test_hs.data(), dem.data(), 3.9269908169872414,
+                        1.047197551196598, cellsize, dims.data());
+
+    for (ptrdiff_t j = 0; j < dims[1]; j++) {
+      for (ptrdiff_t i = 0; i < dims[0]; i++) {
+        float H = test_hs[j * dims[0] + i];
+
+        if (fabsf(H - hs[j * dims[0] + i]) > 1e-4) {
+          write_data_to_file<float, GDT_Float32>(
+              path / "test_hillshade_lowmem.tif", path / "hillshade.tif",
+              test_hs, dims);
           return -1;
         }
       }
