@@ -1082,6 +1082,55 @@ void traverse_down_f32_max_add(float *output, float *input, ptrdiff_t *source,
                                ptrdiff_t *target, ptrdiff_t edge_count);
 
 /**
+   @brief Upstream traversal with max-plus
+
+   Accumulates the edge weights in the `input` edge attribute list
+   using a max-plus updat.
+
+   With input giving the length of each edge and output initialized to
+   zero, this will compute the longest path from the outlet to a
+   source node.
+
+   @param[out] output The accumulated output
+   @parblock
+   A pointer to a `float` array representing a node attribute list
+
+   This array should have a length equal to the number of nodes in the
+   stream network.  This value must not be less than the largest value
+   in either the `source` or `target` arrays.
+   @endparblock
+
+   @param[in] input The edge weights
+   @parblock
+   A pointer to a `float` array of size `edge_count`
+   @endparblock
+
+   @param[in] source The source node of each edge in the stream
+                     network
+   @parblock
+   A pointer to a `ptrdiff_t` array of size `edge_count`
+
+   The source nodes must be in topological order. The labels must
+   correspond to the 0-based indices of the node-attribute list
+   `output`.
+   @endparblock
+
+   @param[in] target The target nodes of each edge in the stream
+                     network
+   @parblock
+   A pointer to a `ptrdiff_t` array of size `edge_count`
+
+   The labels must correspond to the 0-based indices of the
+   node-attribute list `output`.
+   @endparblock
+
+   @param[in] edge_count The number of edges in the stream network
+ */
+TOPOTOOLBOX_API
+void traverse_up_f32_max_add(float *output, float *input, ptrdiff_t *source,
+                             ptrdiff_t *target, ptrdiff_t edge_count);
+
+/**
    @brief Downstream traversal with min-plus
 
    Accumulates the edge weights in the `input` edge attribute list
