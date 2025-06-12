@@ -1382,7 +1382,7 @@ void traverse_down_f32_add_mul(float *output, float *input, ptrdiff_t *source,
 
 TOPOTOOLBOX_API
 void traverse_down_f32_strahler(float *output, float *input, ptrdiff_t *source,
-                               ptrdiff_t *target, ptrdiff_t edge_count);
+                                ptrdiff_t *target, ptrdiff_t edge_count);
 
 /**
    @brief Propagate `float` values upstream
