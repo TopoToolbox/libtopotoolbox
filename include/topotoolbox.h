@@ -1282,6 +1282,105 @@ void edgelist_degree(uint8_t *indegree, uint8_t *outdegree, ptrdiff_t *source,
                      ptrdiff_t edge_count);
 
 /**
+   @brief Downstream traversal with multiply-add
+
+   Accumulates the edge weights in the `input` edge attribute list
+   using a multiply-add update:
+
+   for (e = (u,v)) in edges:
+     output[v] = output[v] + output[u] * input[e];
+
+   With input giving the flow fraction of each edge and output
+   initialized to ones, this will compute the flow accumulation.
+
+   @param[out] output The accumulated output
+   @parblock
+   A pointer to a `float` array representing a node attribute list
+
+   This array should have a length equal to the number of nodes in the
+   stream network.  This value must not be less than the largest value
+   in either the `source` or `target` arrays.
+   @endparblock
+
+   @param[in] input The edge weights
+   @parblock
+   A pointer to a `float` array of size `edge_count`
+   @endparblock
+
+   @param[in] source The source node of each edge in the stream
+                     network
+   @parblock
+   A pointer to a `ptrdiff_t` array of size `edge_count`
+
+   The source nodes must be in topological order. The labels must
+   correspond to the 0-based indices of the node-attribute list
+   `output`.
+   @endparblock
+
+   @param[in] target The target nodes of each edge in the stream
+                     network
+   @parblock
+   A pointer to a `ptrdiff_t` array of size `edge_count`
+
+   The labels must correspond to the 0-based indices of the
+   node-attribute list `output`.
+   @endparblock
+
+   @param[in] edge_count The number of edges in the stream network
+ */
+TOPOTOOLBOX_API
+void traverse_down_f32_add_mul(float *output, float *input, ptrdiff_t *source,
+                               ptrdiff_t *target, ptrdiff_t edge_count);
+
+/**
+   @brief Compute the stream order from a Stream Object using the Strahler method
+
+   @param[out] indegree The indegree of each node in the stream network
+   @parblock
+   A pointer to a `uint8_t` array representing a node attribute list
+
+   This array should have a length equal to the number of nodes in the
+   stream network.  This value must not be less than the largest value
+   in either the `source` or `target` arrays.
+   @endparblock
+
+   @param[out] outdegree The outdegree of each node in the stream network
+   @parblock
+   A pointer to a `uint8_t` array representing a node attribute list
+
+   This array should have a length equal to the number of nodes in the
+   stream network.  This value must not be less than the largest value
+   in either the `source` or `target` arrays.
+   @endparblock
+
+   @param[in] source The source node of each edge in the stream
+                     network
+   @parblock
+   A pointer to a `ptrdiff_t` array of size `edge_count`
+
+   The source nodes must be in topological order. The labels must
+   correspond to the 0-based indices of the node-attribute list
+   `indegree` and `outdegree`.
+   @endparblock
+
+   @param[in] target The target nodes of each edge in the stream
+                     network
+   @parblock
+   A pointer to a `ptrdiff_t` array of size `edge_count`
+
+   The labels must correspond to the 0-based indices of the
+   node-attribute lists `indegree` and `outdegree`.
+   @endparblock
+
+   @param[in] node_count The number of nodes in the stream network
+   @param[in] edge_count The number of edges in the stream network
+ */
+
+TOPOTOOLBOX_API
+void traverse_down_f32_strahler(float *output, float *input, ptrdiff_t *source,
+                               ptrdiff_t *target, ptrdiff_t edge_count)
+
+/**
    @brief Propagate `float` values upstream
 
    The values in the `data` node attribute list are copied to their

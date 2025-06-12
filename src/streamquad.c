@@ -103,6 +103,22 @@ void traverse_down_f32_add_mul(float *output, float *input, ptrdiff_t *source,
 }
 
 TOPOTOOLBOX_API
+void traverse_down_f32_strahler(float *output, float *input, ptrdiff_t *source,
+                               ptrdiff_t *target, ptrdiff_t edge_count) {
+  for (ptrdiff_t e = 0; e < edge_count; e++) {
+    ptrdiff_t u = source[e];
+    ptrdiff_t v = target[e];
+
+    if (output[u] < output[v]){
+    } else if (output[u] == output[v]) {
+      output[v] = output[v] + 1;
+    } else {
+      output[v] = output[u];
+    }
+  }
+}
+
+TOPOTOOLBOX_API
 void edgelist_degree(uint8_t *indegree, uint8_t *outdegree, ptrdiff_t *source,
                      ptrdiff_t *target, ptrdiff_t node_count,
                      ptrdiff_t edge_count) {
