@@ -1280,7 +1280,7 @@ TOPOTOOLBOX_API
 void edgelist_degree(uint8_t *indegree, uint8_t *outdegree, ptrdiff_t *source,
                      ptrdiff_t *target, ptrdiff_t node_count,
                      ptrdiff_t edge_count);
-                     
+
 /**
    @brief Compute stream order of Stream Object using Strahler method
 
