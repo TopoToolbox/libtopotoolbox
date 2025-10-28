@@ -3,6 +3,8 @@
 # Every file that needs to be compiled should be listed here.
 add_library(topotoolbox
   topotoolbox.c
+  dilate.c
+  erode.c
   fillsinks.c
   identifyflats.c
   gwdt.c

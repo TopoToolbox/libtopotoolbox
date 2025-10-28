@@ -48,6 +48,112 @@ TOPOTOOLBOX_API
 int has_topotoolbox(void);
 
 /**
+   @brief Morphological erosion of an input DEM
+
+   @attention
+   Non-overlaping memory regions for the input and output are expected.
+   
+   @note
+   Pixels at the border of the input image are not set to 0, NAN or +/- INFINITY
+   except when those are their input values. If the structuring element extends
+   over the input array boundaries, parts of it are disregarded and only a
+   subset of the structuring element is used for the computation.
+   
+   @note
+   MATLAB and other software implements erode as a min filter instead
+   of subtracting image and SE values.
+
+   @param[out] output The eroded DEM
+   @parblock
+   A pointer to a `float` array of size `io_dims[0]` x `io_dims[1]`
+   @endparblock
+
+   @param[in] dem The input DEM
+   @parblock
+   A pointer to a `float` array of size `io_dims[0]` x `io_dims[1]`
+   @endparblock
+
+   @param[in] structuring_element The structuring elements
+   @parblock
+   A pointer to a `uint8_t` array of size `se_dims[0]` x `se_dims[1]` x `se_dims[2]`
+   @endparblock
+
+   @param[in] io_dims The dimensions of the input/output DEM arrays
+   @parblock
+   A pointer to a `ptrdiff_t` array of size 2
+
+   The fastest changing dimension should be provided first. For column-major
+   arrays, `io_dims = {nrows,ncols}`. For row-major arrays, `io_dims = {ncols,nrows}`.
+   @endparblock
+
+   @param[in] se_dims The dimensions of the SE arrays
+   @parblock
+   A pointer to a `ptrdiff_t` array of size 3
+
+   The fastest changing dimension should be provided first. For column-major
+   arrays, `se_dims = {nrows,ncols,SE entity}`.
+   For row-major arrays, `se_dims = {ncols,nrows,SE entity}`.
+   @endparblock
+ */
+TOPOTOOLBOX_API
+void erode(float *restrict output, float *restrict dem,
+           uint8_t *restrict structuring_element, ptrdiff_t io_dims[2],
+           ptrdiff_t se_dims[3]);
+
+/**
+   @brief Morphological dilation of an input DEM
+
+   @attention
+   Non-overlaping memory regions for the input and output are expected.
+   
+   @note
+   Pixels at the border of the input image are not set to 0, NAN or +/- INFINITY
+   except when those are their input values. If the structuring element extends
+   over the input array boundaries, parts of it are disregarded and only a
+   subset of the structuring element is used for the computation.
+   
+   @note
+   MATLAB and other software implements dilate as a max filter instead
+   of adding image and SE values.
+
+   @param[out] output The dilated DEM
+   @parblock
+   A pointer to a `float` array of size `io_dims[0]` x `io_dims[1]`
+   @endparblock
+
+   @param[in] dem The input DEM
+   @parblock
+   A pointer to a `float` array of size `io_dims[0]` x `io_dims[1]`
+   @endparblock
+
+   @param[in] structuring_element The structuring elements
+   @parblock
+   A pointer to a `uint8_t` array of size `se_dims[0]` x `se_dims[1]` x `se_dims[2]`
+   @endparblock
+
+   @param[in] io_dims The dimensions of the input/output DEM arrays
+   @parblock
+   A pointer to a `ptrdiff_t` array of size 2
+
+   The fastest changing dimension should be provided first. For column-major
+   arrays, `io_dims = {nrows,ncols}`. For row-major arrays, `io_dims = {ncols,nrows}`.
+   @endparblock
+
+   @param[in] se_dims The dimensions of the SE arrays
+   @parblock
+   A pointer to a `ptrdiff_t` array of size 3
+
+   The fastest changing dimension should be provided first. For column-major
+   arrays, `se_dims = {nrows,ncols,SE entity}`.
+   For row-major arrays, `se_dims = {ncols,nrows,SE entity}`.
+   @endparblock
+ */
+TOPOTOOLBOX_API
+void dilate(float *restrict output, float *restrict dem,
+            uint8_t *restrict structuring_element, ptrdiff_t io_dims[2],
+            ptrdiff_t se_dims[3]);
+
+/**
    @brief Fills sinks in a digital elevation model
 
    @details
