@@ -51,17 +51,14 @@ int has_topotoolbox(void);
    @brief Morphological erosion of an input DEM
 
    @attention
-   Non-overlaping memory regions for the input and output are expected.
+   Non-overlaping memory regions for the input, output and structuring
+   element are expected.
    
    @note
    Pixels at the border of the input image are not set to 0, NAN or +/- INFINITY
    except when those are their input values. If the structuring element extends
    over the input array boundaries, parts of it are disregarded and only a
    subset of the structuring element is used for the computation.
-   
-   @note
-   MATLAB and other software implements erode as a min filter instead
-   of subtracting image and SE values.
 
    @param[out] output The eroded DEM
    @parblock
@@ -96,15 +93,16 @@ int has_topotoolbox(void);
    @endparblock
  */
 TOPOTOOLBOX_API
-void erode(float *restrict output, float *restrict dem,
-           uint8_t *restrict structuring_element, ptrdiff_t io_dims[2],
+void morphological_erosion(float *restrict output, float *restrict dem,
+           float *restrict structuring_element, ptrdiff_t io_dims[2],
            ptrdiff_t se_dims[3]);
 
 /**
    @brief Morphological dilation of an input DEM
 
    @attention
-   Non-overlaping memory regions for the input and output are expected.
+   Non-overlaping memory regions for the input, output and structuring
+   element are expected.
    
    @note
    Pixels at the border of the input image are not set to 0, NAN or +/- INFINITY
@@ -112,10 +110,6 @@ void erode(float *restrict output, float *restrict dem,
    over the input array boundaries, parts of it are disregarded and only a
    subset of the structuring element is used for the computation.
    
-   @note
-   MATLAB and other software implements dilate as a max filter instead
-   of adding image and SE values.
-
    @param[out] output The dilated DEM
    @parblock
    A pointer to a `float` array of size `io_dims[0]` x `io_dims[1]`
@@ -149,8 +143,8 @@ void erode(float *restrict output, float *restrict dem,
    @endparblock
  */
 TOPOTOOLBOX_API
-void dilate(float *restrict output, float *restrict dem,
-            uint8_t *restrict structuring_element, ptrdiff_t io_dims[2],
+void morphological_dilation(float *restrict output, float *restrict dem,
+            float *restrict structuring_element, ptrdiff_t io_dims[2],
             ptrdiff_t se_dims[3]);
 
 /**
