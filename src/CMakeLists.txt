@@ -4,6 +4,7 @@
 add_library(topotoolbox
   topotoolbox.c
   morphological_filters.c
+  value_filters.c
   fillsinks.c
   identifyflats.c
   gwdt.c
