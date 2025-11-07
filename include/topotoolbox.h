@@ -150,7 +150,8 @@ void max_filter(float *restrict output, float *restrict dem,
                 ptrdiff_t se_dims[3]);
 
 /**
-   @brief Minimum value filter, optimized for square and full structuring elements
+   @brief Minimum value filter, optimized for square and full structuring
+   elements
 
    @note
    Pixels at the border of the input image are not set to 0, NAN or +/- INFINITY
@@ -195,7 +196,8 @@ void min_filter_square(float *restrict output, float *restrict dem,
                        ptrdiff_t io_dims[2]);
 
 /**
-   @brief Maximum value filter, optimized for square and full structuring elements
+   @brief Maximum value filter, optimized for square and full structuring
+   elements
 
    @note
    Pixels at the border of the input image are not set to 0, NAN or +/- INFINITY

@@ -109,9 +109,6 @@ void max_filter(float* restrict output, float* restrict dem,
   return;
 }
 
-// FIXME: when No data values are in place, the results differ; this is likely because
-// NANs are note handled correctly :thinking: => NAN-skipping in TMP is the problem,
-// here all cells must have values!
 TOPOTOOLBOX_API
 void min_filter_square(float* restrict output, float* restrict dem,
                        float* restrict tmp, uint8_t width,
