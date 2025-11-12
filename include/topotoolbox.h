@@ -50,6 +50,10 @@ int has_topotoolbox(void);
 /**
    @brief Minimum value filter
 
+   @remark
+   All arrays passed onto the function must be non-overlapping regions of
+   memory.
+
    @note
    All structuring elements must be of the same size.
 
@@ -94,13 +98,16 @@ int has_topotoolbox(void);
    @endparblock
  */
 TOPOTOOLBOX_API
-void min_filter(float *restrict output, float *restrict dem,
-                uint8_t *restrict structuring_element, ptrdiff_t io_dims[2],
-                ptrdiff_t se_dims[3]);
+void min_filter(float *output, float *dem, uint8_t *structuring_element,
+                ptrdiff_t io_dims[2], ptrdiff_t se_dims[3]);
 
 /**
    @brief Maximum value filter
 
+   @remark
+   All arrays passed onto the function must be non-overlapping regions of
+   memory.
+
    @note
    All structuring elements must be of the same size.
 
@@ -145,13 +152,16 @@ void min_filter(float *restrict output, float *restrict dem,
    @endparblock
  */
 TOPOTOOLBOX_API
-void max_filter(float *restrict output, float *restrict dem,
-                uint8_t *restrict structuring_element, ptrdiff_t io_dims[2],
-                ptrdiff_t se_dims[3]);
+void max_filter(float *output, float *dem, uint8_t *structuring_element,
+                ptrdiff_t io_dims[2], ptrdiff_t se_dims[3]);
 
 /**
    @brief Minimum value filter, optimized for square and full structuring
    elements
+
+   @remark
+   All arrays passed onto the function must be non-overlapping regions of
+   memory.
 
    @note
    Pixels at the border of the input image are not set to 0, NAN or +/- INFINITY
@@ -191,14 +201,17 @@ void max_filter(float *restrict output, float *restrict dem,
    @endparblock
  */
 TOPOTOOLBOX_API
-void min_filter_square(float *restrict output, float *restrict dem,
-                       float *restrict tmp, uint8_t width,
+void min_filter_square(float *output, float *dem, float *tmp, uint8_t width,
                        ptrdiff_t io_dims[2]);
 
 /**
    @brief Maximum value filter, optimized for square and full structuring
    elements
 
+   @remark
+   All arrays passed onto the function must be non-overlapping regions of
+   memory.
+
    @note
    Pixels at the border of the input image are not set to 0, NAN or +/- INFINITY
    except when those are their input values. If the structuring element extends
@@ -237,12 +250,15 @@ void min_filter_square(float *restrict output, float *restrict dem,
    @endparblock
  */
 TOPOTOOLBOX_API
-void max_filter_square(float *restrict output, float *restrict dem,
-                       float *restrict tmp, uint8_t width,
+void max_filter_square(float *output, float *dem, float *tmp, uint8_t width,
                        ptrdiff_t io_dims[2]);
 
 /**
    @brief Morphological erosion of an input DEM
+
+   @remark
+   All arrays passed onto the function must be non-overlapping regions of
+   memory.
 
    @note
    All structuring elements must be of the same size. Fields to be ignored have
@@ -289,12 +305,16 @@ void max_filter_square(float *restrict output, float *restrict dem,
    @endparblock
  */
 TOPOTOOLBOX_API
-void morphological_erosion(float *restrict output, float *restrict dem,
-                           float *restrict structuring_element,
-                           ptrdiff_t io_dims[2], ptrdiff_t se_dims[3]);
+void morphological_erosion(float *output, float *dem,
+                           float *structuring_element, ptrdiff_t io_dims[2],
+                           ptrdiff_t se_dims[3]);
 
 /**
    @brief Morphological dilation of an input DEM
+
+   @remark
+   All arrays passed onto the function must be non-overlapping regions of
+   memory.
 
    @note
    All structuring elements must be of the same size. Fields to be ignored have
@@ -341,9 +361,9 @@ void morphological_erosion(float *restrict output, float *restrict dem,
    @endparblock
  */
 TOPOTOOLBOX_API
-void morphological_dilation(float *restrict output, float *restrict dem,
-                            float *restrict structuring_element,
-                            ptrdiff_t io_dims[2], ptrdiff_t se_dims[3]);
+void morphological_dilation(float *output, float *dem,
+                            float *structuring_element, ptrdiff_t io_dims[2],
+                            ptrdiff_t se_dims[3]);
 
 /**
    @brief Fills sinks in a digital elevation model
