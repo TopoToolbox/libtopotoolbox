@@ -82,6 +82,11 @@ struct SnapshotData {
   std::vector<int32_t> flats;
   std::vector<int32_t> sills;
   std::vector<float> hs;
+  std::vector<float> dilate3x3;
+  std::vector<float> dilate_diag;
+  std::vector<float> erode3x3;
+  std::vector<float> erode_diag;
+
 
   // Output arrays
   std::vector<float> test_dem;
@@ -92,9 +97,14 @@ struct SnapshotData {
   std::vector<float> test_nx;
   std::vector<float> test_ny;
   std::vector<float> test_nz;
+  std::vector<float> test_dilate3x3;
+  std::vector<float> test_dilate_diag;
+  std::vector<float> test_erode3x3;
+  std::vector<float> test_erode_diag;
 
   // Intermediate arrays
   std::vector<uint8_t> bc;
+  std::vector<float> value_filter_tmp;
 
   SnapshotData(const std::filesystem::path& snapshot_path) {
     path = snapshot_path;
@@ -110,6 +120,26 @@ struct SnapshotData {
 
     std::array<ptrdiff_t, 2> dims_check;
     float cellcheck;
+    if (exists(snapshot_path / "dilate3x3.tif")) {
+      load_data_from_file<float, GDT_Float32>(snapshot_path / "dilate3x3.tif", dilate3x3, cellcheck, dims_check);
+      assert(dims[0] == dims_check[0] && dims[1] == dims_check[1]);
+    }
+
+    if (exists(snapshot_path / "dilate_diag.tif")) {
+      load_data_from_file<float, GDT_Float32>(snapshot_path / "dilate_diag.tif", dilate_diag, cellcheck, dims_check);
+      assert(dims[0] == dims_check[0] && dims[1] == dims_check[1]);
+    }
+
+    if (exists(snapshot_path / "erode3x3.tif")) {
+      load_data_from_file<float, GDT_Float32>(snapshot_path / "erode3x3.tif", erode3x3, cellcheck, dims_check);
+      assert(dims[0] == dims_check[0] && dims[1] == dims_check[1]);
+    }
+
+    if (exists(snapshot_path / "erode_diag.tif")) {
+      load_data_from_file<float, GDT_Float32>(snapshot_path / "erode_diag.tif", erode_diag, cellcheck, dims_check);
+      assert(dims[0] == dims_check[0] && dims[1] == dims_check[1]);
+    }
+
     if (exists(snapshot_path / "fillsinks.tif")) {
       load_data_from_file<float, GDT_Float32>(
           snapshot_path / "fillsinks.tif", filled_dem, cellcheck, dims_check);
@@ -138,6 +168,24 @@ struct SnapshotData {
 
     // Allocate and resize output and intermediate arrays
     if (dem.size() > 0) {
+      if (erode3x3.size() > 0) {
+        test_erode3x3.resize(dims[0] * dims[1]);
+        value_filter_tmp.resize(dims[0] * dims[1]);
+      }
+
+      if (erode_diag.size() > 0) {
+        test_erode_diag.resize(dims[0] * dims[1]);
+      }
+
+      if (dilate3x3.size() > 0) {
+        test_dilate3x3.resize(dims[0] * dims[1]);
+        value_filter_tmp.resize(dims[0] * dims[1]);
+      }
+
+      if (dilate_diag.size() > 0) {
+        test_dilate_diag.resize(dims[0] * dims[1]);
+      }
+
       if (filled_dem.size() > 0) {
         // Boundary conditions
         bc.resize(dims[0] * dims[1]);
@@ -154,6 +202,142 @@ struct SnapshotData {
         test_hs.resize(dims[0] * dims[1]);
       }
     }
+  }
+
+  int test_min_filter_3x3() {
+    ptrdiff_t se_dims[3] = {3, 3, 1};
+    uint8_t se_full[9] = {1, 1,1, 1, 1,1 , 1, 1, 1};
+
+    tt::min_filter(test_erode3x3.data(), dem.data(), se_full, dims.data(), se_dims);
+
+    for (ptrdiff_t row = 0; row < dims[1]; row++) {
+      for (ptrdiff_t col = 0; col < dims[0]; col++) {
+        ptrdiff_t index = col + row * dims[0];
+        if ((std::isnan(test_erode3x3[index]) != std::isnan(erode3x3[index])) ||
+          // second isnan check not needed but added for completeness
+          (!std::isnan(test_erode3x3[index]) && !std::isnan(erode3x3[index]) &&
+           test_erode3x3[index] != erode3x3[index])) {
+            write_data_to_file<float, GDT_Float32>(path / "test_erode3x3.tif",
+                                                   path / "erode3x3.tif",
+                                                   test_erode3x3, dims);
+              return -1;
+        }
+      }
+    }
+    return 0;
+  }
+
+  int test_min_filter_square_3x3() {
+    uint8_t se_width = 3;
+
+    tt::min_filter_square(test_erode3x3.data(), dem.data(), value_filter_tmp.data(), se_width, dims.data());
+
+    for (ptrdiff_t row = 0; row < dims[1]; row++) {
+      for (ptrdiff_t col = 0; col < dims[0]; col++) {
+        ptrdiff_t index = col + row * dims[0];
+        if ((std::isnan(test_erode3x3[index]) != std::isnan(erode3x3[index])) ||
+          // second isnan check not needed but added for completeness
+          (!std::isnan(test_erode3x3[index]) && !std::isnan(erode3x3[index]) &&
+           test_erode3x3[index] != erode3x3[index])) {
+            write_data_to_file<float, GDT_Float32>(path / "test_erode3x3_square.tif",
+                                                   path / "erode3x3.tif",
+                                                   test_erode3x3, dims);
+              return -1;
+        }
+      }
+    }
+    return 0;
+  }
+
+  int test_min_filter_diag() {
+    ptrdiff_t se_dims[3] = {3, 3, 1};
+    uint8_t se_diag[9] = {1, 0, 1, 0, 1, 0, 1, 0, 1};
+
+    tt::min_filter(test_erode_diag.data(), dem.data(), se_diag, dims.data(), se_dims);
+
+    for (ptrdiff_t row = 0; row < dims[1]; row++) {
+      for (ptrdiff_t col = 0; col < dims[0]; col++) {
+        ptrdiff_t index = col + row * dims[0];
+        if ((std::isnan(test_erode_diag[index]) != std::isnan(erode_diag[index])) ||
+          // second isnan check not needed but added for completeness
+          (!std::isnan(test_erode_diag[index]) && !std::isnan(erode_diag[index]) &&
+           test_erode_diag[index] != erode_diag[index])) {
+            write_data_to_file<float, GDT_Float32>(path / "test_erode_diag.tif",
+                                                   path / "erode_diag.tif",
+                                                   test_erode_diag, dims);
+              return -1;
+        }
+      }
+    }
+    return 0;
+  }
+
+  int test_max_filter_3x3() {
+    ptrdiff_t se_dims[3] = {3, 3, 1};
+    uint8_t se_full[9] = {1, 1,1, 1, 1,1 , 1, 1, 1};
+
+    tt::max_filter(test_dilate3x3.data(), dem.data(), se_full, dims.data(), se_dims);
+
+    for (ptrdiff_t row = 0; row < dims[1]; row++) {
+      for (ptrdiff_t col = 0; col < dims[0]; col++) {
+        ptrdiff_t index = col + row * dims[0];
+        if ((std::isnan(test_dilate3x3[index]) != std::isnan(dilate3x3[index])) ||
+          // second isnan check not needed but added for completeness
+          (!std::isnan(test_dilate3x3[index]) && !std::isnan(dilate3x3[index]) &&
+           test_dilate3x3[index] != dilate3x3[index])) {
+            write_data_to_file<float, GDT_Float32>(path / "test_dilate3x3.tif",
+                                                   path / "dilate3x3.tif",
+                                                   test_dilate3x3, dims);
+              return -1;
+        }
+      }
+    }
+    return 0;
+  }
+
+  int test_max_filter_square_3x3() {
+    uint8_t se_width = 3;
+
+    tt::max_filter_square(test_dilate3x3.data(), dem.data(), value_filter_tmp.data(), se_width, dims.data());
+
+    for (ptrdiff_t row = 0; row < dims[1]; row++) {
+      for (ptrdiff_t col = 0; col < dims[0]; col++) {
+        ptrdiff_t index = col + row * dims[0];
+        if ((std::isnan(test_dilate3x3[index]) != std::isnan(dilate3x3[index])) ||
+          // second isnan check not needed but added for completeness
+          (!std::isnan(test_dilate3x3[index]) && !std::isnan(dilate3x3[index]) &&
+           test_dilate3x3[index] != dilate3x3[index])) {
+            write_data_to_file<float, GDT_Float32>(path / "test_dilate3x3_square.tif",
+                                                   path / "dilate3x3.tif",
+                                                   test_dilate3x3, dims);
+              return -1;
+        }
+      }
+    }
+    return 0;
+  }
+
+  int test_max_filter_diag() {
+    ptrdiff_t se_dims[3] = {3, 3, 1};
+    uint8_t se_diag[9] = {1, 0, 1, 0, 1, 0, 1, 0, 1};
+
+    tt::max_filter(test_dilate_diag.data(), dem.data(), se_diag, dims.data(), se_dims);
+
+    for (ptrdiff_t row = 0; row < dims[1]; row++) {
+      for (ptrdiff_t col = 0; col < dims[0]; col++) {
+        ptrdiff_t index = col + row * dims[0];
+        if ((std::isnan(test_dilate_diag[index]) != std::isnan(dilate_diag[index])) ||
+          // second isnan check not needed but added for completeness
+          (!std::isnan(test_dilate_diag[index]) && !std::isnan(dilate_diag[index]) &&
+           test_dilate_diag[index] != dilate_diag[index])) {
+            write_data_to_file<float, GDT_Float32>(path / "test_dilate_diag.tif",
+                                                   path / "dilate_diag.tif",
+                                                   test_dilate_diag, dims);
+              return -1;
+        }
+      }
+    }
+    return 0;
   }
 
   int test_fillsinks() {
@@ -274,6 +458,60 @@ struct SnapshotData {
     std::cout << "    1..3" << std::endl;
 
     int result = 0;
+    if (erode3x3.size() > 0) {
+      if (test_min_filter_3x3() < 0) {
+        result = -1;
+        std::cout << "    not ok 1 - erode3x3" << std::endl;
+      } else {
+        std::cout << "    ok 1 - erode3x3" << std::endl;
+      }
+    }
+
+    if (erode3x3.size() > 0) {
+      if (test_min_filter_square_3x3() < 0) {
+        result = -1;
+        std::cout << "    not ok 1 - erode3x3_square" << std::endl;
+      } else {
+        std::cout << "    ok 1 - erode3x3_square" << std::endl;
+      }
+    }
+
+    if (erode_diag.size() > 0) {
+      if (test_min_filter_diag() < 0) {
+        result = -1;
+        std::cout << "    not ok 1 - erode_diag" << std::endl;
+      } else {
+        std::cout << "    ok 1 - erode_diag" << std::endl;
+      }
+    }
+
+    if (dilate3x3.size() > 0) {
+      if (test_max_filter_3x3() < 0) {
+        result = -1;
+        std::cout << "    not ok 1 - dilate3x3" << std::endl;
+      } else {
+        std::cout << "    ok 1 - dilate3x3" << std::endl;
+      }
+    }
+
+    if (dilate3x3.size() > 0) {
+      if (test_max_filter_square_3x3() < 0) {
+        result = -1;
+        std::cout << "    not ok 1 - dilate3x3_square" << std::endl;
+      } else {
+        std::cout << "    ok 1 - dilate3x3_square" << std::endl;
+      }
+    }
+
+    if (dilate_diag.size() > 0) {
+      if (test_max_filter_diag() < 0) {
+        result = -1;
+        std::cout << "    not ok 1 - dilate_diag" << std::endl;
+      } else {
+        std::cout << "    ok 1 - dilate_diag" << std::endl;
+      }
+    }
+
     // fillsinks
     if (test_filled_dem.size() > 0) {
       if (test_fillsinks() < 0) {
