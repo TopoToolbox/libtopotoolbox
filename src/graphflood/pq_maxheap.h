@@ -12,6 +12,7 @@ typedef struct {
   GF_UINT key;        // The key associated with the element
   GF_FLOAT priority;  // The priority of the element (higher values have higher
                       // priority)
+  GF_FLOAT Qw;        // Transported discharge quantity
 } MaxHeapElement;
 
 // Max-Heap Priority Queue structure
@@ -59,6 +60,33 @@ static inline bool maxheap_push(MaxHeapPQueue* pq, GF_UINT key,
   GF_UINT index = pq->size++;
   pq->data[index].key = key;
   pq->data[index].priority = priority;
+  pq->data[index].Qw = 0.0;
+
+  // Heapify up (for max heap, parent should be >= children)
+  while (index > 0) {
+    GF_UINT parent = (index - 1) / 2;
+    if (pq->data[index].priority <= pq->data[parent].priority) {
+      break;
+    }
+    maxheap_swap(&pq->data[index], &pq->data[parent]);
+    index = parent;
+  }
+
+  return true;
+}
+
+// Push an element with discharge into the max-heap priority queue
+static inline bool maxheap_push_with_qw(MaxHeapPQueue* pq, GF_UINT key,
+                                        GF_FLOAT priority, GF_FLOAT Qw) {
+  if (pq->size >= pq->capacity) {
+    return false;  // Priority queue is full
+  }
+
+  // Insert the new element at the end
+  GF_UINT index = pq->size++;
+  pq->data[index].key = key;
+  pq->data[index].priority = priority;
+  pq->data[index].Qw = Qw;
 
   // Heapify up (for max heap, parent should be >= children)
   while (index > 0) {
@@ -95,6 +123,45 @@ static inline GF_UINT maxheap_pop_and_get_key(MaxHeapPQueue* pq) {
   }
 
   GF_UINT key = pq->data[0].key;
+  // Replace the root with the last element
+  pq->data[0] = pq->data[--pq->size];
+
+  // Heapify down (for max heap, parent should be >= children)
+  GF_UINT index = 0;
+  while (true) {
+    GF_UINT left = 2 * index + 1;
+    GF_UINT right = 2 * index + 2;
+    GF_UINT largest = index;
+
+    if (left < pq->size &&
+        pq->data[left].priority > pq->data[largest].priority) {
+      largest = left;
+    }
+    if (right < pq->size &&
+        pq->data[right].priority > pq->data[largest].priority) {
+      largest = right;
+    }
+    if (largest == index) {
+      break;
+    }
+
+    maxheap_swap(&pq->data[index], &pq->data[largest]);
+    index = largest;
+  }
+
+  return key;
+}
+
+// Pop the top element from the max-heap priority queue and get its key and Qw
+static inline GF_UINT maxheap_pop_and_get_key_qw(MaxHeapPQueue* pq,
+                                                 GF_FLOAT* Qw_out) {
+  if (pq->size == 0) {
+    *Qw_out = 0.0;
+    return 0;  // Priority queue is empty
+  }
+
+  GF_UINT key = pq->data[0].key;
+  *Qw_out = pq->data[0].Qw;
   // Replace the root with the last element
   pq->data[0] = pq->data[--pq->size];
 
