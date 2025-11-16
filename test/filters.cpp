@@ -7,13 +7,6 @@
 
 // TODO: no tests with real 3d SEs performed!
 
-/** TESTING FILTERS/MORPHOLOGICAL OPERATIONS
- * Snapshots:
- * 	MATLAB version results in same values compared to C implementation (2
- * Tests) MATLAB version results in same values compared to optimized C
- * implementations (2 Tests)
- */
-
 #include <cassert>
 #include <cmath>
 #include <cstddef>
