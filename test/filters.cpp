@@ -42,7 +42,7 @@ int test_no_larger_values(float *dem, float *output, uint8_t se[9],
     for (ptrdiff_t col = 0; col < dims[0]; col++) {
       ptrdiff_t index = col + row * dims[0];
 
-      if (std::isnan(output[index]) or std::isnan(dem[index])) {
+      if (std::isnan(output[index]) || std::isnan(dem[index])) {
         continue;
       }
 
@@ -73,7 +73,7 @@ int test_no_larger_values_square(float *dem, float *output, float *tmp,
     for (ptrdiff_t col = 0; col < dims[0]; col++) {
       ptrdiff_t index = col + row * dims[0];
 
-      if (std::isnan(output[index]) or std::isnan(dem[index])) {
+      if (std::isnan(output[index]) || std::isnan(dem[index])) {
         continue;
       }
 
@@ -103,7 +103,7 @@ int test_no_smaller_values(float *dem, float *output, uint8_t se[9],
     for (ptrdiff_t col = 0; col < dims[0]; col++) {
       ptrdiff_t index = col + row * dims[0];
 
-      if (std::isnan(output[index]) or std::isnan(dem[index])) {
+      if (std::isnan(output[index]) || std::isnan(dem[index])) {
         continue;
       }
 
@@ -134,7 +134,7 @@ int test_no_smaller_values_square(float *dem, float *output, float *tmp,
     for (ptrdiff_t col = 0; col < dims[0]; col++) {
       ptrdiff_t index = col + row * dims[0];
 
-      if (std::isnan(output[index]) or std::isnan(dem[index])) {
+      if (std::isnan(output[index]) || std::isnan(dem[index])) {
         continue;
       }
 
