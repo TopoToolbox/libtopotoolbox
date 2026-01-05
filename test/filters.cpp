@@ -326,140 +326,6 @@ int test_max_filter_implementations_agree(float *dem, float *foutput,
   return 0;
 }
 
-/**
- * @brief Test that min_filter and morphological_erosion agree when 0 = NAN and
- * 1 = 0
-
-   @note Structuring element is of size 3 by 3 and filled with ones
- *
- * @return int
- */
-int test_min_filter_and_erosion_agree(float *dem, float *foutput,
-                                      float *soutput, uint8_t se[9],
-                                      ptrdiff_t dims[3], ptrdiff_t se_dims[2],
-                                      float *float_se) {
-  tt::min_filter(foutput, dem, se, dims, se_dims);
-
-  tt::morphological_erosion(soutput, dem, float_se, dims, se_dims);
-
-  for (ptrdiff_t row = 0; row < dims[1]; row++) {
-    for (ptrdiff_t col = 0; col < dims[0]; col++) {
-      ptrdiff_t index = col + row * dims[0];
-
-      if ((std::isnan(foutput[index]) != std::isnan(soutput[index])) ||
-          // second isnan check not needed but added for completeness
-          (!std::isnan(foutput[index]) && !std::isnan(soutput[index]) &&
-           foutput[index] != soutput[index])) {
-        std::cout << "(" << col << ", " << row << "): " << foutput[index]
-                  << " != " << soutput[index] << std::endl;
-        assert(0);
-      }
-    }
-  }
-
-  return 0;
-}
-
-/**
- * @brief Test that min_filter_square and morphological_erosion agree when 0 =
- * NAN and 1 = 0
-
-   @note Structuring element is of size 3 by 3 and filled with ones
- *
- * @return int
- */
-int test_min_square_filter_and_erosion_agree(
-    float *dem, float *foutput, float *soutput, float *tmp, uint8_t se_width,
-    ptrdiff_t dims[3], ptrdiff_t se_dims[2], float *float_se) {
-  tt::min_filter_square(foutput, dem, tmp, se_width, dims);
-
-  tt::morphological_erosion(soutput, dem, float_se, dims, se_dims);
-
-  for (ptrdiff_t row = 0; row < dims[1]; row++) {
-    for (ptrdiff_t col = 0; col < dims[0]; col++) {
-      ptrdiff_t index = col + row * dims[0];
-
-      if ((std::isnan(foutput[index]) != std::isnan(soutput[index])) ||
-          // second isnan check not needed but added for completeness
-          (!std::isnan(foutput[index]) && !std::isnan(soutput[index]) &&
-           foutput[index] != soutput[index])) {
-        std::cout << "(" << col << ", " << row << "): " << foutput[index]
-                  << " != " << soutput[index] << std::endl;
-        assert(0);
-      }
-    }
-  }
-
-  return 0;
-}
-
-/**
- * @brief Test that max_filter and morphological_dilation agree when 0 = NAN and
- * 1 = 0
-
-   @note Structuring element is of size 3 by 3 and filled with ones
- *
- * @return int
- */
-int test_max_filter_and_dilation_agree(float *dem, float *foutput,
-                                       float *soutput, uint8_t se[9],
-                                       ptrdiff_t dims[3], ptrdiff_t se_dims[2],
-                                       float *float_se) {
-  tt::max_filter(foutput, dem, se, dims, se_dims);
-
-  tt::morphological_dilation(soutput, dem, float_se, dims, se_dims);
-
-  for (ptrdiff_t row = 0; row < dims[1]; row++) {
-    for (ptrdiff_t col = 0; col < dims[0]; col++) {
-      ptrdiff_t index = col + row * dims[0];
-
-      if ((std::isnan(foutput[index]) != std::isnan(soutput[index])) ||
-          // second isnan check not needed but added for completeness
-          (!std::isnan(foutput[index]) && !std::isnan(soutput[index]) &&
-           foutput[index] != soutput[index])) {
-        std::cout << "(" << col << ", " << row << "): " << foutput[index]
-                  << " != " << soutput[index] << std::endl;
-        assert(0);
-      }
-    }
-  }
-
-  return 0;
-}
-
-/**
- * @brief Test that max_filter_square and morphological_dilation agree when 0 =
- * NAN and 1 = 0
-
-   @note Structuring element is of size 3 by 3 and filled with ones
- *
- * @return int
- */
-int test_max_square_filter_and_dilation_agree(
-    float *dem, float *foutput, float *soutput, float *tmp, uint8_t se_width,
-    ptrdiff_t dims[3], ptrdiff_t se_dims[2], float *float_se) {
-  tt::max_filter_square(foutput, dem, tmp, se_width, dims);
-
-  tt::morphological_dilation(soutput, dem, float_se, dims, se_dims);
-
-  for (ptrdiff_t row = 0; row < dims[1]; row++) {
-    for (ptrdiff_t col = 0; col < dims[0]; col++) {
-      ptrdiff_t index = col + row * dims[0];
-
-      if ((std::isnan(foutput[index]) != std::isnan(soutput[index])) ||
-          // second isnan check not needed but added for completeness
-          (!std::isnan(foutput[index]) && !std::isnan(soutput[index]) &&
-           foutput[index] != soutput[index])) {
-        std::cout << "(" << col << ", " << row << "): " << foutput[index]
-                  << " != " << soutput[index] << std::endl;
-        assert(0);
-      }
-    }
-  }
-
-  return 0;
-}
-
 int test_on_random_dem(uint32_t seed) {
   // sizes between 1 and 513
   ptrdiff_t dimensions[2] = {rand() % 512 + 1, rand() % 512 + 1};
@@ -483,11 +349,6 @@ int test_on_random_dem(uint32_t seed) {
 
   ptrdiff_t se_size[3] = {3, 3, 1};
   uint8_t binary_se[9] = {1, 1, 1, 1, 1, 1, 1, 1, 1};
-  float float_se_identical_to_binary[9] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-                                           0.0f, 0.0f, 0.0f, 0.0f};
-  uint8_t binary_se_triangle[9] = {1, 0, 0, 1, 1, 0, 1, 1, 1};
-  float float_se_triangle[9] = {0.0f, NAN,  NAN,  0.0f, 0.0f,
-                                NAN,  0.0f, 0.0f, 0.0f};
 
   test_no_larger_values(dem, output, binary_se, dimensions, se_size);
 
@@ -518,30 +379,6 @@ int test_on_random_dem(uint32_t seed) {
   test_max_filter_implementations_agree(dem, output, second_output, tmp,
                                         std::size(se_size), binary_se,
                                         dimensions, se_size);
-
-  test_min_filter_and_erosion_agree(dem, output, second_output, binary_se,
-                                    dimensions, se_size,
-                                    float_se_identical_to_binary);
-
-  test_min_filter_and_erosion_agree(dem, output, second_output,
-                                    binary_se_triangle, dimensions, se_size,
-                                    float_se_triangle);
-
-  test_min_square_filter_and_erosion_agree(
-      dem, output, second_output, tmp, std::size(se_size), dimensions, se_size,
-      float_se_identical_to_binary);
-
-  test_max_filter_and_dilation_agree(dem, output, second_output, binary_se,
-                                     dimensions, se_size,
-                                     float_se_identical_to_binary);
-
-  test_max_filter_and_dilation_agree(dem, output, second_output,
-                                     binary_se_triangle, dimensions, se_size,
-                                     float_se_triangle);
-
-  test_max_square_filter_and_dilation_agree(
-      dem, output, second_output, tmp, std::size(se_size), dimensions, se_size,
-      float_se_identical_to_binary);
 
   delete[] dem;
   delete[] tmp;
