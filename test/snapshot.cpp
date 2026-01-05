@@ -475,7 +475,7 @@ struct SnapshotData {
   }
 
   int runtests() {
-    std::cout << "    1..3" << std::endl;
+    std::cout << "    1..9" << std::endl;
 
     int result = 0;
     if (erode3x3.size() > 0) {
@@ -490,45 +490,45 @@ struct SnapshotData {
     if (erode3x3.size() > 0) {
       if (test_min_filter_square_3x3() < 0) {
         result = -1;
-        std::cout << "    not ok 1 - erode3x3_square" << std::endl;
+        std::cout << "    not ok 2 - erode3x3_square" << std::endl;
       } else {
-        std::cout << "    ok 1 - erode3x3_square" << std::endl;
+        std::cout << "    ok 2 - erode3x3_square" << std::endl;
       }
     }
 
     if (erode_diag.size() > 0) {
       if (test_min_filter_diag() < 0) {
         result = -1;
-        std::cout << "    not ok 1 - erode_diag" << std::endl;
+        std::cout << "    not ok 3 - erode_diag" << std::endl;
       } else {
-        std::cout << "    ok 1 - erode_diag" << std::endl;
+        std::cout << "    ok 3 - erode_diag" << std::endl;
       }
     }
 
     if (dilate3x3.size() > 0) {
       if (test_max_filter_3x3() < 0) {
         result = -1;
-        std::cout << "    not ok 1 - dilate3x3" << std::endl;
+        std::cout << "    not ok 4 - dilate3x3" << std::endl;
       } else {
-        std::cout << "    ok 1 - dilate3x3" << std::endl;
+        std::cout << "    ok 4 - dilate3x3" << std::endl;
       }
     }
 
     if (dilate3x3.size() > 0) {
       if (test_max_filter_square_3x3() < 0) {
         result = -1;
-        std::cout << "    not ok 1 - dilate3x3_square" << std::endl;
+        std::cout << "    not ok 5 - dilate3x3_square" << std::endl;
       } else {
-        std::cout << "    ok 1 - dilate3x3_square" << std::endl;
+        std::cout << "    ok 5 - dilate3x3_square" << std::endl;
       }
     }
 
     if (dilate_diag.size() > 0) {
       if (test_max_filter_diag() < 0) {
         result = -1;
-        std::cout << "    not ok 1 - dilate_diag" << std::endl;
+        std::cout << "    not ok 6 - dilate_diag" << std::endl;
       } else {
-        std::cout << "    ok 1 - dilate_diag" << std::endl;
+        std::cout << "    ok 6 - dilate_diag" << std::endl;
       }
     }
 
@@ -537,9 +537,9 @@ struct SnapshotData {
       if (test_fillsinks() < 0) {
         result = -1;
 
-        std::cout << "    not ok 1 - fillsinks" << std::endl;
+        std::cout << "    not ok 7 - fillsinks" << std::endl;
       } else {
-        std::cout << "    ok 1 - fillsinks" << std::endl;
+        std::cout << "    ok 7 - fillsinks" << std::endl;
       }
     }
 
@@ -547,18 +547,18 @@ struct SnapshotData {
       if (test_identifyflats() < 0) {
         result = -1;
 
-        std::cout << "    not ok 2 - identifyflats" << std::endl;
+        std::cout << "    not ok 8 - identifyflats" << std::endl;
       } else {
-        std::cout << "    ok 2 - identifyflats" << std::endl;
+        std::cout << "    ok 8 - identifyflats" << std::endl;
       }
     }
 
     if (hs.size() > 0) {
       if (test_hillshade() < 0) {
         result = -1;
-        std::cout << "    not ok 3 - hillshade" << std::endl;
+        std::cout << "    not ok 9 - hillshade" << std::endl;
       } else {
-        std::cout << "    ok 3 - hillshade" << std::endl;
+        std::cout << "    ok 9 - hillshade" << std::endl;
       }
     }
 
