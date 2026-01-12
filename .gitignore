@@ -1,1 +1,6 @@
 build/
+
+# BEGIN VSCode specific directory exclusion
+.cache/
+.vscode/
+# END VSCode specific directory exclusion

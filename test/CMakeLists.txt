@@ -56,6 +56,19 @@ add_test(NAME excesstopography COMMAND excesstopography)
 set_tests_properties(excesstopography PROPERTIES ENVIRONMENT_MODIFICATION
   "PATH=path_list_prepend:$<$<BOOL:${WIN32}>:$<TARGET_FILE_DIR:topotoolbox>>")
 
+# TEST: filters
+#
+# This test runs various property tests on value filters and morphological
+# operations on randomly generated DEMs.
+add_executable(filters filters.cpp utils.c)
+
+target_link_libraries(filters PRIVATE topotoolbox)
+
+add_test(NAME filters COMMAND filters)
+
+set_tests_properties(filters PROPERTIES ENVIRONMENT_MODIFICATION
+"PATH=path_list_prepend:$<$<BOOL:${WIN32}>:$<TARGET_FILE_DIR:topotoolbox>>")
+
 # TEST: snapshots
 #
 # Runs the snapshot tests from available snapshot data
