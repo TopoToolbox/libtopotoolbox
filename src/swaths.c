@@ -38,6 +38,88 @@ typedef struct {
   float max_val;
 } swath_stats_accumulator;
 
+// ============================================================================
+// Percentile Accumulator - Stores values for percentile computation
+// ============================================================================
+// Dynamically stores all values to enable median and percentile calculation.
+// Memory grows as needed during accumulation.
+
+typedef struct {
+  ptrdiff_t capacity;
+  ptrdiff_t count;
+  float *values;
+} percentile_accumulator;
+
+static inline void percentile_accumulator_init(percentile_accumulator *acc,
+                                                ptrdiff_t initial_capacity) {
+  acc->capacity = initial_capacity > 0 ? initial_capacity : 16;
+  acc->count = 0;
+  acc->values = (float *)malloc(acc->capacity * sizeof(float));
+}
+
+static inline void percentile_accumulator_add(percentile_accumulator *acc,
+                                               float value) {
+  if (isnan(value))
+    return;
+
+  // Grow array if needed
+  if (acc->count >= acc->capacity) {
+    acc->capacity *= 2;
+    acc->values = (float *)realloc(acc->values, acc->capacity * sizeof(float));
+  }
+
+  acc->values[acc->count++] = value;
+}
+
+// Comparison function for qsort
+static int compare_floats(const void *a, const void *b) {
+  float fa = *(const float *)a;
+  float fb = *(const float *)b;
+  return (fa > fb) - (fa < fb);
+}
+
+// Sort values in preparation for percentile computation
+static inline void percentile_accumulator_sort(percentile_accumulator *acc) {
+  if (acc->count > 0) {
+    qsort(acc->values, acc->count, sizeof(float), compare_floats);
+  }
+}
+
+// Get percentile from sorted values (p in [0, 100])
+// Uses linear interpolation between nearest ranks
+static inline float percentile_accumulator_get(const percentile_accumulator *acc,
+                                                float p) {
+  if (acc->count == 0)
+    return NAN;
+
+  // Clamp percentile to valid range
+  if (p < 0.0f)
+    p = 0.0f;
+  if (p > 100.0f)
+    p = 100.0f;
+
+  // Convert percentile to array index (0-based)
+  float index = p / 100.0f * (acc->count - 1);
+  ptrdiff_t lower = (ptrdiff_t)index;
+  ptrdiff_t upper = lower + 1;
+
+  // Boundary cases
+  if (upper >= acc->count)
+    return acc->values[acc->count - 1];
+
+  // Linear interpolation between adjacent values
+  float fraction = index - lower;
+  return acc->values[lower] * (1.0f - fraction) +
+         acc->values[upper] * fraction;
+}
+
+static inline void percentile_accumulator_free(percentile_accumulator *acc) {
+  free(acc->values);
+  acc->values = NULL;
+  acc->count = 0;
+  acc->capacity = 0;
+}
+
 static inline void accumulator_init(swath_stats_accumulator *acc) {
   acc->count = 0;
   acc->sum = 0.0;
@@ -293,9 +375,9 @@ void swath_distance_map(float *restrict distance,
           search_end = n_track_points - 1;
         }
 
-        // Convert pixel coordinates to metric space for distance computation
-        float px = (float)i * cellsize;
-        float py = (float)j * cellsize;
+        // Work in pixel coordinates for distance computation
+        float px = (float)i;
+        float py = (float)j;
         float min_dist, proj_x, proj_y;
 
         ptrdiff_t new_seg = find_nearest_segment(
@@ -305,9 +387,11 @@ void swath_distance_map(float *restrict distance,
         // Update if we found a segment and it's different from current assignment
         if (new_seg >= 0 && new_seg != temp_nearest[idx]) {
           temp_nearest[idx] = new_seg;
+          // Convert distance from pixels to meters
           distance[idx] = min_dist * cellsize;
           changes++;
         } else if (new_seg >= 0) {
+          // Convert distance from pixels to meters
           distance[idx] = min_dist * cellsize;
         }
       }
@@ -331,6 +415,9 @@ void swath_transverse(
     float *restrict bin_distances, float *restrict bin_means,
     float *restrict bin_stddevs, float *restrict bin_mins,
     float *restrict bin_maxs, ptrdiff_t *restrict bin_counts,
+    float *restrict bin_medians, float *restrict bin_q1,
+    float *restrict bin_q3, const int *restrict percentile_list,
+    ptrdiff_t n_percentiles, float *restrict bin_percentiles,
     const float *restrict dem, const float *restrict track_i,
     const float *restrict track_j, ptrdiff_t n_track_points, ptrdiff_t dims[2],
     float cellsize, float half_width, float bin_resolution, ptrdiff_t n_bins,
@@ -338,12 +425,27 @@ void swath_transverse(
   if (n_track_points < 2 || n_bins <= 0)
     return;
 
-  // Allocate one accumulator per distance bin
+  // Determine if we need percentile computation
+  int compute_percentiles =
+      (bin_medians != NULL || bin_q1 != NULL || bin_q3 != NULL ||
+       (percentile_list != NULL && n_percentiles > 0 && bin_percentiles != NULL));
+
+  // Allocate one stats accumulator per distance bin
   swath_stats_accumulator *accumulators =
       (swath_stats_accumulator *)calloc(n_bins, sizeof(swath_stats_accumulator));
 
   for (ptrdiff_t b = 0; b < n_bins; b++) {
     accumulator_init(&accumulators[b]);
+  }
+
+  // Allocate percentile accumulators if needed
+  percentile_accumulator *p_accumulators = NULL;
+  if (compute_percentiles) {
+    p_accumulators = (percentile_accumulator *)calloc(
+        n_bins, sizeof(percentile_accumulator));
+    for (ptrdiff_t b = 0; b < n_bins; b++) {
+      percentile_accumulator_init(&p_accumulators[b], 64);
+    }
   }
 
   // Compute signed perpendicular distance for every pixel
@@ -398,10 +500,57 @@ void swath_transverse(
       }
 
       accumulator_add(&accumulators[bin_idx], value);
+
+      // Also store for percentile computation if needed
+      if (compute_percentiles) {
+        percentile_accumulator_add(&p_accumulators[bin_idx], value);
+      }
     }
   }
 
-  // Finalize statistics for each bin
+  // Compute percentiles if requested
+  if (compute_percentiles) {
+    for (ptrdiff_t b = 0; b < n_bins; b++) {
+      percentile_accumulator_sort(&p_accumulators[b]);
+
+      // Compute standard percentiles
+      if (bin_medians != NULL) {
+        bin_medians[b] = percentile_accumulator_get(&p_accumulators[b], 50.0f);
+        if (normalize && !isnan(bin_medians[b])) {
+          bin_medians[b] += reference_elevation;
+        }
+      }
+
+      if (bin_q1 != NULL) {
+        bin_q1[b] = percentile_accumulator_get(&p_accumulators[b], 25.0f);
+        if (normalize && !isnan(bin_q1[b])) {
+          bin_q1[b] += reference_elevation;
+        }
+      }
+
+      if (bin_q3 != NULL) {
+        bin_q3[b] = percentile_accumulator_get(&p_accumulators[b], 75.0f);
+        if (normalize && !isnan(bin_q3[b])) {
+          bin_q3[b] += reference_elevation;
+        }
+      }
+
+      // Compute arbitrary percentiles
+      if (percentile_list != NULL && n_percentiles > 0 &&
+          bin_percentiles != NULL) {
+        for (ptrdiff_t p = 0; p < n_percentiles; p++) {
+          float pval = percentile_accumulator_get(&p_accumulators[b],
+                                                   (float)percentile_list[p]);
+          if (normalize && !isnan(pval)) {
+            pval += reference_elevation;
+          }
+          bin_percentiles[b * n_percentiles + p] = pval;
+        }
+      }
+    }
+  }
+
+  // Finalize basic statistics for each bin
   for (ptrdiff_t b = 0; b < n_bins; b++) {
     bin_distances[b] = -half_width + b * bin_resolution;
 
@@ -425,8 +574,15 @@ void swath_transverse(
     }
   }
 
+  // Cleanup
   free(distance);
   free(accumulators);
+  if (compute_percentiles) {
+    for (ptrdiff_t b = 0; b < n_bins; b++) {
+      percentile_accumulator_free(&p_accumulators[b]);
+    }
+    free(p_accumulators);
+  }
 }
 
 // ============================================================================
@@ -437,7 +593,10 @@ TOPOTOOLBOX_API
 void swath_longitudinal(
     float *restrict point_means, float *restrict point_stddevs,
     float *restrict point_mins, float *restrict point_maxs,
-    ptrdiff_t *restrict point_counts, ptrdiff_t *restrict pixel_indices,
+    ptrdiff_t *restrict point_counts, float *restrict point_medians,
+    float *restrict point_q1, float *restrict point_q3,
+    const int *restrict percentile_list, ptrdiff_t n_percentiles,
+    float *restrict point_percentiles, ptrdiff_t *restrict pixel_indices,
     ptrdiff_t *restrict point_offsets, const float *restrict dem,
     const float *restrict track_i, const float *restrict track_j,
     ptrdiff_t n_track_points, ptrdiff_t dims[2], float cellsize,
@@ -445,12 +604,28 @@ void swath_longitudinal(
   if (n_track_points < 2)
     return;
 
-  // Allocate one accumulator per track point
+  // Determine if we need percentile computation
+  int compute_percentiles =
+      (point_medians != NULL || point_q1 != NULL || point_q3 != NULL ||
+       (percentile_list != NULL && n_percentiles > 0 &&
+        point_percentiles != NULL));
+
+  // Allocate one stats accumulator per track point
   swath_stats_accumulator *accumulators = (swath_stats_accumulator *)calloc(
       n_track_points, sizeof(swath_stats_accumulator));
 
   for (ptrdiff_t k = 0; k < n_track_points; k++) {
     accumulator_init(&accumulators[k]);
+  }
+
+  // Allocate percentile accumulators if needed
+  percentile_accumulator *p_accumulators = NULL;
+  if (compute_percentiles) {
+    p_accumulators = (percentile_accumulator *)calloc(
+        n_track_points, sizeof(percentile_accumulator));
+    for (ptrdiff_t k = 0; k < n_track_points; k++) {
+      percentile_accumulator_init(&p_accumulators[k], 64);
+    }
   }
 
   // Pixel tracking requires two passes: count then store
@@ -468,8 +643,9 @@ void swath_longitudinal(
   // Each pixel is assigned to its nearest track segment
   for (ptrdiff_t j = 0; j < dims[1]; j++) {
     for (ptrdiff_t i = 0; i < dims[0]; i++) {
-      float px = (float)i * cellsize;
-      float py = (float)j * cellsize;
+      // Work in pixel coordinates
+      float px = (float)i;
+      float py = (float)j;
 
       // Find which track segment this pixel belongs to
       float min_dist, proj_x, proj_y;
@@ -480,6 +656,7 @@ void swath_longitudinal(
       if (nearest_seg < 0)
         continue;
 
+      // Convert distance from pixels to meters
       float dist = min_dist * cellsize;
       if (fabsf(dist) > half_width)
         continue;
@@ -490,6 +667,11 @@ void swath_longitudinal(
 
       // Accumulate to the segment's statistics
       accumulator_add(&accumulators[nearest_seg], dem[idx]);
+
+      // Also store for percentile computation if needed
+      if (compute_percentiles) {
+        percentile_accumulator_add(&p_accumulators[nearest_seg], dem[idx]);
+      }
 
       if (track_pixels) {
         pixel_counts_temp[nearest_seg]++;
@@ -512,8 +694,9 @@ void swath_longitudinal(
   if (track_pixels) {
     for (ptrdiff_t j = 0; j < dims[1]; j++) {
       for (ptrdiff_t i = 0; i < dims[0]; i++) {
-        float px = (float)i * cellsize;
-        float py = (float)j * cellsize;
+        // Work in pixel coordinates
+        float px = (float)i;
+        float py = (float)j;
 
         float min_dist, proj_x, proj_y;
         ptrdiff_t nearest_seg = find_nearest_segment(
@@ -523,6 +706,7 @@ void swath_longitudinal(
         if (nearest_seg < 0)
           continue;
 
+        // Convert distance from pixels to meters
         float dist = min_dist * cellsize;
         if (fabsf(dist) > half_width)
           continue;
@@ -540,7 +724,38 @@ void swath_longitudinal(
     free(pixel_counts_temp);
   }
 
-  // Finalize statistics for each track point
+  // Compute percentiles if requested
+  if (compute_percentiles) {
+    for (ptrdiff_t k = 0; k < n_track_points; k++) {
+      percentile_accumulator_sort(&p_accumulators[k]);
+
+      // Compute standard percentiles
+      if (point_medians != NULL) {
+        point_medians[k] =
+            percentile_accumulator_get(&p_accumulators[k], 50.0f);
+      }
+
+      if (point_q1 != NULL) {
+        point_q1[k] = percentile_accumulator_get(&p_accumulators[k], 25.0f);
+      }
+
+      if (point_q3 != NULL) {
+        point_q3[k] = percentile_accumulator_get(&p_accumulators[k], 75.0f);
+      }
+
+      // Compute arbitrary percentiles
+      if (percentile_list != NULL && n_percentiles > 0 &&
+          point_percentiles != NULL) {
+        for (ptrdiff_t p = 0; p < n_percentiles; p++) {
+          point_percentiles[k * n_percentiles + p] =
+              percentile_accumulator_get(&p_accumulators[k],
+                                         (float)percentile_list[p]);
+        }
+      }
+    }
+  }
+
+  // Finalize basic statistics for each track point
   for (ptrdiff_t k = 0; k < n_track_points; k++) {
     point_means[k] = accumulator_mean(&accumulators[k]);
     point_stddevs[k] = accumulator_stddev(&accumulators[k]);
@@ -549,5 +764,12 @@ void swath_longitudinal(
     point_counts[k] = accumulators[k].count;
   }
 
+  // Cleanup
   free(accumulators);
+  if (compute_percentiles) {
+    for (ptrdiff_t k = 0; k < n_track_points; k++) {
+      percentile_accumulator_free(&p_accumulators[k]);
+    }
+    free(p_accumulators);
+  }
 }
