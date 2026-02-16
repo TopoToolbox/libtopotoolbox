@@ -327,7 +327,7 @@ void swath_distance_map(float *restrict distance,
 // ============================================================================
 
 TOPOTOOLBOX_API
-void swath_profile_binned(
+void swath_transverse(
     float *restrict bin_distances, float *restrict bin_means,
     float *restrict bin_stddevs, float *restrict bin_mins,
     float *restrict bin_maxs, ptrdiff_t *restrict bin_counts,
@@ -434,7 +434,7 @@ void swath_profile_binned(
 // ============================================================================
 
 TOPOTOOLBOX_API
-void swath_profile_per_point(
+void swath_longitudinal(
     float *restrict point_means, float *restrict point_stddevs,
     float *restrict point_mins, float *restrict point_maxs,
     ptrdiff_t *restrict point_counts, ptrdiff_t *restrict pixel_indices,

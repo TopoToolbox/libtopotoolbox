@@ -2539,13 +2539,14 @@ void swath_distance_map(float *distance, ptrdiff_t *nearest_segment,
    @endparblock
  */
 TOPOTOOLBOX_API
-void swath_profile_binned(float *bin_distances, float *bin_means,
-                          float *bin_stddevs, float *bin_mins, float *bin_maxs,
-                          ptrdiff_t *bin_counts, const float *dem,
-                          const float *track_i, const float *track_j,
-                          ptrdiff_t n_track_points, ptrdiff_t dims[2],
-                          float cellsize, float half_width,
-                          float bin_resolution, ptrdiff_t n_bins, int normalize);
+void swath_transverse(float *bin_distances, float *bin_means,
+                      float *bin_stddevs, float *bin_mins, float *bin_maxs,
+                      ptrdiff_t *bin_counts, const float *dem,
+                      const float *track_i, const float *track_j,
+                      ptrdiff_t n_track_points, ptrdiff_t dims[2],
+                      float cellsize, float half_width, float bin_resolution,
+                      ptrdiff_t n_bins, int normalize);
+
 
 /**
    @brief Compute per-point swath profile along track
@@ -2644,12 +2645,11 @@ void swath_profile_binned(float *bin_distances, float *bin_means,
    @endparblock
  */
 TOPOTOOLBOX_API
-void swath_profile_per_point(float *point_means, float *point_stddevs,
-                              float *point_mins, float *point_maxs,
-                              ptrdiff_t *point_counts, ptrdiff_t *pixel_indices,
-                              ptrdiff_t *point_offsets, const float *dem,
-                              const float *track_i, const float *track_j,
-                              ptrdiff_t n_track_points, ptrdiff_t dims[2],
-                              float cellsize, float half_width);
-
+void swath_longitudinal(float *point_means, float *point_stddevs,
+                         float *point_mins, float *point_maxs,
+                         ptrdiff_t *point_counts, ptrdiff_t *pixel_indices,
+                         ptrdiff_t *point_offsets, const float *dem,
+                         const float *track_i, const float *track_j,
+                         ptrdiff_t n_track_points, ptrdiff_t dims[2],
+                         float cellsize, float half_width);
 #endif  // TOPOTOOLBOX_H
