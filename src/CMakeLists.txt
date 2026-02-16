@@ -22,6 +22,7 @@ add_library(topotoolbox
   drainagebasins.c
   hillshade.c
   knickpoints.c
+  swaths.c
 )
 
 # Define the include directory
