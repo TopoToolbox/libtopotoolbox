@@ -2496,6 +2496,47 @@ void swath_distance_map(float *distance, ptrdiff_t *nearest_segment,
    Contains the count of valid (non-NaN) pixels contributing to each bin.
    @endparblock
 
+   @param[out] bin_medians Median elevation in each bin
+   @parblock
+   A pointer to a `float` array of size `n_bins`, or NULL to skip
+
+   Contains the median (50th percentile) elevation in meters for each bin.
+   @endparblock
+
+   @param[out] bin_q1 First quartile elevation in each bin
+   @parblock
+   A pointer to a `float` array of size `n_bins`, or NULL to skip
+
+   Contains the 25th percentile elevation in meters for each bin.
+   @endparblock
+
+   @param[out] bin_q3 Third quartile elevation in each bin
+   @parblock
+   A pointer to a `float` array of size `n_bins`, or NULL to skip
+
+   Contains the 75th percentile elevation in meters for each bin.
+   @endparblock
+
+   @param[in] percentile_list List of percentiles to compute
+   @parblock
+   A pointer to an `int` array containing percentile values (0-100), or NULL
+
+   Each value should be between 0 and 100. Pass NULL if no custom percentiles needed.
+   @endparblock
+
+   @param[in] n_percentiles Number of percentiles in percentile_list
+   @parblock
+   Number of elements in percentile_list. Ignored if percentile_list is NULL.
+   @endparblock
+
+   @param[out] bin_percentiles Custom percentiles for each bin
+   @parblock
+   A pointer to a `float` array of size `n_bins` x `n_percentiles`, or NULL
+
+   Layout: bin_percentiles[bin * n_percentiles + p] contains the p-th percentile
+   for the given bin. Both percentile_list and this must be non-NULL to compute.
+   @endparblock
+
    @param[in] dem The input DEM
    @parblock
    A pointer to a `float` array of size `dims[0]` x `dims[1]`
@@ -2541,11 +2582,13 @@ void swath_distance_map(float *distance, ptrdiff_t *nearest_segment,
 TOPOTOOLBOX_API
 void swath_transverse(float *bin_distances, float *bin_means,
                       float *bin_stddevs, float *bin_mins, float *bin_maxs,
-                      ptrdiff_t *bin_counts, const float *dem,
-                      const float *track_i, const float *track_j,
-                      ptrdiff_t n_track_points, ptrdiff_t dims[2],
-                      float cellsize, float half_width, float bin_resolution,
-                      ptrdiff_t n_bins, int normalize);
+                      ptrdiff_t *bin_counts, float *bin_medians, float *bin_q1,
+                      float *bin_q3, const int *percentile_list,
+                      ptrdiff_t n_percentiles, float *bin_percentiles,
+                      const float *dem, const float *track_i,
+                      const float *track_j, ptrdiff_t n_track_points,
+                      ptrdiff_t dims[2], float cellsize, float half_width,
+                      float bin_resolution, ptrdiff_t n_bins, int normalize);
 
 
 /**
@@ -2595,6 +2638,47 @@ void swath_transverse(float *bin_distances, float *bin_means,
    Contains the count of valid pixels within each point's swath.
    @endparblock
 
+   @param[out] point_medians Median elevation for each track point
+   @parblock
+   A pointer to a `float` array of size `n_track_points`, or NULL to skip
+
+   Contains the median (50th percentile) elevation in meters for each point.
+   @endparblock
+
+   @param[out] point_q1 First quartile elevation for each track point
+   @parblock
+   A pointer to a `float` array of size `n_track_points`, or NULL to skip
+
+   Contains the 25th percentile elevation in meters for each point.
+   @endparblock
+
+   @param[out] point_q3 Third quartile elevation for each track point
+   @parblock
+   A pointer to a `float` array of size `n_track_points`, or NULL to skip
+
+   Contains the 75th percentile elevation in meters for each point.
+   @endparblock
+
+   @param[in] percentile_list List of percentiles to compute
+   @parblock
+   A pointer to an `int` array containing percentile values (0-100), or NULL
+
+   Each value should be between 0 and 100. Pass NULL if no custom percentiles needed.
+   @endparblock
+
+   @param[in] n_percentiles Number of percentiles in percentile_list
+   @parblock
+   Number of elements in percentile_list. Ignored if percentile_list is NULL.
+   @endparblock
+
+   @param[out] point_percentiles Custom percentiles for each track point
+   @parblock
+   A pointer to a `float` array of size `n_track_points` x `n_percentiles`, or NULL
+
+   Layout: point_percentiles[point * n_percentiles + p] contains the p-th percentile
+   for the given point. Both percentile_list and this must be non-NULL to compute.
+   @endparblock
+
    @param[out] pixel_indices Linear indices of pixels associated with each point
    @parblock
    A pointer to a `ptrdiff_t` array of size equal to total pixels in all swaths,
@@ -2641,15 +2725,32 @@ void swath_transverse(float *bin_distances, float *bin_means,
 
    @param[in] half_width Half-width of the swath in meters
    @parblock
-   Defines the perpendicular extent of the swath on each side of the track point.
+   Defines the perpendicular extent of the swath on each side of the track.
+   @endparblock
+
+   @param[in] binning_distance Along-track binning distance in meters
+   @parblock
+   For each track point, all track points within ±binning_distance (measured
+   along the track) form a local sub-track. Pixels are gathered using
+   perpendicular distance to this sub-track, same as the transverse method.
+
+   If binning_distance < cellsize: the sub-track reduces to a single
+   orthogonal line at the track point (minimal along-track extent).
+
+   If binning_distance >= cellsize: the sub-track covers a longer portion,
+   gathering more pixels and producing smoother statistics.
    @endparblock
  */
 TOPOTOOLBOX_API
 void swath_longitudinal(float *point_means, float *point_stddevs,
                          float *point_mins, float *point_maxs,
-                         ptrdiff_t *point_counts, ptrdiff_t *pixel_indices,
+                         ptrdiff_t *point_counts, float *point_medians,
+                         float *point_q1, float *point_q3,
+                         const int *percentile_list, ptrdiff_t n_percentiles,
+                         float *point_percentiles, ptrdiff_t *pixel_indices,
                          ptrdiff_t *point_offsets, const float *dem,
                          const float *track_i, const float *track_j,
                          ptrdiff_t n_track_points, ptrdiff_t dims[2],
-                         float cellsize, float half_width);
+                         float cellsize, float half_width,
+                         float binning_distance);
 #endif  // TOPOTOOLBOX_H

@@ -588,6 +588,18 @@ void swath_transverse(
 // ============================================================================
 // Per-Point Swath Profile - Along-Track Variation
 // ============================================================================
+//
+// For each track point k, defines a local sub-track of all track points
+// within ±binning_distance (measured along the track) of point k. Then uses
+// the same perpendicular-distance-to-segments logic as the transverse method
+// to gather DEM pixels within half_width of that sub-track.
+//
+// If binning_distance < cellsize: the sub-track is just the two half-segments
+// around point k, producing a single orthogonal line at that point.
+//
+// If binning_distance >= cellsize: the sub-track encompasses a longer portion
+// of the track, gathering pixels as if that sub-track were the entire profile
+// for the transverse method.
 
 TOPOTOOLBOX_API
 void swath_longitudinal(
@@ -600,176 +612,268 @@ void swath_longitudinal(
     ptrdiff_t *restrict point_offsets, const float *restrict dem,
     const float *restrict track_i, const float *restrict track_j,
     ptrdiff_t n_track_points, ptrdiff_t dims[2], float cellsize,
-    float half_width) {
+    float half_width, float binning_distance) {
   if (n_track_points < 2)
     return;
 
-  // Determine if we need percentile computation
   int compute_percentiles =
       (point_medians != NULL || point_q1 != NULL || point_q3 != NULL ||
        (percentile_list != NULL && n_percentiles > 0 &&
         point_percentiles != NULL));
 
-  // Allocate one stats accumulator per track point
-  swath_stats_accumulator *accumulators = (swath_stats_accumulator *)calloc(
-      n_track_points, sizeof(swath_stats_accumulator));
-
-  for (ptrdiff_t k = 0; k < n_track_points; k++) {
-    accumulator_init(&accumulators[k]);
-  }
-
-  // Allocate percentile accumulators if needed
-  percentile_accumulator *p_accumulators = NULL;
-  if (compute_percentiles) {
-    p_accumulators = (percentile_accumulator *)calloc(
-        n_track_points, sizeof(percentile_accumulator));
-    for (ptrdiff_t k = 0; k < n_track_points; k++) {
-      percentile_accumulator_init(&p_accumulators[k], 64);
-    }
-  }
-
-  // Pixel tracking requires two passes: count then store
-  ptrdiff_t *pixel_counts_temp = NULL;
   int track_pixels = (pixel_indices != NULL && point_offsets != NULL);
 
+  // Precompute cumulative along-track distance (in meters) for each point
+  float *cum_dist = (float *)malloc(n_track_points * sizeof(float));
+  cum_dist[0] = 0.0f;
+  for (ptrdiff_t k = 1; k < n_track_points; k++) {
+    float di = track_i[k] - track_i[k - 1];
+    float dj = track_j[k] - track_j[k - 1];
+    cum_dist[k] = cum_dist[k - 1] + sqrtf(di * di + dj * dj) * cellsize;
+  }
+
+  // Convert half_width to pixels for bounding box computation
+  float hw_pixels = half_width / cellsize;
+
+  // If tracking pixels: two-pass approach (count then store)
+  // First pass counts pixels per point, second pass stores indices
+  ptrdiff_t *pixel_counts_temp = NULL;
   if (track_pixels) {
     pixel_counts_temp = (ptrdiff_t *)calloc(n_track_points, sizeof(ptrdiff_t));
-    if (point_offsets != NULL) {
-      point_offsets[0] = 0;
-    }
+    point_offsets[0] = 0;
   }
 
-  // First pass: accumulate statistics and count pixels per point
-  // Each pixel is assigned to its nearest track segment
-  for (ptrdiff_t j = 0; j < dims[1]; j++) {
-    for (ptrdiff_t i = 0; i < dims[0]; i++) {
-      // Work in pixel coordinates
-      float px = (float)i;
-      float py = (float)j;
+  // Process each track point
+  for (ptrdiff_t k = 0; k < n_track_points; k++) {
+    // Find sub-track range: all points within ±binning_distance along track
+    float center_dist = cum_dist[k];
+    ptrdiff_t sub_start = k;
+    ptrdiff_t sub_end = k;
 
-      // Find which track segment this pixel belongs to
-      float min_dist, proj_x, proj_y;
-      ptrdiff_t nearest_seg =
-          find_nearest_segment(px, py, track_i, track_j, n_track_points, 0,
-                               n_track_points - 1, &min_dist, &proj_x, &proj_y);
+    // Expand sub-track backwards
+    while (sub_start > 0 &&
+           (center_dist - cum_dist[sub_start - 1]) <= binning_distance) {
+      sub_start--;
+    }
+    // Expand sub-track forwards
+    while (sub_end < n_track_points - 1 &&
+           (cum_dist[sub_end + 1] - center_dist) <= binning_distance) {
+      sub_end++;
+    }
 
-      if (nearest_seg < 0)
-        continue;
+    // Ensure at least one segment exists
+    // If sub_start == sub_end and it's not the last point, use [k, k+1]
+    // If it's the last point, use [k-1, k]
+    if (sub_start == sub_end) {
+      if (sub_end < n_track_points - 1)
+        sub_end++;
+      else if (sub_start > 0)
+        sub_start--;
+    }
 
-      // Convert distance from pixels to meters
-      float dist = min_dist * cellsize;
-      if (fabsf(dist) > half_width)
-        continue;
-
-      ptrdiff_t idx = j * dims[0] + i;
-      if (isnan(dem[idx]))
-        continue;
-
-      // Accumulate to the segment's statistics
-      accumulator_add(&accumulators[nearest_seg], dem[idx]);
-
-      // Also store for percentile computation if needed
-      if (compute_percentiles) {
-        percentile_accumulator_add(&p_accumulators[nearest_seg], dem[idx]);
+    // Number of segments in sub-track
+    ptrdiff_t n_sub_segments = sub_end - sub_start;
+    if (n_sub_segments < 1) {
+      // Degenerate: single point, no segments possible
+      point_means[k] = NAN;
+      point_stddevs[k] = 0.0f;
+      point_mins[k] = NAN;
+      point_maxs[k] = NAN;
+      point_counts[k] = 0;
+      if (point_medians) point_medians[k] = NAN;
+      if (point_q1) point_q1[k] = NAN;
+      if (point_q3) point_q3[k] = NAN;
+      if (percentile_list && n_percentiles > 0 && point_percentiles) {
+        for (ptrdiff_t p = 0; p < n_percentiles; p++)
+          point_percentiles[k * n_percentiles + p] = NAN;
       }
-
       if (track_pixels) {
-        pixel_counts_temp[nearest_seg]++;
+        pixel_counts_temp[k] = 0;
       }
+      continue;
     }
-  }
 
-  // Build offset array: convert counts to cumulative offsets
-  // point_offsets[k] = start index in pixel_indices for point k
-  // point_offsets[k+1] - point_offsets[k] = number of pixels for point k
-  if (track_pixels) {
-    for (ptrdiff_t k = 0; k < n_track_points; k++) {
-      point_offsets[k + 1] = point_offsets[k] + pixel_counts_temp[k];
-      pixel_counts_temp[k] = 0; // Reuse as insertion counters
+    // Compute bounding box of sub-track ± half_width (in pixel coords)
+    float bb_min_i = track_i[sub_start];
+    float bb_max_i = track_i[sub_start];
+    float bb_min_j = track_j[sub_start];
+    float bb_max_j = track_j[sub_start];
+    for (ptrdiff_t s = sub_start + 1; s <= sub_end; s++) {
+      if (track_i[s] < bb_min_i) bb_min_i = track_i[s];
+      if (track_i[s] > bb_max_i) bb_max_i = track_i[s];
+      if (track_j[s] < bb_min_j) bb_min_j = track_j[s];
+      if (track_j[s] > bb_max_j) bb_max_j = track_j[s];
     }
-  }
 
-  // Second pass: store linear pixel indices in flat array
-  // Must repeat distance computation since we don't cache results
-  if (track_pixels) {
-    for (ptrdiff_t j = 0; j < dims[1]; j++) {
-      for (ptrdiff_t i = 0; i < dims[0]; i++) {
-        // Work in pixel coordinates
-        float px = (float)i;
-        float py = (float)j;
+    // Expand bounding box by half_width (in pixels) + 1 pixel margin
+    ptrdiff_t i_lo = (ptrdiff_t)(bb_min_i - hw_pixels - 1.0f);
+    ptrdiff_t i_hi = (ptrdiff_t)(bb_max_i + hw_pixels + 2.0f);
+    ptrdiff_t j_lo = (ptrdiff_t)(bb_min_j - hw_pixels - 1.0f);
+    ptrdiff_t j_hi = (ptrdiff_t)(bb_max_j + hw_pixels + 2.0f);
 
-        float min_dist, proj_x, proj_y;
-        ptrdiff_t nearest_seg = find_nearest_segment(
-            px, py, track_i, track_j, n_track_points, 0, n_track_points - 1,
-            &min_dist, &proj_x, &proj_y);
+    // Clamp to grid bounds
+    if (i_lo < 0) i_lo = 0;
+    if (i_hi > dims[0]) i_hi = dims[0];
+    if (j_lo < 0) j_lo = 0;
+    if (j_hi > dims[1]) j_hi = dims[1];
 
-        if (nearest_seg < 0)
-          continue;
+    // Initialize accumulators for this point
+    swath_stats_accumulator acc;
+    accumulator_init(&acc);
 
-        // Convert distance from pixels to meters
-        float dist = min_dist * cellsize;
-        if (fabsf(dist) > half_width)
-          continue;
+    percentile_accumulator p_acc = {0, 0, NULL};
+    if (compute_percentiles) {
+      percentile_accumulator_init(&p_acc, 64);
+    }
 
+    // Scan pixels in bounding box, compute perpendicular distance to sub-track
+    for (ptrdiff_t j = j_lo; j < j_hi; j++) {
+      for (ptrdiff_t i = i_lo; i < i_hi; i++) {
         ptrdiff_t idx = j * dims[0] + i;
         if (isnan(dem[idx]))
           continue;
 
-        // Insert pixel index into flat array at correct position
-        ptrdiff_t pos = point_offsets[nearest_seg] + pixel_counts_temp[nearest_seg];
-        pixel_indices[pos] = idx;
-        pixel_counts_temp[nearest_seg]++;
+        float px = (float)i;
+        float py = (float)j;
+
+        // Find perpendicular distance to sub-track (search only sub-track segments)
+        float min_dist, proj_x, proj_y;
+        ptrdiff_t seg = find_nearest_segment(
+            px, py, track_i, track_j, n_track_points,
+            sub_start, sub_end, &min_dist, &proj_x, &proj_y);
+
+        if (seg < 0)
+          continue;
+
+        // Convert distance from pixels to meters
+        float dist_m = fabsf(min_dist) * cellsize;
+        if (dist_m > half_width)
+          continue;
+
+        accumulator_add(&acc, dem[idx]);
+        if (compute_percentiles) {
+          percentile_accumulator_add(&p_acc, dem[idx]);
+        }
+        if (track_pixels) {
+          pixel_counts_temp[k]++;
+        }
+      }
+    }
+
+    // Finalize statistics for this point
+    point_means[k] = accumulator_mean(&acc);
+    point_stddevs[k] = accumulator_stddev(&acc);
+    point_mins[k] = acc.count > 0 ? acc.min_val : NAN;
+    point_maxs[k] = acc.count > 0 ? acc.max_val : NAN;
+    point_counts[k] = acc.count;
+
+    // Percentiles
+    if (compute_percentiles) {
+      percentile_accumulator_sort(&p_acc);
+
+      if (point_medians != NULL)
+        point_medians[k] = percentile_accumulator_get(&p_acc, 50.0f);
+      if (point_q1 != NULL)
+        point_q1[k] = percentile_accumulator_get(&p_acc, 25.0f);
+      if (point_q3 != NULL)
+        point_q3[k] = percentile_accumulator_get(&p_acc, 75.0f);
+
+      if (percentile_list != NULL && n_percentiles > 0 &&
+          point_percentiles != NULL) {
+        for (ptrdiff_t p = 0; p < n_percentiles; p++) {
+          point_percentiles[k * n_percentiles + p] =
+              percentile_accumulator_get(&p_acc, (float)percentile_list[p]);
+        }
+      }
+
+      percentile_accumulator_free(&p_acc);
+    }
+  }
+
+  // Pixel tracking: build offset array then do second pass to store indices
+  if (track_pixels) {
+    for (ptrdiff_t k = 0; k < n_track_points; k++) {
+      point_offsets[k + 1] = point_offsets[k] + pixel_counts_temp[k];
+      pixel_counts_temp[k] = 0; // Reset as insertion counters
+    }
+
+    // Second pass: store pixel indices
+    for (ptrdiff_t k = 0; k < n_track_points; k++) {
+      float center_dist = cum_dist[k];
+      ptrdiff_t sub_start = k;
+      ptrdiff_t sub_end = k;
+
+      while (sub_start > 0 &&
+             (center_dist - cum_dist[sub_start - 1]) <= binning_distance) {
+        sub_start--;
+      }
+      while (sub_end < n_track_points - 1 &&
+             (cum_dist[sub_end + 1] - center_dist) <= binning_distance) {
+        sub_end++;
+      }
+
+      if (sub_start == sub_end) {
+        if (sub_end < n_track_points - 1)
+          sub_end++;
+        else if (sub_start > 0)
+          sub_start--;
+      }
+
+      ptrdiff_t n_sub_segments = sub_end - sub_start;
+      if (n_sub_segments < 1)
+        continue;
+
+      // Same bounding box as first pass
+      float bb_min_i = track_i[sub_start];
+      float bb_max_i = track_i[sub_start];
+      float bb_min_j = track_j[sub_start];
+      float bb_max_j = track_j[sub_start];
+      for (ptrdiff_t s = sub_start + 1; s <= sub_end; s++) {
+        if (track_i[s] < bb_min_i) bb_min_i = track_i[s];
+        if (track_i[s] > bb_max_i) bb_max_i = track_i[s];
+        if (track_j[s] < bb_min_j) bb_min_j = track_j[s];
+        if (track_j[s] > bb_max_j) bb_max_j = track_j[s];
+      }
+
+      ptrdiff_t i_lo = (ptrdiff_t)(bb_min_i - hw_pixels - 1.0f);
+      ptrdiff_t i_hi = (ptrdiff_t)(bb_max_i + hw_pixels + 2.0f);
+      ptrdiff_t j_lo = (ptrdiff_t)(bb_min_j - hw_pixels - 1.0f);
+      ptrdiff_t j_hi = (ptrdiff_t)(bb_max_j + hw_pixels + 2.0f);
+
+      if (i_lo < 0) i_lo = 0;
+      if (i_hi > dims[0]) i_hi = dims[0];
+      if (j_lo < 0) j_lo = 0;
+      if (j_hi > dims[1]) j_hi = dims[1];
+
+      for (ptrdiff_t j = j_lo; j < j_hi; j++) {
+        for (ptrdiff_t i = i_lo; i < i_hi; i++) {
+          ptrdiff_t idx = j * dims[0] + i;
+          if (isnan(dem[idx]))
+            continue;
+
+          float px = (float)i;
+          float py = (float)j;
+
+          float min_dist, proj_x, proj_y;
+          ptrdiff_t seg = find_nearest_segment(
+              px, py, track_i, track_j, n_track_points,
+              sub_start, sub_end, &min_dist, &proj_x, &proj_y);
+
+          if (seg < 0)
+            continue;
+
+          float dist_m = fabsf(min_dist) * cellsize;
+          if (dist_m > half_width)
+            continue;
+
+          ptrdiff_t pos = point_offsets[k] + pixel_counts_temp[k];
+          pixel_indices[pos] = idx;
+          pixel_counts_temp[k]++;
+        }
       }
     }
     free(pixel_counts_temp);
   }
 
-  // Compute percentiles if requested
-  if (compute_percentiles) {
-    for (ptrdiff_t k = 0; k < n_track_points; k++) {
-      percentile_accumulator_sort(&p_accumulators[k]);
-
-      // Compute standard percentiles
-      if (point_medians != NULL) {
-        point_medians[k] =
-            percentile_accumulator_get(&p_accumulators[k], 50.0f);
-      }
-
-      if (point_q1 != NULL) {
-        point_q1[k] = percentile_accumulator_get(&p_accumulators[k], 25.0f);
-      }
-
-      if (point_q3 != NULL) {
-        point_q3[k] = percentile_accumulator_get(&p_accumulators[k], 75.0f);
-      }
-
-      // Compute arbitrary percentiles
-      if (percentile_list != NULL && n_percentiles > 0 &&
-          point_percentiles != NULL) {
-        for (ptrdiff_t p = 0; p < n_percentiles; p++) {
-          point_percentiles[k * n_percentiles + p] =
-              percentile_accumulator_get(&p_accumulators[k],
-                                         (float)percentile_list[p]);
-        }
-      }
-    }
-  }
-
-  // Finalize basic statistics for each track point
-  for (ptrdiff_t k = 0; k < n_track_points; k++) {
-    point_means[k] = accumulator_mean(&accumulators[k]);
-    point_stddevs[k] = accumulator_stddev(&accumulators[k]);
-    point_mins[k] = accumulators[k].count > 0 ? accumulators[k].min_val : NAN;
-    point_maxs[k] = accumulators[k].count > 0 ? accumulators[k].max_val : NAN;
-    point_counts[k] = accumulators[k].count;
-  }
-
-  // Cleanup
-  free(accumulators);
-  if (compute_percentiles) {
-    for (ptrdiff_t k = 0; k < n_track_points; k++) {
-      percentile_accumulator_free(&p_accumulators[k]);
-    }
-    free(p_accumulators);
-  }
+  free(cum_dist);
 }
