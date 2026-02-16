@@ -2679,26 +2679,6 @@ void swath_transverse(float *bin_distances, float *bin_means,
    for the given point. Both percentile_list and this must be non-NULL to compute.
    @endparblock
 
-   @param[out] pixel_indices Linear indices of pixels associated with each point
-   @parblock
-   A pointer to a `ptrdiff_t` array of size equal to total pixels in all swaths,
-   or NULL to skip this output.
-
-   Contains flattened linear indices (j * dims[0] + i) of pixels. Use in
-   conjunction with point_offsets to determine which pixels belong to each point.
-   @endparblock
-
-   @param[out] point_offsets Offsets into pixel_indices for each point
-   @parblock
-   A pointer to a `ptrdiff_t` array of size `n_track_points + 1`, or NULL.
-
-   point_offsets[k] is the starting index in pixel_indices for track point k.
-   point_offsets[k+1] - point_offsets[k] gives the number of pixels for point k.
-
-   Both pixel_indices and point_offsets must be non-NULL to enable pixel tracking,
-   or both must be NULL to disable it.
-   @endparblock
-
    @param[in] dem The input DEM
    @parblock
    A pointer to a `float` array of size `dims[0]` x `dims[1]`
@@ -2747,10 +2727,42 @@ void swath_longitudinal(float *point_means, float *point_stddevs,
                          ptrdiff_t *point_counts, float *point_medians,
                          float *point_q1, float *point_q3,
                          const int *percentile_list, ptrdiff_t n_percentiles,
-                         float *point_percentiles, ptrdiff_t *pixel_indices,
-                         ptrdiff_t *point_offsets, const float *dem,
+                         float *point_percentiles, const float *dem,
                          const float *track_i, const float *track_j,
                          ptrdiff_t n_track_points, ptrdiff_t dims[2],
                          float cellsize, float half_width,
                          float binning_distance);
+
+/**
+   @brief Get pixel coordinates associated with a single track point.
+
+   @details
+   Uses the same sub-track + perpendicular distance logic as swath_longitudinal.
+   For the given track point, finds all grid pixels within half_width of the
+   local sub-track (defined by ±binning_distance along the track).
+
+   Caller allocates pixels_i and pixels_j large enough (safe upper bound:
+   dims[0] * dims[1], though actual count will be much smaller). The function
+   returns the number of pixels written.
+
+   @param[out] pixels_i Fast-dimension coordinates of associated pixels (node indices)
+   @param[out] pixels_j Slow-dimension coordinates of associated pixels (node indices)
+   @param[in] track_i Track point coordinates in fast dimension (pixel indices)
+   @param[in] track_j Track point coordinates in slow dimension (pixel indices)
+   @param[in] n_track_points Number of points in the track (must be >= 2)
+   @param[in] point_index Index into track_i/track_j for the query point
+   @param[in] dims Dimensions of the DEM grid (pixel counts)
+   @param[in] cellsize Physical size of one pixel (meters/pixel)
+   @param[in] half_width Perpendicular half-width of the swath (meters)
+   @param[in] binning_distance Along-track binning distance (meters)
+
+   @return Number of pixels written to pixels_i and pixels_j
+ */
+TOPOTOOLBOX_API
+ptrdiff_t swath_get_point_pixels(ptrdiff_t *pixels_i, ptrdiff_t *pixels_j,
+                                  const float *track_i, const float *track_j,
+                                  ptrdiff_t n_track_points,
+                                  ptrdiff_t point_index, ptrdiff_t dims[2],
+                                  float cellsize, float half_width,
+                                  float binning_distance);
 #endif  // TOPOTOOLBOX_H

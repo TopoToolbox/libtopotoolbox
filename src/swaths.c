@@ -608,8 +608,7 @@ void swath_longitudinal(
     ptrdiff_t *restrict point_counts, float *restrict point_medians,
     float *restrict point_q1, float *restrict point_q3,
     const int *restrict percentile_list, ptrdiff_t n_percentiles,
-    float *restrict point_percentiles, ptrdiff_t *restrict pixel_indices,
-    ptrdiff_t *restrict point_offsets, const float *restrict dem,
+    float *restrict point_percentiles, const float *restrict dem,
     const float *restrict track_i, const float *restrict track_j,
     ptrdiff_t n_track_points, ptrdiff_t dims[2], float cellsize,
     float half_width, float binning_distance) {
@@ -620,8 +619,6 @@ void swath_longitudinal(
       (point_medians != NULL || point_q1 != NULL || point_q3 != NULL ||
        (percentile_list != NULL && n_percentiles > 0 &&
         point_percentiles != NULL));
-
-  int track_pixels = (pixel_indices != NULL && point_offsets != NULL);
 
   // Precompute cumulative along-track distance (in meters) for each point
   float *cum_dist = (float *)malloc(n_track_points * sizeof(float));
@@ -634,14 +631,6 @@ void swath_longitudinal(
 
   // Convert half_width to pixels for bounding box computation
   float hw_pixels = half_width / cellsize;
-
-  // If tracking pixels: two-pass approach (count then store)
-  // First pass counts pixels per point, second pass stores indices
-  ptrdiff_t *pixel_counts_temp = NULL;
-  if (track_pixels) {
-    pixel_counts_temp = (ptrdiff_t *)calloc(n_track_points, sizeof(ptrdiff_t));
-    point_offsets[0] = 0;
-  }
 
   // Process each track point
   for (ptrdiff_t k = 0; k < n_track_points; k++) {
@@ -686,9 +675,6 @@ void swath_longitudinal(
       if (percentile_list && n_percentiles > 0 && point_percentiles) {
         for (ptrdiff_t p = 0; p < n_percentiles; p++)
           point_percentiles[k * n_percentiles + p] = NAN;
-      }
-      if (track_pixels) {
-        pixel_counts_temp[k] = 0;
       }
       continue;
     }
@@ -754,9 +740,6 @@ void swath_longitudinal(
         if (compute_percentiles) {
           percentile_accumulator_add(&p_acc, dem[idx]);
         }
-        if (track_pixels) {
-          pixel_counts_temp[k]++;
-        }
       }
     }
 
@@ -790,90 +773,114 @@ void swath_longitudinal(
     }
   }
 
-  // Pixel tracking: build offset array then do second pass to store indices
-  if (track_pixels) {
-    for (ptrdiff_t k = 0; k < n_track_points; k++) {
-      point_offsets[k + 1] = point_offsets[k] + pixel_counts_temp[k];
-      pixel_counts_temp[k] = 0; // Reset as insertion counters
-    }
+  free(cum_dist);
+}
 
-    // Second pass: store pixel indices
-    for (ptrdiff_t k = 0; k < n_track_points; k++) {
-      float center_dist = cum_dist[k];
-      ptrdiff_t sub_start = k;
-      ptrdiff_t sub_end = k;
+// ============================================================================
+// Per-Point Pixel Retrieval - Get pixels associated with a single track point
+// ============================================================================
+//
+// Returns the pixel coordinates (in node indices) associated with a single
+// track point, using the same sub-track + perpendicular distance logic as
+// swath_longitudinal. Caller provides pre-allocated arrays large enough
+// (e.g. dims[0]*dims[1] as safe upper bound) and the function returns the
+// actual count written.
 
-      while (sub_start > 0 &&
-             (center_dist - cum_dist[sub_start - 1]) <= binning_distance) {
-        sub_start--;
-      }
-      while (sub_end < n_track_points - 1 &&
-             (cum_dist[sub_end + 1] - center_dist) <= binning_distance) {
-        sub_end++;
-      }
+TOPOTOOLBOX_API
+ptrdiff_t swath_get_point_pixels(
+    ptrdiff_t *restrict pixels_i, ptrdiff_t *restrict pixels_j,
+    const float *restrict track_i, const float *restrict track_j,
+    ptrdiff_t n_track_points, ptrdiff_t point_index, ptrdiff_t dims[2],
+    float cellsize, float half_width, float binning_distance) {
+  if (n_track_points < 2)
+    return 0;
+  if (point_index < 0 || point_index >= n_track_points)
+    return 0;
 
-      if (sub_start == sub_end) {
-        if (sub_end < n_track_points - 1)
-          sub_end++;
-        else if (sub_start > 0)
-          sub_start--;
-      }
+  // Compute cumulative along-track distance (meters)
+  float *cum_dist = (float *)malloc(n_track_points * sizeof(float));
+  cum_dist[0] = 0.0f;
+  for (ptrdiff_t k = 1; k < n_track_points; k++) {
+    float di = track_i[k] - track_i[k - 1];
+    float dj = track_j[k] - track_j[k - 1];
+    cum_dist[k] = cum_dist[k - 1] + sqrtf(di * di + dj * dj) * cellsize;
+  }
 
-      ptrdiff_t n_sub_segments = sub_end - sub_start;
-      if (n_sub_segments < 1)
-        continue;
+  // Find sub-track range: all points within ±binning_distance along track
+  float center_dist = cum_dist[point_index];
+  ptrdiff_t sub_start = point_index;
+  ptrdiff_t sub_end = point_index;
 
-      // Same bounding box as first pass
-      float bb_min_i = track_i[sub_start];
-      float bb_max_i = track_i[sub_start];
-      float bb_min_j = track_j[sub_start];
-      float bb_max_j = track_j[sub_start];
-      for (ptrdiff_t s = sub_start + 1; s <= sub_end; s++) {
-        if (track_i[s] < bb_min_i) bb_min_i = track_i[s];
-        if (track_i[s] > bb_max_i) bb_max_i = track_i[s];
-        if (track_j[s] < bb_min_j) bb_min_j = track_j[s];
-        if (track_j[s] > bb_max_j) bb_max_j = track_j[s];
-      }
+  while (sub_start > 0 &&
+         (center_dist - cum_dist[sub_start - 1]) <= binning_distance) {
+    sub_start--;
+  }
+  while (sub_end < n_track_points - 1 &&
+         (cum_dist[sub_end + 1] - center_dist) <= binning_distance) {
+    sub_end++;
+  }
 
-      ptrdiff_t i_lo = (ptrdiff_t)(bb_min_i - hw_pixels - 1.0f);
-      ptrdiff_t i_hi = (ptrdiff_t)(bb_max_i + hw_pixels + 2.0f);
-      ptrdiff_t j_lo = (ptrdiff_t)(bb_min_j - hw_pixels - 1.0f);
-      ptrdiff_t j_hi = (ptrdiff_t)(bb_max_j + hw_pixels + 2.0f);
-
-      if (i_lo < 0) i_lo = 0;
-      if (i_hi > dims[0]) i_hi = dims[0];
-      if (j_lo < 0) j_lo = 0;
-      if (j_hi > dims[1]) j_hi = dims[1];
-
-      for (ptrdiff_t j = j_lo; j < j_hi; j++) {
-        for (ptrdiff_t i = i_lo; i < i_hi; i++) {
-          ptrdiff_t idx = j * dims[0] + i;
-          if (isnan(dem[idx]))
-            continue;
-
-          float px = (float)i;
-          float py = (float)j;
-
-          float min_dist, proj_x, proj_y;
-          ptrdiff_t seg = find_nearest_segment(
-              px, py, track_i, track_j, n_track_points,
-              sub_start, sub_end, &min_dist, &proj_x, &proj_y);
-
-          if (seg < 0)
-            continue;
-
-          float dist_m = fabsf(min_dist) * cellsize;
-          if (dist_m > half_width)
-            continue;
-
-          ptrdiff_t pos = point_offsets[k] + pixel_counts_temp[k];
-          pixel_indices[pos] = idx;
-          pixel_counts_temp[k]++;
-        }
-      }
-    }
-    free(pixel_counts_temp);
+  // Ensure at least one segment
+  if (sub_start == sub_end) {
+    if (sub_end < n_track_points - 1)
+      sub_end++;
+    else if (sub_start > 0)
+      sub_start--;
   }
 
   free(cum_dist);
+
+  ptrdiff_t n_sub_segments = sub_end - sub_start;
+  if (n_sub_segments < 1)
+    return 0;
+
+  // Bounding box of sub-track ± half_width (in pixels)
+  float hw_pixels = half_width / cellsize;
+  float bb_min_i = track_i[sub_start];
+  float bb_max_i = track_i[sub_start];
+  float bb_min_j = track_j[sub_start];
+  float bb_max_j = track_j[sub_start];
+  for (ptrdiff_t s = sub_start + 1; s <= sub_end; s++) {
+    if (track_i[s] < bb_min_i) bb_min_i = track_i[s];
+    if (track_i[s] > bb_max_i) bb_max_i = track_i[s];
+    if (track_j[s] < bb_min_j) bb_min_j = track_j[s];
+    if (track_j[s] > bb_max_j) bb_max_j = track_j[s];
+  }
+
+  ptrdiff_t i_lo = (ptrdiff_t)(bb_min_i - hw_pixels - 1.0f);
+  ptrdiff_t i_hi = (ptrdiff_t)(bb_max_i + hw_pixels + 2.0f);
+  ptrdiff_t j_lo = (ptrdiff_t)(bb_min_j - hw_pixels - 1.0f);
+  ptrdiff_t j_hi = (ptrdiff_t)(bb_max_j + hw_pixels + 2.0f);
+
+  if (i_lo < 0) i_lo = 0;
+  if (i_hi > dims[0]) i_hi = dims[0];
+  if (j_lo < 0) j_lo = 0;
+  if (j_hi > dims[1]) j_hi = dims[1];
+
+  // Gather pixels within half_width of sub-track
+  ptrdiff_t n = 0;
+  for (ptrdiff_t j = j_lo; j < j_hi; j++) {
+    for (ptrdiff_t i = i_lo; i < i_hi; i++) {
+      float px = (float)i;
+      float py = (float)j;
+
+      float min_dist, proj_x, proj_y;
+      ptrdiff_t seg = find_nearest_segment(
+          px, py, track_i, track_j, n_track_points,
+          sub_start, sub_end, &min_dist, &proj_x, &proj_y);
+
+      if (seg < 0)
+        continue;
+
+      float dist_m = fabsf(min_dist) * cellsize;
+      if (dist_m > half_width)
+        continue;
+
+      pixels_i[n] = i;
+      pixels_j[n] = j;
+      n++;
+    }
+  }
+
+  return n;
 }
