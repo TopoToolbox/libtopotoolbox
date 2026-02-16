@@ -14,26 +14,25 @@
 
   This module provides two complementary approaches for swath profile analysis:
 
-  1. Bin-based: Aggregates DEM pixels by perpendicular distance to track,
+  1. Transverse: Aggregates DEM pixels by perpendicular distance to track,
      creating a single averaged cross-sectional profile.
 
-  2. Per-point: Computes individual swath statistics for each track point,
+  2. Longitudinal: Computes individual swath statistics for each track point,
      showing how the profile changes along the track.
 
-  Both methods use Euclidean distance in pixel space scaled by cellsize.
+  Core algorithm: frontier-based Dijkstra expansion from the track outward.
+  Only pixels within the specified distance are visited, making cost
+  proportional to swath area rather than total grid size.
 */
 
 // ============================================================================
 // Statistics Accumulator - Welford's online algorithm for numerical stability
 // ============================================================================
-// Accumulates mean, variance, min, max in a single pass without storing values.
-// Uses double precision internally to prevent catastrophic cancellation in
-// variance computation even with large elevation values.
 
 typedef struct {
   ptrdiff_t count;
-  double sum;       // For mean computation
-  double sum_sq;    // For variance: E[X²] - E[X]²
+  double sum;
+  double sum_sq;
   float min_val;
   float max_val;
 } swath_stats_accumulator;
@@ -41,8 +40,6 @@ typedef struct {
 // ============================================================================
 // Percentile Accumulator - Stores values for percentile computation
 // ============================================================================
-// Dynamically stores all values to enable median and percentile calculation.
-// Memory grows as needed during accumulation.
 
 typedef struct {
   ptrdiff_t capacity;
@@ -61,53 +58,36 @@ static inline void percentile_accumulator_add(percentile_accumulator *acc,
                                                float value) {
   if (isnan(value))
     return;
-
-  // Grow array if needed
   if (acc->count >= acc->capacity) {
     acc->capacity *= 2;
     acc->values = (float *)realloc(acc->values, acc->capacity * sizeof(float));
   }
-
   acc->values[acc->count++] = value;
 }
 
-// Comparison function for qsort
 static int compare_floats(const void *a, const void *b) {
   float fa = *(const float *)a;
   float fb = *(const float *)b;
   return (fa > fb) - (fa < fb);
 }
 
-// Sort values in preparation for percentile computation
 static inline void percentile_accumulator_sort(percentile_accumulator *acc) {
   if (acc->count > 0) {
     qsort(acc->values, acc->count, sizeof(float), compare_floats);
   }
 }
 
-// Get percentile from sorted values (p in [0, 100])
-// Uses linear interpolation between nearest ranks
 static inline float percentile_accumulator_get(const percentile_accumulator *acc,
                                                 float p) {
   if (acc->count == 0)
     return NAN;
-
-  // Clamp percentile to valid range
-  if (p < 0.0f)
-    p = 0.0f;
-  if (p > 100.0f)
-    p = 100.0f;
-
-  // Convert percentile to array index (0-based)
+  if (p < 0.0f) p = 0.0f;
+  if (p > 100.0f) p = 100.0f;
   float index = p / 100.0f * (acc->count - 1);
   ptrdiff_t lower = (ptrdiff_t)index;
   ptrdiff_t upper = lower + 1;
-
-  // Boundary cases
   if (upper >= acc->count)
     return acc->values[acc->count - 1];
-
-  // Linear interpolation between adjacent values
   float fraction = index - lower;
   return acc->values[lower] * (1.0f - fraction) +
          acc->values[upper] * fraction;
@@ -134,17 +114,14 @@ static inline void accumulator_add(swath_stats_accumulator *acc, float value) {
   acc->count++;
   acc->sum += value;
   acc->sum_sq += value * value;
-  if (value < acc->min_val)
-    acc->min_val = value;
-  if (value > acc->max_val)
-    acc->max_val = value;
+  if (value < acc->min_val) acc->min_val = value;
+  if (value > acc->max_val) acc->max_val = value;
 }
 
 static inline float accumulator_mean(const swath_stats_accumulator *acc) {
   return acc->count > 0 ? (float)(acc->sum / acc->count) : NAN;
 }
 
-// Computes unbiased sample standard deviation (n-1 denominator)
 static inline float accumulator_stddev(const swath_stats_accumulator *acc) {
   if (acc->count <= 1)
     return 0.0f;
@@ -154,81 +131,113 @@ static inline float accumulator_stddev(const swath_stats_accumulator *acc) {
 }
 
 // ============================================================================
+// Min-Heap for Frontier Expansion (Dijkstra)
+// ============================================================================
+
+typedef struct {
+  float abs_dist;   // absolute perpendicular distance in pixels (heap key)
+  ptrdiff_t idx;    // linear pixel index
+} heap_entry;
+
+typedef struct {
+  heap_entry *data;
+  ptrdiff_t size;
+  ptrdiff_t capacity;
+} min_heap;
+
+static void heap_init(min_heap *h, ptrdiff_t initial_capacity) {
+  h->capacity = initial_capacity > 0 ? initial_capacity : 256;
+  h->size = 0;
+  h->data = (heap_entry *)malloc(h->capacity * sizeof(heap_entry));
+}
+
+static void heap_push(min_heap *h, float abs_dist, ptrdiff_t idx) {
+  if (h->size >= h->capacity) {
+    h->capacity *= 2;
+    h->data = (heap_entry *)realloc(h->data, h->capacity * sizeof(heap_entry));
+  }
+  ptrdiff_t i = h->size++;
+  h->data[i].abs_dist = abs_dist;
+  h->data[i].idx = idx;
+  // Sift up
+  while (i > 0) {
+    ptrdiff_t parent = (i - 1) / 2;
+    if (h->data[parent].abs_dist <= h->data[i].abs_dist) break;
+    heap_entry tmp = h->data[parent];
+    h->data[parent] = h->data[i];
+    h->data[i] = tmp;
+    i = parent;
+  }
+}
+
+static heap_entry heap_pop(min_heap *h) {
+  heap_entry top = h->data[0];
+  h->data[0] = h->data[--h->size];
+  // Sift down
+  ptrdiff_t i = 0;
+  for (;;) {
+    ptrdiff_t left = 2 * i + 1;
+    ptrdiff_t right = 2 * i + 2;
+    ptrdiff_t smallest = i;
+    if (left < h->size && h->data[left].abs_dist < h->data[smallest].abs_dist)
+      smallest = left;
+    if (right < h->size && h->data[right].abs_dist < h->data[smallest].abs_dist)
+      smallest = right;
+    if (smallest == i) break;
+    heap_entry tmp = h->data[smallest];
+    h->data[smallest] = h->data[i];
+    h->data[i] = tmp;
+    i = smallest;
+  }
+  return top;
+}
+
+static void heap_free(min_heap *h) {
+  free(h->data);
+  h->data = NULL;
+  h->size = 0;
+  h->capacity = 0;
+}
+
+// ============================================================================
 // Geometric Distance Computation
 // ============================================================================
 
-/*
-  Compute signed perpendicular distance from point to line segment.
-
-  Uses vector projection: projects point onto line, clamps to segment endpoints,
-  then computes Euclidean distance. Sign determined by cross product (2D rotation):
-  - Negative: point is left of segment direction (a→b)
-  - Positive: point is right of segment direction
-
-  Returns distance in same units as input coordinates (typically pixel space).
-*/
+// Signed perpendicular distance from point to line segment (pixel space).
+// Negative = left of segment direction, positive = right.
 static float point_to_segment_distance(float px, float py, float ax, float ay,
                                        float bx, float by, float *proj_x,
                                        float *proj_y, float *lambda) {
-  // Segment direction vector
   float dx = bx - ax;
   float dy = by - ay;
-
-  // Vector from segment start to point
   float dpx = px - ax;
   float dpy = py - ay;
-
-  // Projection parameter: t = (p-a)·(b-a) / |b-a|²
   float seg_length_sq = dx * dx + dy * dy;
 
   if (seg_length_sq < 1e-10f) {
-    // Degenerate segment (endpoints coincide), treat as point distance
     *lambda = 0.0f;
     *proj_x = ax;
     *proj_y = ay;
-    float dist = sqrtf(dpx * dpx + dpy * dpy);
-    return dist;
+    return sqrtf(dpx * dpx + dpy * dpy);
   }
 
   float t = (dpx * dx + dpy * dy) / seg_length_sq;
-
-  // Clamp projection to segment: t ∈ [0,1]
-  // t < 0: closest point is 'a'
-  // t > 1: closest point is 'b'
-  // else:  closest point is on segment interior
-  if (t < 0.0f)
-    t = 0.0f;
-  else if (t > 1.0f)
-    t = 1.0f;
+  if (t < 0.0f) t = 0.0f;
+  else if (t > 1.0f) t = 1.0f;
 
   *lambda = t;
-
-  // Compute projection point on segment
   *proj_x = ax + t * dx;
   *proj_y = ay + t * dy;
 
-  // Distance from projection to point
   float to_p_x = px - *proj_x;
   float to_p_y = py - *proj_y;
   float dist = sqrtf(to_p_x * to_p_x + to_p_y * to_p_y);
-
-  // Determine sign via cross product: (p-a) × (b-a)
-  // Positive cross product → point is to the right
   float cross = dpx * dy - dpy * dx;
 
   return cross >= 0.0f ? dist : -dist;
 }
 
-/*
-  Find nearest track segment to a point within search range.
-
-  Linear search through segment range, comparing absolute distances to handle
-  signed distances correctly. Uses projection information for downstream
-  interpolation if needed.
-
-  Search range optimization: Typically called with hints from neighbors,
-  narrowing search to nearby segments rather than entire track.
-*/
+// Find nearest segment in a range. Returns signed distance in pixel space.
 static ptrdiff_t find_nearest_segment(float px, float py,
                                       const float *restrict track_i,
                                       const float *restrict track_j,
@@ -241,24 +250,15 @@ static ptrdiff_t find_nearest_segment(float px, float py,
   *min_dist = FLT_MAX;
   *best_lambda = 0.0f;
 
-  // Clamp search range to valid segment indices
-  if (search_start < 0)
-    search_start = 0;
-  if (search_end >= n_track_points)
-    search_end = n_track_points - 1;
+  if (search_start < 0) search_start = 0;
+  if (search_end >= n_track_points) search_end = n_track_points - 1;
 
-  // Test each segment in range
   for (ptrdiff_t k = search_start; k < search_end; k++) {
-    float ax = track_i[k];
-    float ay = track_j[k];
-    float bx = track_i[k + 1];
-    float by = track_j[k + 1];
-
     float proj_i, proj_j, lambda;
-    float dist =
-        point_to_segment_distance(px, py, ax, ay, bx, by, &proj_i, &proj_j, &lambda);
+    float dist = point_to_segment_distance(px, py,
+        track_i[k], track_j[k], track_i[k + 1], track_j[k + 1],
+        &proj_i, &proj_j, &lambda);
 
-    // Compare absolute distances since sign only indicates direction
     if (fabsf(dist) < fabsf(*min_dist)) {
       *min_dist = dist;
       best_segment = k;
@@ -272,6 +272,134 @@ static ptrdiff_t find_nearest_segment(float px, float py,
 }
 
 // ============================================================================
+// Frontier-based Distance Map (Dijkstra from track, bounded by max_dist_px)
+// ============================================================================
+//
+// Expands outward from track pixels using a min-heap ordered by absolute
+// perpendicular distance. Each pixel is processed once. Only pixels within
+// max_dist_px (pixel units) are visited.
+//
+// Outputs (caller-allocated, size total_pixels):
+//   best_abs:     absolute perpendicular distance in pixels (FLT_MAX if unvisited)
+//   signed_dist:  signed perpendicular distance in pixels (0 if unvisited)
+//   nearest_seg:  nearest segment index (-1 if unvisited)
+//
+// Any output pointer can be NULL to skip that output, but best_abs is always
+// needed internally and will be allocated temporarily if NULL.
+
+static void frontier_distance_map(
+    float *restrict best_abs,
+    float *restrict signed_dist,
+    ptrdiff_t *restrict nearest_seg,
+    const float *restrict track_i,
+    const float *restrict track_j,
+    ptrdiff_t n_track_points, ptrdiff_t dims[2],
+    float max_dist_px) {
+  ptrdiff_t total = dims[0] * dims[1];
+
+  // We always need best_abs for Dijkstra tracking
+  int free_best = 0;
+  if (best_abs == NULL) {
+    best_abs = (float *)malloc(total * sizeof(float));
+    free_best = 1;
+  }
+
+  // Initialize
+  for (ptrdiff_t i = 0; i < total; i++) {
+    best_abs[i] = FLT_MAX;
+  }
+  if (signed_dist) {
+    for (ptrdiff_t i = 0; i < total; i++) signed_dist[i] = 0.0f;
+  }
+  if (nearest_seg) {
+    for (ptrdiff_t i = 0; i < total; i++) nearest_seg[i] = -1;
+  }
+
+  min_heap heap;
+  heap_init(&heap, n_track_points * 8);
+
+  // Helper: test a pixel against candidate segments, update if better
+  #define TRY_PIXEL(pi, pj, seg_lo, seg_hi) do {                             \
+    if ((pi) >= 0 && (pi) < dims[0] && (pj) >= 0 && (pj) < dims[1]) {       \
+      ptrdiff_t _idx = (pj) * dims[0] + (pi);                                \
+      float _px = (float)(pi);                                                \
+      float _py = (float)(pj);                                                \
+      float _best_sd = 0.0f, _best_ad = FLT_MAX;                             \
+      ptrdiff_t _best_seg = -1;                                               \
+      for (ptrdiff_t _sk = (seg_lo); _sk <= (seg_hi); _sk++) {               \
+        float _proj_x, _proj_y, _lam;                                        \
+        float _d = point_to_segment_distance(_px, _py,                        \
+            track_i[_sk], track_j[_sk], track_i[_sk+1], track_j[_sk+1],      \
+            &_proj_x, &_proj_y, &_lam);                                      \
+        if (fabsf(_d) < _best_ad) {                                           \
+          _best_ad = fabsf(_d);                                                \
+          _best_sd = _d;                                                       \
+          _best_seg = _sk;                                                     \
+        }                                                                      \
+      }                                                                        \
+      if (_best_ad < best_abs[_idx] && _best_ad <= max_dist_px) {             \
+        best_abs[_idx] = _best_ad;                                             \
+        if (signed_dist) signed_dist[_idx] = _best_sd;                        \
+        if (nearest_seg) nearest_seg[_idx] = _best_seg;                       \
+        heap_push(&heap, _best_ad, _idx);                                     \
+      }                                                                        \
+    }                                                                          \
+  } while(0)
+
+  // Seed: rasterize track segments at ~0.5px spacing
+  for (ptrdiff_t k = 0; k < n_track_points - 1; k++) {
+    float di = track_i[k + 1] - track_i[k];
+    float dj = track_j[k + 1] - track_j[k];
+    float seg_len = sqrtf(di * di + dj * dj);
+    ptrdiff_t n_steps = (ptrdiff_t)(seg_len * 2.0f) + 1;
+
+    ptrdiff_t seg_lo = k > 0 ? k - 1 : 0;
+    ptrdiff_t seg_hi = k + 1 < n_track_points - 1 ? k + 1 : k;
+
+    for (ptrdiff_t s = 0; s <= n_steps; s++) {
+      float t = n_steps > 0 ? (float)s / (float)n_steps : 0.0f;
+      ptrdiff_t pi = (ptrdiff_t)(track_i[k] + t * di + 0.5f);
+      ptrdiff_t pj = (ptrdiff_t)(track_j[k] + t * dj + 0.5f);
+      TRY_PIXEL(pi, pj, seg_lo, seg_hi);
+    }
+  }
+
+  // 8-connected neighbor offsets
+  static const int di8[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
+  static const int dj8[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
+
+  // Dijkstra expansion
+  while (heap.size > 0) {
+    heap_entry top = heap_pop(&heap);
+    ptrdiff_t idx = top.idx;
+
+    // Skip stale entries
+    if (top.abs_dist > best_abs[idx])
+      continue;
+
+    ptrdiff_t ci = idx % dims[0];
+    ptrdiff_t cj = idx / dims[0];
+    ptrdiff_t seg = nearest_seg ? nearest_seg[idx] : 0;
+
+    // Search range: parent's segment ±2
+    ptrdiff_t seg_lo = seg > 1 ? seg - 2 : 0;
+    ptrdiff_t seg_hi = seg + 2 < n_track_points - 1 ? seg + 2
+                                                      : n_track_points - 2;
+
+    for (int n = 0; n < 8; n++) {
+      ptrdiff_t ni = ci + di8[n];
+      ptrdiff_t nj = cj + dj8[n];
+      TRY_PIXEL(ni, nj, seg_lo, seg_hi);
+    }
+  }
+
+  #undef TRY_PIXEL
+
+  heap_free(&heap);
+  if (free_best) free(best_abs);
+}
+
+// ============================================================================
 // Public API Functions
 // ============================================================================
 
@@ -279,14 +407,11 @@ TOPOTOOLBOX_API
 ptrdiff_t swath_compute_nbins(float half_width, float bin_resolution) {
   if (bin_resolution <= 0.0f || half_width <= 0.0f)
     return 0;
-  // Bins span [-half_width, +half_width] with given resolution
-  // Formula: 2 * half_width / resolution, rounded to nearest odd number
-  // +1 ensures odd count so bin centers align (one bin exactly at distance=0)
   return (ptrdiff_t)(2.0f * half_width / bin_resolution) + 1;
 }
 
 // ============================================================================
-// Distance Map Computation with Iterative Refinement
+// Distance Map (Public API)
 // ============================================================================
 
 TOPOTOOLBOX_API
@@ -299,12 +424,11 @@ void swath_distance_map(float *restrict distance,
   if (n_track_points < 2)
     return;
 
-  // Allocate temporary segment map if not provided by caller
-  // This map stores which track segment is nearest to each pixel
   ptrdiff_t total_pixels = dims[0] * dims[1];
+
+  // Allocate temporary nearest_segment if caller doesn't want it
   ptrdiff_t *temp_nearest = NULL;
   int need_free = 0;
-
   if (nearest_segment == NULL) {
     temp_nearest = (ptrdiff_t *)malloc(total_pixels * sizeof(ptrdiff_t));
     need_free = 1;
@@ -312,105 +436,22 @@ void swath_distance_map(float *restrict distance,
     temp_nearest = nearest_segment;
   }
 
-  // Initialize: -1 indicates no segment assigned yet
-  for (ptrdiff_t idx = 0; idx < total_pixels; idx++) {
-    temp_nearest[idx] = -1;
+  // Use frontier with no distance cutoff (process all pixels)
+  float *best_abs = (float *)malloc(total_pixels * sizeof(float));
+  frontier_distance_map(best_abs, distance, temp_nearest,
+                        track_i, track_j, n_track_points, dims, FLT_MAX);
+
+  // Convert signed distance from pixels to meters
+  for (ptrdiff_t i = 0; i < total_pixels; i++) {
+    distance[i] *= cellsize;
   }
 
-  // Seed: assign track pixels to their own segments
-  // This provides initial "islands" from which refinement propagates
-  for (ptrdiff_t k = 0; k < n_track_points - 1; k++) {
-    ptrdiff_t i = (ptrdiff_t)(track_i[k] + 0.5f);
-    ptrdiff_t j = (ptrdiff_t)(track_j[k] + 0.5f);
-
-    if (i >= 0 && i < dims[0] && j >= 0 && j < dims[1]) {
-      temp_nearest[j * dims[0] + i] = k;
-    }
-  }
-
-  // Iterative refinement: propagate segment assignments outward
-  // Similar to distance transform algorithms, but handles arbitrary track geometry
-  // Typically converges in 5-10 iterations for reasonable track spacing
-  int max_iterations = 20;
-  for (int iter = 0; iter < max_iterations; iter++) {
-    int changes = 0;
-
-    // Forward pass: top-left to bottom-right
-    for (ptrdiff_t j = 0; j < dims[1]; j++) {
-      for (ptrdiff_t i = 0; i < dims[0]; i++) {
-        ptrdiff_t idx = j * dims[0] + i;
-
-        ptrdiff_t best_seg = temp_nearest[idx];
-        ptrdiff_t search_start = 0;
-        ptrdiff_t search_end = n_track_points - 1;
-
-        // Optimization: use neighbor segments as hints to narrow search
-        // If a neighbor knows its nearest segment, check nearby segments first
-        for (int di = -1; di <= 1; di++) {
-          for (int dj = -1; dj <= 1; dj++) {
-            if (di == 0 && dj == 0)
-              continue;
-
-            ptrdiff_t ni = i + di;
-            ptrdiff_t nj = j + dj;
-
-            if (ni >= 0 && ni < dims[0] && nj >= 0 && nj < dims[1]) {
-              ptrdiff_t neighbor_seg = temp_nearest[nj * dims[0] + ni];
-              if (neighbor_seg >= 0) {
-                if (best_seg < 0) {
-                  // Neighbor has assignment, search ±2 segments around it
-                  search_start = neighbor_seg > 1 ? neighbor_seg - 1 : 0;
-                  search_end = neighbor_seg + 2 < n_track_points - 1
-                                   ? neighbor_seg + 2
-                                   : n_track_points - 1;
-                  break;
-                }
-              }
-            }
-          }
-          if (best_seg >= 0 || search_start > 0)
-            break;
-        }
-
-        // Fallback: if no hints available, search all segments (rare after first iteration)
-        if (best_seg < 0 && search_start == 0) {
-          search_start = 0;
-          search_end = n_track_points - 1;
-        }
-
-        // Work in pixel coordinates for distance computation
-        float px = (float)i;
-        float py = (float)j;
-        float min_dist, proj_x, proj_y, lambda;
-
-        ptrdiff_t new_seg = find_nearest_segment(
-            px, py, track_i, track_j, n_track_points, search_start, search_end,
-            &min_dist, &proj_x, &proj_y, &lambda);
-
-        // Update if we found a segment and it's different from current assignment
-        if (new_seg >= 0 && new_seg != temp_nearest[idx]) {
-          temp_nearest[idx] = new_seg;
-          // Convert distance from pixels to meters
-          distance[idx] = min_dist * cellsize;
-          changes++;
-        } else if (new_seg >= 0) {
-          // Convert distance from pixels to meters
-          distance[idx] = min_dist * cellsize;
-        }
-      }
-    }
-
-    // Convergence: no assignments changed, we're done
-    if (changes == 0)
-      break;
-  }
-
-  if (need_free)
-    free(temp_nearest);
+  free(best_abs);
+  if (need_free) free(temp_nearest);
 }
 
 // ============================================================================
-// Binned Swath Profile - Averaged Cross-Section
+// Transverse Swath Profile - Averaged Cross-Section
 // ============================================================================
 
 TOPOTOOLBOX_API
@@ -428,142 +469,109 @@ void swath_transverse(
   if (n_track_points < 2 || n_bins <= 0)
     return;
 
-  // Determine if we need percentile computation
+  ptrdiff_t total_pixels = dims[0] * dims[1];
+  float hw_px = half_width / cellsize;
+
   int compute_percentiles =
       (bin_medians != NULL || bin_q1 != NULL || bin_q3 != NULL ||
        (percentile_list != NULL && n_percentiles > 0 && bin_percentiles != NULL));
 
-  // Allocate one stats accumulator per distance bin
+  // Allocate accumulators
   swath_stats_accumulator *accumulators =
       (swath_stats_accumulator *)calloc(n_bins, sizeof(swath_stats_accumulator));
+  for (ptrdiff_t b = 0; b < n_bins; b++) accumulator_init(&accumulators[b]);
 
-  for (ptrdiff_t b = 0; b < n_bins; b++) {
-    accumulator_init(&accumulators[b]);
-  }
-
-  // Allocate percentile accumulators if needed
   percentile_accumulator *p_accumulators = NULL;
   if (compute_percentiles) {
     p_accumulators = (percentile_accumulator *)calloc(
         n_bins, sizeof(percentile_accumulator));
-    for (ptrdiff_t b = 0; b < n_bins; b++) {
+    for (ptrdiff_t b = 0; b < n_bins; b++)
       percentile_accumulator_init(&p_accumulators[b], 64);
-    }
   }
 
-  // Compute signed perpendicular distance for every pixel
-  float *distance = (float *)malloc(dims[0] * dims[1] * sizeof(float));
-  swath_distance_map(distance, NULL, track_i, track_j, n_track_points, dims,
-                     cellsize);
+  // Frontier expansion bounded by half_width
+  float *best_abs = (float *)malloc(total_pixels * sizeof(float));
+  float *signed_dist_px = (float *)malloc(total_pixels * sizeof(float));
+  frontier_distance_map(best_abs, signed_dist_px, NULL,
+                        track_i, track_j, n_track_points, dims, hw_px);
 
-  // Normalization: compute mean elevation at track center
-  // This removes absolute elevation, highlighting relative topography
+  // Normalization: mean elevation near track center
   float reference_elevation = 0.0f;
   if (normalize) {
     swath_stats_accumulator track_acc;
     accumulator_init(&track_acc);
-
-    // Sample pixels very close to track (within one bin width)
-    for (ptrdiff_t j = 0; j < dims[1]; j++) {
-      for (ptrdiff_t i = 0; i < dims[0]; i++) {
-        ptrdiff_t idx = j * dims[0] + i;
-        if (fabsf(distance[idx]) <= bin_resolution) {
-          accumulator_add(&track_acc, dem[idx]);
-        }
+    float bin_res_px = bin_resolution / cellsize;
+    for (ptrdiff_t idx = 0; idx < total_pixels; idx++) {
+      if (best_abs[idx] <= bin_res_px) {
+        accumulator_add(&track_acc, dem[idx]);
       }
     }
     reference_elevation = accumulator_mean(&track_acc);
   }
 
-  // Bin pixels by perpendicular distance
-  // All pixels along entire track length contribute to bins
-  for (ptrdiff_t j = 0; j < dims[1]; j++) {
-    for (ptrdiff_t i = 0; i < dims[0]; i++) {
-      ptrdiff_t idx = j * dims[0] + i;
-      float dist = distance[idx];
+  // Bin pixels by signed perpendicular distance
+  for (ptrdiff_t idx = 0; idx < total_pixels; idx++) {
+    if (best_abs[idx] > hw_px) continue;  // unvisited or outside
+    if (isnan(dem[idx])) continue;
 
-      // Exclude pixels outside swath width
-      if (fabsf(dist) > half_width)
-        continue;
-      if (isnan(dem[idx]))
-        continue;
+    float dist_m = signed_dist_px[idx] * cellsize;
 
-      // Map distance to bin index
-      // Distance range [-half_width, +half_width] → bin index [0, n_bins-1]
-      ptrdiff_t bin_idx =
-          (ptrdiff_t)((dist + half_width) / bin_resolution + 0.5f);
-      if (bin_idx < 0)
-        bin_idx = 0;
-      if (bin_idx >= n_bins)
-        bin_idx = n_bins - 1;
+    ptrdiff_t bin_idx =
+        (ptrdiff_t)((dist_m + half_width) / bin_resolution + 0.5f);
+    if (bin_idx < 0) bin_idx = 0;
+    if (bin_idx >= n_bins) bin_idx = n_bins - 1;
 
-      float value = dem[idx];
-      if (normalize) {
-        value -= reference_elevation;
-      }
+    float value = dem[idx];
+    if (normalize) value -= reference_elevation;
 
-      accumulator_add(&accumulators[bin_idx], value);
-
-      // Also store for percentile computation if needed
-      if (compute_percentiles) {
-        percentile_accumulator_add(&p_accumulators[bin_idx], value);
-      }
+    accumulator_add(&accumulators[bin_idx], value);
+    if (compute_percentiles) {
+      percentile_accumulator_add(&p_accumulators[bin_idx], value);
     }
   }
 
-  // Compute percentiles if requested
+  free(best_abs);
+  free(signed_dist_px);
+
+  // Percentiles
   if (compute_percentiles) {
     for (ptrdiff_t b = 0; b < n_bins; b++) {
       percentile_accumulator_sort(&p_accumulators[b]);
 
-      // Compute standard percentiles
       if (bin_medians != NULL) {
         bin_medians[b] = percentile_accumulator_get(&p_accumulators[b], 50.0f);
-        if (normalize && !isnan(bin_medians[b])) {
+        if (normalize && !isnan(bin_medians[b]))
           bin_medians[b] += reference_elevation;
-        }
       }
-
       if (bin_q1 != NULL) {
         bin_q1[b] = percentile_accumulator_get(&p_accumulators[b], 25.0f);
-        if (normalize && !isnan(bin_q1[b])) {
+        if (normalize && !isnan(bin_q1[b]))
           bin_q1[b] += reference_elevation;
-        }
       }
-
       if (bin_q3 != NULL) {
         bin_q3[b] = percentile_accumulator_get(&p_accumulators[b], 75.0f);
-        if (normalize && !isnan(bin_q3[b])) {
+        if (normalize && !isnan(bin_q3[b]))
           bin_q3[b] += reference_elevation;
-        }
       }
-
-      // Compute arbitrary percentiles
       if (percentile_list != NULL && n_percentiles > 0 &&
           bin_percentiles != NULL) {
         for (ptrdiff_t p = 0; p < n_percentiles; p++) {
           float pval = percentile_accumulator_get(&p_accumulators[b],
                                                    (float)percentile_list[p]);
-          if (normalize && !isnan(pval)) {
-            pval += reference_elevation;
-          }
+          if (normalize && !isnan(pval)) pval += reference_elevation;
           bin_percentiles[b * n_percentiles + p] = pval;
         }
       }
     }
   }
 
-  // Finalize basic statistics for each bin
+  // Finalize bin statistics
   for (ptrdiff_t b = 0; b < n_bins; b++) {
     bin_distances[b] = -half_width + b * bin_resolution;
-
     float mean = accumulator_mean(&accumulators[b]);
     float stddev = accumulator_stddev(&accumulators[b]);
 
-    // Restore absolute elevation if normalized
-    if (normalize && !isnan(mean)) {
-      mean += reference_elevation;
-    }
+    if (normalize && !isnan(mean)) mean += reference_elevation;
 
     bin_means[b] = mean;
     bin_stddevs[b] = stddev;
@@ -578,54 +586,40 @@ void swath_transverse(
   }
 
   // Cleanup
-  free(distance);
   free(accumulators);
   if (compute_percentiles) {
-    for (ptrdiff_t b = 0; b < n_bins; b++) {
+    for (ptrdiff_t b = 0; b < n_bins; b++)
       percentile_accumulator_free(&p_accumulators[b]);
-    }
     free(p_accumulators);
   }
 }
 
 // ============================================================================
-// Per-Point Swath Profile - Along-Track Variation (Optimized)
+// Longitudinal Swath Profile - Along-Track Variation
 // ============================================================================
 //
-// Uses a pixel-first approach: computes the distance map and nearest-segment
-// map once for the full grid, then iterates over pixels once. Each pixel's
-// along-track position is determined from its nearest segment + projection
-// lambda, then a binary search finds which track points it contributes to.
-//
-// This is O(n_pixels + n_track) instead of O(n_track × bbox_area).
-//
-// Note: segment assignments come from the iterative distance map propagation,
-// which may differ slightly from brute-force sub-track search for tracks with
-// tight switchbacks. For typical tracks (rivers, transects) results are
-// equivalent.
+// Uses frontier-based distance map (bounded by half_width) to find all
+// relevant pixels in one pass. Each pixel's along-track position is computed
+// from its nearest segment + lambda, then binary search finds matching
+// track points within ±binning_distance.
 
-// Binary search: find first index where cum_dist[k] >= value
+// Binary search helpers on sorted cum_dist array
 static ptrdiff_t lower_bound(const float *cum_dist, ptrdiff_t n, float value) {
   ptrdiff_t lo = 0, hi = n;
   while (lo < hi) {
     ptrdiff_t mid = lo + (hi - lo) / 2;
-    if (cum_dist[mid] < value)
-      lo = mid + 1;
-    else
-      hi = mid;
+    if (cum_dist[mid] < value) lo = mid + 1;
+    else hi = mid;
   }
   return lo;
 }
 
-// Binary search: find first index where cum_dist[k] > value
 static ptrdiff_t upper_bound(const float *cum_dist, ptrdiff_t n, float value) {
   ptrdiff_t lo = 0, hi = n;
   while (lo < hi) {
     ptrdiff_t mid = lo + (hi - lo) / 2;
-    if (cum_dist[mid] <= value)
-      lo = mid + 1;
-    else
-      hi = mid;
+    if (cum_dist[mid] <= value) lo = mid + 1;
+    else hi = mid;
   }
   return lo;
 }
@@ -646,19 +640,20 @@ void swath_longitudinal(
     return;
 
   ptrdiff_t total_pixels = dims[0] * dims[1];
+  float hw_px = half_width / cellsize;
 
   int compute_percentiles =
       (point_medians != NULL || point_q1 != NULL || point_q3 != NULL ||
        (percentile_list != NULL && n_percentiles > 0 &&
         point_percentiles != NULL));
 
-  // Step 1: Compute distance map and nearest segment for full grid
-  float *distance = (float *)malloc(total_pixels * sizeof(float));
+  // Step 1: Frontier distance map bounded by half_width
+  float *best_abs = (float *)malloc(total_pixels * sizeof(float));
   ptrdiff_t *nearest_seg = (ptrdiff_t *)malloc(total_pixels * sizeof(ptrdiff_t));
-  swath_distance_map(distance, nearest_seg, track_i, track_j, n_track_points,
-                     dims, cellsize);
+  frontier_distance_map(best_abs, NULL, nearest_seg,
+                        track_i, track_j, n_track_points, dims, hw_px);
 
-  // Step 2: Cumulative along-track distance (meters) per track point
+  // Step 2: Cumulative along-track distance (meters)
   float *cum_dist = (float *)malloc(n_track_points * sizeof(float));
   cum_dist[0] = 0.0f;
   for (ptrdiff_t k = 1; k < n_track_points; k++) {
@@ -671,17 +666,15 @@ void swath_longitudinal(
   // Step 3: Initialize per-point accumulators
   swath_stats_accumulator *accumulators = (swath_stats_accumulator *)calloc(
       n_track_points, sizeof(swath_stats_accumulator));
-  for (ptrdiff_t k = 0; k < n_track_points; k++) {
+  for (ptrdiff_t k = 0; k < n_track_points; k++)
     accumulator_init(&accumulators[k]);
-  }
 
   percentile_accumulator *p_accumulators = NULL;
   if (compute_percentiles) {
     p_accumulators = (percentile_accumulator *)calloc(
         n_track_points, sizeof(percentile_accumulator));
-    for (ptrdiff_t k = 0; k < n_track_points; k++) {
+    for (ptrdiff_t k = 0; k < n_track_points; k++)
       percentile_accumulator_init(&p_accumulators[k], 64);
-    }
   }
 
   // Step 4: Single pass over all pixels
@@ -689,56 +682,41 @@ void swath_longitudinal(
     for (ptrdiff_t i = 0; i < dims[0]; i++) {
       ptrdiff_t idx = j * dims[0] + i;
 
-      // Skip pixels outside swath width or with NaN elevation
-      if (fabsf(distance[idx]) > half_width)
-        continue;
-      if (isnan(dem[idx]))
-        continue;
+      if (best_abs[idx] > hw_px) continue;  // unvisited or outside
+      if (isnan(dem[idx])) continue;
 
       ptrdiff_t seg = nearest_seg[idx];
-      if (seg < 0 || seg >= n_track_points - 1)
-        continue;
+      if (seg < 0 || seg >= n_track_points - 1) continue;
 
-      // Compute this pixel's exact along-track position by recomputing
-      // lambda for just its known nearest segment (one segment, not a search)
+      // Recompute lambda for this pixel's known nearest segment (cheap: 1 segment)
       float px = (float)i;
       float py = (float)j;
-      float ax = track_i[seg];
-      float ay = track_j[seg];
-      float bx = track_i[seg + 1];
-      float by = track_j[seg + 1];
       float proj_x, proj_y, lambda;
-      point_to_segment_distance(px, py, ax, ay, bx, by, &proj_x, &proj_y,
-                                &lambda);
+      point_to_segment_distance(px, py,
+          track_i[seg], track_j[seg], track_i[seg + 1], track_j[seg + 1],
+          &proj_x, &proj_y, &lambda);
 
-      // Interpolate along-track position from segment endpoints
+      // Along-track position interpolated from segment endpoints
       float along_pos = cum_dist[seg] +
                          lambda * (cum_dist[seg + 1] - cum_dist[seg]);
 
-      // exclude_extended_bin: skip pixels projecting past full-track endpoints
-      // (lambda clamped at first/last segment). Sub-track endpoint clipping
-      // is handled naturally by the along-track range check.
+      // exclude_extended_bin: clamp pixels projecting past full-track endpoints.
+      // Sub-track endpoint clipping is handled naturally by the along-track
+      // range check (pixels past sub-track boundaries get correct along_pos
+      // from the full-track distance map).
       if (exclude_extended_bin) {
-        if (seg == 0 && lambda < 1e-6f) {
-          // Pixel projects past start of full track — keep only for
-          // track points at the start terminus
+        if (seg == 0 && lambda < 1e-6f)
           along_pos = 0.0f;
-        }
-        if (seg == n_track_points - 2 && lambda > (1.0f - 1e-6f)) {
-          // Pixel projects past end of full track — keep only for
-          // track points at the end terminus
+        if (seg == n_track_points - 2 && lambda > (1.0f - 1e-6f))
           along_pos = total_track_length;
-        }
       }
 
       // Binary search: find track points within ±binning_distance
-      float lo_dist = along_pos - binning_distance;
-      float hi_dist = along_pos + binning_distance;
+      ptrdiff_t k_start = lower_bound(cum_dist, n_track_points,
+                                       along_pos - binning_distance);
+      ptrdiff_t k_end = upper_bound(cum_dist, n_track_points,
+                                     along_pos + binning_distance);
 
-      ptrdiff_t k_start = lower_bound(cum_dist, n_track_points, lo_dist);
-      ptrdiff_t k_end = upper_bound(cum_dist, n_track_points, hi_dist);
-
-      // Accumulate into all matching track points
       float value = dem[idx];
       for (ptrdiff_t k = k_start; k < k_end; k++) {
         accumulator_add(&accumulators[k], value);
@@ -780,27 +758,24 @@ void swath_longitudinal(
   }
 
   // Cleanup
-  free(distance);
+  free(best_abs);
   free(nearest_seg);
   free(cum_dist);
   free(accumulators);
   if (compute_percentiles) {
-    for (ptrdiff_t k = 0; k < n_track_points; k++) {
+    for (ptrdiff_t k = 0; k < n_track_points; k++)
       percentile_accumulator_free(&p_accumulators[k]);
-    }
     free(p_accumulators);
   }
 }
 
 // ============================================================================
-// Per-Point Pixel Retrieval - Get pixels associated with a single track point
+// Per-Point Pixel Retrieval
 // ============================================================================
 //
-// Returns the pixel coordinates (in node indices) associated with a single
-// track point, using the same sub-track + perpendicular distance logic as
-// swath_longitudinal. Caller provides pre-allocated arrays large enough
-// (e.g. dims[0]*dims[1] as safe upper bound) and the function returns the
-// actual count written.
+// Returns pixel coordinates associated with a single track point using
+// the sub-track + perpendicular distance approach with bounding box.
+// This function is called per-point and does not use the frontier.
 
 TOPOTOOLBOX_API
 ptrdiff_t swath_get_point_pixels(
@@ -823,26 +798,21 @@ ptrdiff_t swath_get_point_pixels(
     cum_dist[k] = cum_dist[k - 1] + sqrtf(di * di + dj * dj) * cellsize;
   }
 
-  // Find sub-track range: all points within ±binning_distance along track
+  // Find sub-track range
   float center_dist = cum_dist[point_index];
   ptrdiff_t sub_start = point_index;
   ptrdiff_t sub_end = point_index;
 
   while (sub_start > 0 &&
-         (center_dist - cum_dist[sub_start - 1]) <= binning_distance) {
+         (center_dist - cum_dist[sub_start - 1]) <= binning_distance)
     sub_start--;
-  }
   while (sub_end < n_track_points - 1 &&
-         (cum_dist[sub_end + 1] - center_dist) <= binning_distance) {
+         (cum_dist[sub_end + 1] - center_dist) <= binning_distance)
     sub_end++;
-  }
 
-  // Ensure at least one segment
   if (sub_start == sub_end) {
-    if (sub_end < n_track_points - 1)
-      sub_end++;
-    else if (sub_start > 0)
-      sub_start--;
+    if (sub_end < n_track_points - 1) sub_end++;
+    else if (sub_start > 0) sub_start--;
   }
 
   free(cum_dist);
@@ -851,7 +821,7 @@ ptrdiff_t swath_get_point_pixels(
   if (n_sub_segments < 1)
     return 0;
 
-  // Bounding box of sub-track ± half_width (in pixels)
+  // Bounding box of sub-track ± half_width (pixels)
   float hw_pixels = half_width / cellsize;
   float bb_min_i = track_i[sub_start];
   float bb_max_i = track_i[sub_start];
@@ -874,7 +844,6 @@ ptrdiff_t swath_get_point_pixels(
   if (j_lo < 0) j_lo = 0;
   if (j_hi > dims[1]) j_hi = dims[1];
 
-  // Gather pixels within half_width of sub-track
   ptrdiff_t n = 0;
   for (ptrdiff_t j = j_lo; j < j_hi; j++) {
     for (ptrdiff_t i = i_lo; i < i_hi; i++) {
@@ -886,8 +855,7 @@ ptrdiff_t swath_get_point_pixels(
           px, py, track_i, track_j, n_track_points,
           sub_start, sub_end, &min_dist, &proj_x, &proj_y, &lambda);
 
-      if (seg < 0)
-        continue;
+      if (seg < 0) continue;
 
       if (exclude_extended_bin) {
         if (seg == sub_start && lambda < 1e-6f && sub_start > 0)
@@ -898,8 +866,7 @@ ptrdiff_t swath_get_point_pixels(
       }
 
       float dist_m = fabsf(min_dist) * cellsize;
-      if (dist_m > half_width)
-        continue;
+      if (dist_m > half_width) continue;
 
       pixels_i[n] = i;
       pixels_j[n] = j;
