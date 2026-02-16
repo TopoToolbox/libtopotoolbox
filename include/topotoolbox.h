@@ -2360,4 +2360,296 @@ TOPOTOOLBOX_API
 void lowerenv(float *elevation, uint8_t *knickpoints, float *distance,
               ptrdiff_t *ix, uint8_t *onenvelope, ptrdiff_t *source,
               ptrdiff_t *target, ptrdiff_t edge_count, ptrdiff_t node_count);
+
+/**
+   @brief Compute number of bins for swath profile
+
+   @details
+   Helper function to compute the number of bins needed for a swath
+   profile given the half-width and bin resolution.
+
+   @param[in] half_width Half-width of the swath in meters
+   @param[in] bin_resolution Spacing between bin centers in meters
+
+   @return Number of bins from -half_width to +half_width
+ */
+TOPOTOOLBOX_API
+ptrdiff_t swath_compute_nbins(float half_width, float bin_resolution);
+
+/**
+   @brief Compute distance map from DEM pixels to track
+
+   @details
+   For each DEM pixel, computes the signed perpendicular distance to the
+   nearest track segment. Negative distances indicate pixels to the left
+   of the track direction, positive to the right.
+
+   Uses Euclidean distance in pixel space scaled by cellsize.
+
+   @param[out] distance Distance map
+   @parblock
+   A pointer to a `float` array of size `dims[0]` x `dims[1]`
+
+   Each element contains the signed perpendicular distance in meters from
+   the pixel to the nearest track segment.
+   @endparblock
+
+   @param[out] nearest_segment Nearest segment map (optional)
+   @parblock
+   A pointer to a `ptrdiff_t` array of size `dims[0]` x `dims[1]`, or NULL
+
+   If provided, each element will contain the index of the nearest track
+   segment (0 to n_track_points-2). Pass NULL to skip this output.
+   @endparblock
+
+   @param[in] track_i Track point coordinates in fast dimension
+   @parblock
+   A pointer to a `float` array of size `n_track_points`
+
+   Contains pixel coordinates (can be sub-pixel values) in the fast-changing
+   dimension. For column-major arrays, these are row indices. For row-major
+   arrays, these are column indices.
+   @endparblock
+
+   @param[in] track_j Track point coordinates in slow dimension
+   @parblock
+   A pointer to a `float` array of size `n_track_points`
+
+   Contains pixel coordinates (can be sub-pixel values) in the slow-changing
+   dimension. For column-major arrays, these are column indices. For row-major
+   arrays, these are row indices.
+   @endparblock
+
+   @param[in] n_track_points Number of points in the track
+   @parblock
+   Must be at least 2 to form segments.
+   @endparblock
+
+   @param[in] dims The dimensions of the DEM arrays
+   @parblock
+   A pointer to a `ptrdiff_t` array of size 2
+
+   The fastest changing dimension should be provided first. For column-major
+   arrays, `dims = {nrows,ncols}`. For row-major arrays, `dims = {ncols,nrows}`.
+   @endparblock
+
+   @param[in] cellsize Physical size of one pixel in meters
+ */
+TOPOTOOLBOX_API
+void swath_distance_map(float *distance, ptrdiff_t *nearest_segment,
+                        const float *track_i, const float *track_j,
+                        ptrdiff_t n_track_points, ptrdiff_t dims[2],
+                        float cellsize);
+
+/**
+   @brief Compute binned swath profile perpendicular to track
+
+   @details
+   Aggregates DEM elevations by perpendicular distance to the track,
+   creating a single averaged cross-sectional profile. All pixels along
+   the entire track length are binned by their perpendicular distance,
+   producing statistics for each distance bin.
+
+   This is useful for analyzing typical valley cross-sections or ridge
+   profiles averaged over a long track.
+
+   @param[out] bin_distances Distance of each bin center from track
+   @parblock
+   A pointer to a `float` array of size `n_bins`
+
+   Contains the distance in meters from the track for each bin center.
+   Negative values are to the left of the track, positive to the right.
+   @endparblock
+
+   @param[out] bin_means Mean elevation in each bin
+   @parblock
+   A pointer to a `float` array of size `n_bins`
+
+   Contains the mean elevation in meters for all pixels in each distance bin.
+   @endparblock
+
+   @param[out] bin_stddevs Standard deviation of elevation in each bin
+   @parblock
+   A pointer to a `float` array of size `n_bins`
+
+   Contains the standard deviation of elevations in meters for each bin.
+   @endparblock
+
+   @param[out] bin_mins Minimum elevation in each bin
+   @parblock
+   A pointer to a `float` array of size `n_bins`
+
+   Contains the minimum elevation in meters for each bin.
+   @endparblock
+
+   @param[out] bin_maxs Maximum elevation in each bin
+   @parblock
+   A pointer to a `float` array of size `n_bins`
+
+   Contains the maximum elevation in meters for each bin.
+   @endparblock
+
+   @param[out] bin_counts Number of pixels in each bin
+   @parblock
+   A pointer to a `ptrdiff_t` array of size `n_bins`
+
+   Contains the count of valid (non-NaN) pixels contributing to each bin.
+   @endparblock
+
+   @param[in] dem The input DEM
+   @parblock
+   A pointer to a `float` array of size `dims[0]` x `dims[1]`
+
+   NaN values in the DEM are ignored in statistics computation.
+   @endparblock
+
+   @param[in] track_i Track point coordinates in fast dimension
+   @parblock
+   A pointer to a `float` array of size `n_track_points`
+   @endparblock
+
+   @param[in] track_j Track point coordinates in slow dimension
+   @parblock
+   A pointer to a `float` array of size `n_track_points`
+   @endparblock
+
+   @param[in] n_track_points Number of points in the track (must be >= 2)
+
+   @param[in] dims The dimensions of the DEM arrays
+   @parblock
+   A pointer to a `ptrdiff_t` array of size 2
+   @endparblock
+
+   @param[in] cellsize Physical size of one pixel in meters
+
+   @param[in] half_width Half-width of the swath in meters
+   @parblock
+   Only pixels within this perpendicular distance from the track are included.
+   @endparblock
+
+   @param[in] bin_resolution Spacing between bin centers in meters
+
+   @param[in] n_bins Number of bins (use swath_compute_nbins to calculate)
+
+   @param[in] normalize Normalize elevations to track elevation
+   @parblock
+   If non-zero, elevations are normalized by subtracting the mean track
+   elevation before binning, then adding it back to the output. This
+   highlights relative elevation patterns perpendicular to the track.
+   @endparblock
+ */
+TOPOTOOLBOX_API
+void swath_profile_binned(float *bin_distances, float *bin_means,
+                          float *bin_stddevs, float *bin_mins, float *bin_maxs,
+                          ptrdiff_t *bin_counts, const float *dem,
+                          const float *track_i, const float *track_j,
+                          ptrdiff_t n_track_points, ptrdiff_t dims[2],
+                          float cellsize, float half_width,
+                          float bin_resolution, ptrdiff_t n_bins, int normalize);
+
+/**
+   @brief Compute per-point swath profile along track
+
+   @details
+   For each track point, computes statistics of DEM elevations within a
+   perpendicular swath at that point. This shows how the swath profile
+   changes along the track length.
+
+   This is useful for analyzing how valley depth, width, or asymmetry
+   varies along a river or ridge line.
+
+   @param[out] point_means Mean elevation for each track point
+   @parblock
+   A pointer to a `float` array of size `n_track_points`
+
+   Contains the mean elevation in meters of all pixels within the swath
+   at each track point.
+   @endparblock
+
+   @param[out] point_stddevs Standard deviation for each track point
+   @parblock
+   A pointer to a `float` array of size `n_track_points`
+
+   Contains the standard deviation of elevations in meters for each point's swath.
+   @endparblock
+
+   @param[out] point_mins Minimum elevation for each track point
+   @parblock
+   A pointer to a `float` array of size `n_track_points`
+
+   Contains the minimum elevation in meters within each point's swath.
+   @endparblock
+
+   @param[out] point_maxs Maximum elevation for each track point
+   @parblock
+   A pointer to a `float` array of size `n_track_points`
+
+   Contains the maximum elevation in meters within each point's swath.
+   @endparblock
+
+   @param[out] point_counts Number of pixels for each track point
+   @parblock
+   A pointer to a `ptrdiff_t` array of size `n_track_points`
+
+   Contains the count of valid pixels within each point's swath.
+   @endparblock
+
+   @param[out] pixel_indices Linear indices of pixels associated with each point
+   @parblock
+   A pointer to a `ptrdiff_t` array of size equal to total pixels in all swaths,
+   or NULL to skip this output.
+
+   Contains flattened linear indices (j * dims[0] + i) of pixels. Use in
+   conjunction with point_offsets to determine which pixels belong to each point.
+   @endparblock
+
+   @param[out] point_offsets Offsets into pixel_indices for each point
+   @parblock
+   A pointer to a `ptrdiff_t` array of size `n_track_points + 1`, or NULL.
+
+   point_offsets[k] is the starting index in pixel_indices for track point k.
+   point_offsets[k+1] - point_offsets[k] gives the number of pixels for point k.
+
+   Both pixel_indices and point_offsets must be non-NULL to enable pixel tracking,
+   or both must be NULL to disable it.
+   @endparblock
+
+   @param[in] dem The input DEM
+   @parblock
+   A pointer to a `float` array of size `dims[0]` x `dims[1]`
+   @endparblock
+
+   @param[in] track_i Track point coordinates in fast dimension
+   @parblock
+   A pointer to a `float` array of size `n_track_points`
+   @endparblock
+
+   @param[in] track_j Track point coordinates in slow dimension
+   @parblock
+   A pointer to a `float` array of size `n_track_points`
+   @endparblock
+
+   @param[in] n_track_points Number of points in the track (must be >= 2)
+
+   @param[in] dims The dimensions of the DEM arrays
+   @parblock
+   A pointer to a `ptrdiff_t` array of size 2
+   @endparblock
+
+   @param[in] cellsize Physical size of one pixel in meters
+
+   @param[in] half_width Half-width of the swath in meters
+   @parblock
+   Defines the perpendicular extent of the swath on each side of the track point.
+   @endparblock
+ */
+TOPOTOOLBOX_API
+void swath_profile_per_point(float *point_means, float *point_stddevs,
+                              float *point_mins, float *point_maxs,
+                              ptrdiff_t *point_counts, ptrdiff_t *pixel_indices,
+                              ptrdiff_t *point_offsets, const float *dem,
+                              const float *track_i, const float *track_j,
+                              ptrdiff_t n_track_points, ptrdiff_t dims[2],
+                              float cellsize, float half_width);
+
 #endif  // TOPOTOOLBOX_H
