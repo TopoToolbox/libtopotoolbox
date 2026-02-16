@@ -235,9 +235,11 @@ static ptrdiff_t find_nearest_segment(float px, float py,
                                       ptrdiff_t n_track_points,
                                       ptrdiff_t search_start,
                                       ptrdiff_t search_end, float *min_dist,
-                                      float *proj_x, float *proj_y) {
+                                      float *proj_x, float *proj_y,
+                                      float *best_lambda) {
   ptrdiff_t best_segment = -1;
   *min_dist = FLT_MAX;
+  *best_lambda = 0.0f;
 
   // Clamp search range to valid segment indices
   if (search_start < 0)
@@ -262,6 +264,7 @@ static ptrdiff_t find_nearest_segment(float px, float py,
       best_segment = k;
       *proj_x = proj_i;
       *proj_y = proj_j;
+      *best_lambda = lambda;
     }
   }
 
@@ -378,11 +381,11 @@ void swath_distance_map(float *restrict distance,
         // Work in pixel coordinates for distance computation
         float px = (float)i;
         float py = (float)j;
-        float min_dist, proj_x, proj_y;
+        float min_dist, proj_x, proj_y, lambda;
 
         ptrdiff_t new_seg = find_nearest_segment(
             px, py, track_i, track_j, n_track_points, search_start, search_end,
-            &min_dist, &proj_x, &proj_y);
+            &min_dist, &proj_x, &proj_y, &lambda);
 
         // Update if we found a segment and it's different from current assignment
         if (new_seg >= 0 && new_seg != temp_nearest[idx]) {
@@ -611,7 +614,8 @@ void swath_longitudinal(
     float *restrict point_percentiles, const float *restrict dem,
     const float *restrict track_i, const float *restrict track_j,
     ptrdiff_t n_track_points, ptrdiff_t dims[2], float cellsize,
-    float half_width, float binning_distance) {
+    float half_width, float binning_distance,
+    int exclude_extended_bin) {
   if (n_track_points < 2)
     return;
 
@@ -723,13 +727,23 @@ void swath_longitudinal(
         float py = (float)j;
 
         // Find perpendicular distance to sub-track (search only sub-track segments)
-        float min_dist, proj_x, proj_y;
+        float min_dist, proj_x, proj_y, lambda;
         ptrdiff_t seg = find_nearest_segment(
             px, py, track_i, track_j, n_track_points,
-            sub_start, sub_end, &min_dist, &proj_x, &proj_y);
+            sub_start, sub_end, &min_dist, &proj_x, &proj_y, &lambda);
 
         if (seg < 0)
           continue;
+
+        // Exclude pixels projecting beyond sub-track endpoints (bean lobes)
+        // unless we're at the actual profile terminus
+        if (exclude_extended_bin) {
+          if (seg == sub_start && lambda < 1e-6f && sub_start > 0)
+            continue;
+          if (seg == sub_end - 1 && lambda > (1.0f - 1e-6f) &&
+              sub_end < n_track_points - 1)
+            continue;
+        }
 
         // Convert distance from pixels to meters
         float dist_m = fabsf(min_dist) * cellsize;
@@ -791,7 +805,8 @@ ptrdiff_t swath_get_point_pixels(
     ptrdiff_t *restrict pixels_i, ptrdiff_t *restrict pixels_j,
     const float *restrict track_i, const float *restrict track_j,
     ptrdiff_t n_track_points, ptrdiff_t point_index, ptrdiff_t dims[2],
-    float cellsize, float half_width, float binning_distance) {
+    float cellsize, float half_width, float binning_distance,
+    int exclude_extended_bin) {
   if (n_track_points < 2)
     return 0;
   if (point_index < 0 || point_index >= n_track_points)
@@ -864,13 +879,21 @@ ptrdiff_t swath_get_point_pixels(
       float px = (float)i;
       float py = (float)j;
 
-      float min_dist, proj_x, proj_y;
+      float min_dist, proj_x, proj_y, lambda;
       ptrdiff_t seg = find_nearest_segment(
           px, py, track_i, track_j, n_track_points,
-          sub_start, sub_end, &min_dist, &proj_x, &proj_y);
+          sub_start, sub_end, &min_dist, &proj_x, &proj_y, &lambda);
 
       if (seg < 0)
         continue;
+
+      if (exclude_extended_bin) {
+        if (seg == sub_start && lambda < 1e-6f && sub_start > 0)
+          continue;
+        if (seg == sub_end - 1 && lambda > (1.0f - 1e-6f) &&
+            sub_end < n_track_points - 1)
+          continue;
+      }
 
       float dist_m = fabsf(min_dist) * cellsize;
       if (dist_m > half_width)

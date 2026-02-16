@@ -2720,6 +2720,14 @@ void swath_transverse(float *bin_distances, float *bin_means,
    If binning_distance >= cellsize: the sub-track covers a longer portion,
    gathering more pixels and producing smoother statistics.
    @endparblock
+
+   @param[in] exclude_extended_bin Clip bean-shaped lobes at sub-track endpoints
+   @parblock
+   If nonzero, pixels whose nearest projection lands exactly at a sub-track
+   endpoint are excluded, unless that endpoint is also a terminus of the full
+   track. This prevents the rounded lobes that form at sub-track boundaries
+   and produces clean perpendicular strips instead.
+   @endparblock
  */
 TOPOTOOLBOX_API
 void swath_longitudinal(float *point_means, float *point_stddevs,
@@ -2731,7 +2739,8 @@ void swath_longitudinal(float *point_means, float *point_stddevs,
                          const float *track_i, const float *track_j,
                          ptrdiff_t n_track_points, ptrdiff_t dims[2],
                          float cellsize, float half_width,
-                         float binning_distance);
+                         float binning_distance,
+                         int exclude_extended_bin);
 
 /**
    @brief Get pixel coordinates associated with a single track point.
@@ -2755,6 +2764,8 @@ void swath_longitudinal(float *point_means, float *point_stddevs,
    @param[in] cellsize Physical size of one pixel (meters/pixel)
    @param[in] half_width Perpendicular half-width of the swath (meters)
    @param[in] binning_distance Along-track binning distance (meters)
+   @param[in] exclude_extended_bin If nonzero, exclude pixels projecting
+   beyond sub-track endpoints (unless at full profile terminus)
 
    @return Number of pixels written to pixels_i and pixels_j
  */
@@ -2764,5 +2775,6 @@ ptrdiff_t swath_get_point_pixels(ptrdiff_t *pixels_i, ptrdiff_t *pixels_j,
                                   ptrdiff_t n_track_points,
                                   ptrdiff_t point_index, ptrdiff_t dims[2],
                                   float cellsize, float half_width,
-                                  float binning_distance);
+                                  float binning_distance,
+                                  int exclude_extended_bin);
 #endif  // TOPOTOOLBOX_H
