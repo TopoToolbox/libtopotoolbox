@@ -2777,4 +2777,42 @@ ptrdiff_t swath_get_point_pixels(ptrdiff_t *pixels_i, ptrdiff_t *pixels_j,
                                   float cellsize, float half_width,
                                   float binning_distance,
                                   int exclude_extended_bin);
+
+/**
+   @brief Compute centre line and local width from boundary-inward distance
+
+   @details
+   Computes the swath mask (all pixels within half_width of the track), then
+   grows inward from the mask boundary using Dijkstra. Two passes are run:
+   one from the positive-side boundary (right of track) and one from the
+   negative-side boundary (left of track). The centre line is detected as the
+   ridge (local maxima) of the distance-from-boundary field. Width at each
+   centre-line pixel is the sum of distances from both sides' boundaries,
+   giving the real orthogonal-ish width of the swath.
+
+   Caller allocates centre_line_i, centre_line_j, and width with a safe upper
+   bound (dims[0] * dims[1], though actual count will be much smaller).
+
+   @param[out] centre_line_i Fast-dimension coordinates of centre-line pixels
+   @param[out] centre_line_j Slow-dimension coordinates of centre-line pixels
+   @param[out] width Local width at each centre-line pixel in meters
+   @param[out] dist_from_boundary Optional distance-from-boundary map
+   (dims[0]*dims[1] floats). NULL to skip.
+   @param[in] track_i Track coordinates in fast dimension (pixel space)
+   @param[in] track_j Track coordinates in slow dimension (pixel space)
+   @param[in] n_track_points Number of track vertices
+   @param[in] dims Grid dimensions [fast, slow]
+   @param[in] cellsize Grid cell size in meters
+   @param[in] half_width Half-width of the swath in meters
+
+   @return Number of centre-line pixels written
+ */
+TOPOTOOLBOX_API
+ptrdiff_t swath_invert_distance_map(
+    float *centre_line_i, float *centre_line_j,
+    float *width, float *dist_from_boundary,
+    const float *track_i, const float *track_j,
+    ptrdiff_t n_track_points, ptrdiff_t dims[2],
+    float cellsize, float half_width);
+
 #endif  // TOPOTOOLBOX_H
