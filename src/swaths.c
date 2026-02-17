@@ -272,6 +272,227 @@ static ptrdiff_t find_nearest_segment(float px, float py,
 }
 
 // ============================================================================
+// Tree March on Global Distance Map
+// ============================================================================
+//
+// Starting from seed pixels (rasterized sub-track), marches D4 outward on the
+// GLOBAL distance map following increasing abs_dist. Each side of the track
+// (positive/negative signed_dist) is processed sequentially. The result is a
+// tree of activated pixels (each visited once). Holes enclosed by the tree
+// within its bounding box are filled via flood-fill from the boundary.
+//
+// pixels_ptr/pixels_cap: dynamic buffer for output linear pixel indices.
+// best_abs, signed_dist: global distance map arrays [total_pixels].
+// seed_indices/n_seeds: rasterized sub-track pixel linear indices.
+// visited: char[total_pixels], must be 0 on entry, restored to 0 on exit.
+//
+// Returns count of activated pixels (seeds + march + fill).
+
+static ptrdiff_t tree_march_fill(
+    ptrdiff_t **pixels_ptr, ptrdiff_t *pixels_cap,
+    const float *best_abs,
+    const float *signed_dist,
+    const ptrdiff_t *seed_indices, ptrdiff_t n_seeds,
+    ptrdiff_t dims[2], float hw_px,
+    char *visited)
+{
+  // D4 neighbor offsets
+  static const int dn_i[4] = {-1, 1, 0, 0};
+  static const int dn_j[4] = {0, 0, -1, 1};
+
+  ptrdiff_t count = 0;
+  ptrdiff_t *pixels = *pixels_ptr;
+  ptrdiff_t cap = *pixels_cap;
+
+  #define TM_ADD(idx_val) do { \
+    if (count >= cap) { cap *= 2; \
+      pixels = (ptrdiff_t *)realloc(pixels, cap * sizeof(ptrdiff_t)); } \
+    pixels[count++] = (idx_val); \
+  } while(0)
+
+  // --- Add seeds (track pixels present in the global distance map) ---
+  for (ptrdiff_t s = 0; s < n_seeds; s++) {
+    ptrdiff_t idx = seed_indices[s];
+    if (visited[idx]) continue;
+    if (best_abs[idx] == FLT_MAX) continue;
+    visited[idx] = 1;
+    TM_ADD(idx);
+  }
+  ptrdiff_t n_seeds_actual = count;
+  if (n_seeds_actual == 0) goto cleanup;
+
+  // --- Positive side march (signed_dist >= 0): BFS uphill from seeds ---
+  {
+    ptrdiff_t q_head = 0;
+    while (q_head < count) {
+      ptrdiff_t idx = pixels[q_head++];
+      ptrdiff_t ci = idx % dims[0];
+      ptrdiff_t cj = idx / dims[0];
+      float my_abs = best_abs[idx];
+
+      for (int n = 0; n < 4; n++) {
+        ptrdiff_t ni = ci + dn_i[n];
+        ptrdiff_t nj = cj + dn_j[n];
+        if (ni < 0 || ni >= dims[0] || nj < 0 || nj >= dims[1]) continue;
+
+        ptrdiff_t nidx = nj * dims[0] + ni;
+        if (visited[nidx]) continue;
+        if (best_abs[nidx] == FLT_MAX) continue;
+        if (best_abs[nidx] > hw_px) continue;
+        if (best_abs[nidx] <= my_abs) continue;   // uphill only
+        if (signed_dist[nidx] < 0.0f) continue;   // positive side
+
+        visited[nidx] = 1;
+        TM_ADD(nidx);
+      }
+    }
+  }
+
+  // --- Negative side march (signed_dist <= 0): re-expand from seeds ---
+  {
+    // Seed the negative side from original seed pixels
+    ptrdiff_t neg_start = count;
+    for (ptrdiff_t s = 0; s < n_seeds_actual; s++) {
+      ptrdiff_t idx = pixels[s];
+      ptrdiff_t ci = idx % dims[0];
+      ptrdiff_t cj = idx / dims[0];
+      float my_abs = best_abs[idx];
+
+      for (int n = 0; n < 4; n++) {
+        ptrdiff_t ni = ci + dn_i[n];
+        ptrdiff_t nj = cj + dn_j[n];
+        if (ni < 0 || ni >= dims[0] || nj < 0 || nj >= dims[1]) continue;
+
+        ptrdiff_t nidx = nj * dims[0] + ni;
+        if (visited[nidx]) continue;
+        if (best_abs[nidx] == FLT_MAX) continue;
+        if (best_abs[nidx] > hw_px) continue;
+        if (best_abs[nidx] <= my_abs) continue;
+        if (signed_dist[nidx] > 0.0f) continue;   // negative side
+
+        visited[nidx] = 1;
+        TM_ADD(nidx);
+      }
+    }
+
+    ptrdiff_t q_head = neg_start;
+    while (q_head < count) {
+      ptrdiff_t idx = pixels[q_head++];
+      ptrdiff_t ci = idx % dims[0];
+      ptrdiff_t cj = idx / dims[0];
+      float my_abs = best_abs[idx];
+
+      for (int n = 0; n < 4; n++) {
+        ptrdiff_t ni = ci + dn_i[n];
+        ptrdiff_t nj = cj + dn_j[n];
+        if (ni < 0 || ni >= dims[0] || nj < 0 || nj >= dims[1]) continue;
+
+        ptrdiff_t nidx = nj * dims[0] + ni;
+        if (visited[nidx]) continue;
+        if (best_abs[nidx] == FLT_MAX) continue;
+        if (best_abs[nidx] > hw_px) continue;
+        if (best_abs[nidx] <= my_abs) continue;
+        if (signed_dist[nidx] > 0.0f) continue;   // negative side
+
+        visited[nidx] = 1;
+        TM_ADD(nidx);
+      }
+    }
+  }
+
+  // --- Fill holes within bounding box of activated pixels ---
+  // Flood-fill from the bounding-box boundary to mark exterior pixels,
+  // then fill anything interior that is within hw_px.
+  if (count > 0) {
+    ptrdiff_t bb_i0 = pixels[0] % dims[0], bb_i1 = bb_i0;
+    ptrdiff_t bb_j0 = pixels[0] / dims[0], bb_j1 = bb_j0;
+    for (ptrdiff_t p = 1; p < count; p++) {
+      ptrdiff_t pi = pixels[p] % dims[0];
+      ptrdiff_t pj = pixels[p] / dims[0];
+      if (pi < bb_i0) bb_i0 = pi;
+      if (pi > bb_i1) bb_i1 = pi;
+      if (pj < bb_j0) bb_j0 = pj;
+      if (pj > bb_j1) bb_j1 = pj;
+    }
+
+    ptrdiff_t bb_w = bb_i1 - bb_i0 + 1;
+    ptrdiff_t bb_h = bb_j1 - bb_j0 + 1;
+    ptrdiff_t bb_total = bb_w * bb_h;
+
+    char *exterior = (char *)calloc(bb_total, sizeof(char));
+    ptrdiff_t *fq = (ptrdiff_t *)malloc(bb_total * sizeof(ptrdiff_t));
+    ptrdiff_t fq_head = 0, fq_tail = 0;
+
+    // Seed exterior flood-fill from bounding-box border pixels that
+    // are NOT activated
+    for (ptrdiff_t bj = 0; bj < bb_h; bj++) {
+      for (ptrdiff_t bi = 0; bi < bb_w; bi++) {
+        if (bj > 0 && bj < bb_h - 1 && bi > 0 && bi < bb_w - 1) continue;
+        ptrdiff_t gidx = (bb_j0 + bj) * dims[0] + (bb_i0 + bi);
+        ptrdiff_t bidx = bj * bb_w + bi;
+        if (!visited[gidx]) {
+          exterior[bidx] = 1;
+          fq[fq_tail++] = bidx;
+        }
+      }
+    }
+
+    // Flood-fill exterior
+    while (fq_head < fq_tail) {
+      ptrdiff_t bidx = fq[fq_head++];
+      ptrdiff_t bi = bidx % bb_w;
+      ptrdiff_t bj = bidx / bb_w;
+
+      for (int n = 0; n < 4; n++) {
+        ptrdiff_t nbi = bi + dn_i[n];
+        ptrdiff_t nbj = bj + dn_j[n];
+        if (nbi < 0 || nbi >= bb_w || nbj < 0 || nbj >= bb_h) continue;
+
+        ptrdiff_t nbidx = nbj * bb_w + nbi;
+        if (exterior[nbidx]) continue;
+
+        ptrdiff_t gidx = (bb_j0 + nbj) * dims[0] + (bb_i0 + nbi);
+        if (!visited[gidx]) {
+          exterior[nbidx] = 1;
+          fq[fq_tail++] = nbidx;
+        }
+      }
+    }
+
+    // Fill interior holes: non-exterior, non-activated, within hw_px
+    for (ptrdiff_t bj = 0; bj < bb_h; bj++) {
+      for (ptrdiff_t bi = 0; bi < bb_w; bi++) {
+        ptrdiff_t bidx = bj * bb_w + bi;
+        if (exterior[bidx]) continue;
+
+        ptrdiff_t gidx = (bb_j0 + bj) * dims[0] + (bb_i0 + bi);
+        if (visited[gidx]) continue;
+        if (best_abs[gidx] == FLT_MAX) continue;
+        if (best_abs[gidx] > hw_px) continue;
+
+        visited[gidx] = 1;
+        TM_ADD(gidx);
+      }
+    }
+
+    free(exterior);
+    free(fq);
+  }
+
+cleanup:
+  // Restore visited for all touched pixels
+  for (ptrdiff_t p = 0; p < count; p++) {
+    visited[pixels[p]] = 0;
+  }
+
+  #undef TM_ADD
+
+  *pixels_ptr = pixels;
+  *pixels_cap = cap;
+  return count;
+}
+
+// ============================================================================
 // Frontier-based Distance Map (Dijkstra from track, bounded by max_dist_px)
 // ============================================================================
 //
@@ -647,10 +868,12 @@ void swath_longitudinal(
        (percentile_list != NULL && n_percentiles > 0 &&
         point_percentiles != NULL));
 
-  // Step 1: Frontier distance map bounded by half_width
+  // Step 1: Global frontier distance map bounded by half_width
+  // Need best_abs + signed_dist for tree march, nearest_seg for exclude check
   float *best_abs = (float *)malloc(total_pixels * sizeof(float));
+  float *signed_dist_map = (float *)malloc(total_pixels * sizeof(float));
   ptrdiff_t *nearest_seg = (ptrdiff_t *)malloc(total_pixels * sizeof(ptrdiff_t));
-  frontier_distance_map(best_abs, NULL, nearest_seg,
+  frontier_distance_map(best_abs, signed_dist_map, nearest_seg,
                         track_i, track_j, n_track_points, dims, hw_px);
 
   // Step 2: Cumulative along-track distance (meters)
@@ -661,7 +884,6 @@ void swath_longitudinal(
     float dj = track_j[k] - track_j[k - 1];
     cum_dist[k] = cum_dist[k - 1] + sqrtf(di * di + dj * dj) * cellsize;
   }
-  float total_track_length = cum_dist[n_track_points - 1];
 
   // Step 3: Initialize per-point accumulators
   swath_stats_accumulator *accumulators = (swath_stats_accumulator *)calloc(
@@ -677,55 +899,89 @@ void swath_longitudinal(
       percentile_accumulator_init(&p_accumulators[k], 64);
   }
 
-  // Step 4: Single pass over all pixels
-  for (ptrdiff_t j = 0; j < dims[1]; j++) {
-    for (ptrdiff_t i = 0; i < dims[0]; i++) {
-      ptrdiff_t idx = j * dims[0] + i;
+  // Step 4: Per-bin tree march on the global distance map
+  // Work arrays reused across track points
+  char *visited = (char *)calloc(total_pixels, sizeof(char));
+  ptrdiff_t pixel_cap = 4096;
+  ptrdiff_t *pixel_list = (ptrdiff_t *)malloc(pixel_cap * sizeof(ptrdiff_t));
+  ptrdiff_t seed_cap = 1024;
+  ptrdiff_t *seed_buf = (ptrdiff_t *)malloc(seed_cap * sizeof(ptrdiff_t));
 
-      if (best_abs[idx] > hw_px) continue;  // unvisited or outside
-      if (isnan(dem[idx])) continue;
+  for (ptrdiff_t pt = 0; pt < n_track_points; pt++) {
+    // Determine sub-track segment range for this bin
+    ptrdiff_t seg_start, seg_end;
+    if (binning_distance <= 0.0f) {
+      seg_start = pt > 0 ? pt - 1 : 0;
+      seg_end = pt < n_track_points - 1 ? pt : n_track_points - 2;
+    } else {
+      float range_lo = cum_dist[pt] - binning_distance;
+      float range_hi = cum_dist[pt] + binning_distance;
+      ptrdiff_t lb = lower_bound(cum_dist, n_track_points, range_lo);
+      seg_start = lb > 0 ? lb - 1 : 0;
+      ptrdiff_t ub = upper_bound(cum_dist, n_track_points, range_hi);
+      seg_end = ub - 1;
+      if (seg_end > n_track_points - 2) seg_end = n_track_points - 2;
+      if (seg_end < seg_start) seg_end = seg_start;
+    }
 
-      ptrdiff_t seg = nearest_seg[idx];
-      if (seg < 0 || seg >= n_track_points - 1) continue;
+    // Rasterize sub-track segments as seeds
+    ptrdiff_t n_seeds = 0;
+    for (ptrdiff_t k = seg_start; k <= seg_end; k++) {
+      float si = track_i[k + 1] - track_i[k];
+      float sj = track_j[k + 1] - track_j[k];
+      float seg_len = sqrtf(si * si + sj * sj);
+      ptrdiff_t n_steps = (ptrdiff_t)(seg_len * 2.0f) + 1;
 
-      // Recompute lambda for this pixel's known nearest segment (cheap: 1 segment)
-      float px = (float)i;
-      float py = (float)j;
-      float proj_x, proj_y, lambda;
-      point_to_segment_distance(px, py,
-          track_i[seg], track_j[seg], track_i[seg + 1], track_j[seg + 1],
-          &proj_x, &proj_y, &lambda);
+      for (ptrdiff_t s = 0; s <= n_steps; s++) {
+        float t = n_steps > 0 ? (float)s / (float)n_steps : 0.0f;
 
-      // Along-track position interpolated from segment endpoints
-      float along_pos = cum_dist[seg] +
-                         lambda * (cum_dist[seg + 1] - cum_dist[seg]);
-
-      // exclude_extended_bin: clamp pixels projecting past full-track endpoints.
-      // Sub-track endpoint clipping is handled naturally by the along-track
-      // range check (pixels past sub-track boundaries get correct along_pos
-      // from the full-track distance map).
-      if (exclude_extended_bin) {
-        if (seg == 0 && lambda < 1e-6f)
-          along_pos = 0.0f;
-        if (seg == n_track_points - 2 && lambda > (1.0f - 1e-6f))
-          along_pos = total_track_length;
-      }
-
-      // Binary search: find track points within ±binning_distance
-      ptrdiff_t k_start = lower_bound(cum_dist, n_track_points,
-                                       along_pos - binning_distance);
-      ptrdiff_t k_end = upper_bound(cum_dist, n_track_points,
-                                     along_pos + binning_distance);
-
-      float value = dem[idx];
-      for (ptrdiff_t k = k_start; k < k_end; k++) {
-        accumulator_add(&accumulators[k], value);
-        if (compute_percentiles) {
-          percentile_accumulator_add(&p_accumulators[k], value);
+        // exclude_extended_bin: skip seeds at full-track endpoints
+        if (exclude_extended_bin) {
+          if (k == 0 && t < 1e-3f) continue;
+          if (k == n_track_points - 2 && t > (1.0f - 1e-3f)) continue;
         }
+
+        ptrdiff_t pi = (ptrdiff_t)(track_i[k] + t * si + 0.5f);
+        ptrdiff_t pj = (ptrdiff_t)(track_j[k] + t * sj + 0.5f);
+        if (pi < 0 || pi >= dims[0] || pj < 0 || pj >= dims[1]) continue;
+
+        ptrdiff_t idx = pj * dims[0] + pi;
+        // Avoid duplicate seeds
+        int dup = 0;
+        for (ptrdiff_t d = 0; d < n_seeds; d++) {
+          if (seed_buf[d] == idx) { dup = 1; break; }
+        }
+        if (dup) continue;
+
+        if (n_seeds >= seed_cap) {
+          seed_cap *= 2;
+          seed_buf = (ptrdiff_t *)realloc(seed_buf, seed_cap * sizeof(ptrdiff_t));
+        }
+        seed_buf[n_seeds++] = idx;
+      }
+    }
+
+    // Tree march from seeds on the global distance map
+    ptrdiff_t n_pixels = tree_march_fill(
+        &pixel_list, &pixel_cap,
+        best_abs, signed_dist_map,
+        seed_buf, n_seeds,
+        dims, hw_px, visited);
+
+    // Feed activated pixels' DEM values into accumulator
+    for (ptrdiff_t p = 0; p < n_pixels; p++) {
+      ptrdiff_t idx = pixel_list[p];
+      if (isnan(dem[idx])) continue;
+      accumulator_add(&accumulators[pt], dem[idx]);
+      if (compute_percentiles) {
+        percentile_accumulator_add(&p_accumulators[pt], dem[idx]);
       }
     }
   }
+
+  free(visited);
+  free(pixel_list);
+  free(seed_buf);
 
   // Step 5: Finalize statistics
   for (ptrdiff_t k = 0; k < n_track_points; k++) {
@@ -759,6 +1015,7 @@ void swath_longitudinal(
 
   // Cleanup
   free(best_abs);
+  free(signed_dist_map);
   free(nearest_seg);
   free(cum_dist);
   free(accumulators);
@@ -789,7 +1046,17 @@ ptrdiff_t swath_get_point_pixels(
   if (point_index < 0 || point_index >= n_track_points)
     return 0;
 
-  // Compute cumulative along-track distance (meters)
+  ptrdiff_t total_pixels = dims[0] * dims[1];
+  float hw_px = half_width / cellsize;
+
+  // Global distance map (nearest_seg is required for correct Dijkstra expansion)
+  float *best_abs = (float *)malloc(total_pixels * sizeof(float));
+  float *signed_dist_map = (float *)malloc(total_pixels * sizeof(float));
+  ptrdiff_t *nearest_seg = (ptrdiff_t *)malloc(total_pixels * sizeof(ptrdiff_t));
+  frontier_distance_map(best_abs, signed_dist_map, nearest_seg,
+                        track_i, track_j, n_track_points, dims, hw_px);
+
+  // Cumulative along-track distance for segment range
   float *cum_dist = (float *)malloc(n_track_points * sizeof(float));
   cum_dist[0] = 0.0f;
   for (ptrdiff_t k = 1; k < n_track_points; k++) {
@@ -798,81 +1065,85 @@ ptrdiff_t swath_get_point_pixels(
     cum_dist[k] = cum_dist[k - 1] + sqrtf(di * di + dj * dj) * cellsize;
   }
 
-  // Find sub-track range
-  float center_dist = cum_dist[point_index];
-  ptrdiff_t sub_start = point_index;
-  ptrdiff_t sub_end = point_index;
-
-  while (sub_start > 0 &&
-         (center_dist - cum_dist[sub_start - 1]) <= binning_distance)
-    sub_start--;
-  while (sub_end < n_track_points - 1 &&
-         (cum_dist[sub_end + 1] - center_dist) <= binning_distance)
-    sub_end++;
-
-  if (sub_start == sub_end) {
-    if (sub_end < n_track_points - 1) sub_end++;
-    else if (sub_start > 0) sub_start--;
+  // Determine sub-track segment range
+  ptrdiff_t seg_start, seg_end;
+  if (binning_distance <= 0.0f) {
+    seg_start = point_index > 0 ? point_index - 1 : 0;
+    seg_end = point_index < n_track_points - 1
+                  ? point_index : n_track_points - 2;
+  } else {
+    float range_lo = cum_dist[point_index] - binning_distance;
+    float range_hi = cum_dist[point_index] + binning_distance;
+    ptrdiff_t lb = lower_bound(cum_dist, n_track_points, range_lo);
+    seg_start = lb > 0 ? lb - 1 : 0;
+    ptrdiff_t ub = upper_bound(cum_dist, n_track_points, range_hi);
+    seg_end = ub - 1;
+    if (seg_end > n_track_points - 2) seg_end = n_track_points - 2;
+    if (seg_end < seg_start) seg_end = seg_start;
   }
 
-  free(cum_dist);
+  // Rasterize sub-track as seeds
+  ptrdiff_t seed_cap = 1024;
+  ptrdiff_t n_seeds = 0;
+  ptrdiff_t *seed_buf = (ptrdiff_t *)malloc(seed_cap * sizeof(ptrdiff_t));
 
-  ptrdiff_t n_sub_segments = sub_end - sub_start;
-  if (n_sub_segments < 1)
-    return 0;
+  for (ptrdiff_t k = seg_start; k <= seg_end; k++) {
+    float si = track_i[k + 1] - track_i[k];
+    float sj = track_j[k + 1] - track_j[k];
+    float seg_len = sqrtf(si * si + sj * sj);
+    ptrdiff_t n_steps = (ptrdiff_t)(seg_len * 2.0f) + 1;
 
-  // Bounding box of sub-track ± half_width (pixels)
-  float hw_pixels = half_width / cellsize;
-  float bb_min_i = track_i[sub_start];
-  float bb_max_i = track_i[sub_start];
-  float bb_min_j = track_j[sub_start];
-  float bb_max_j = track_j[sub_start];
-  for (ptrdiff_t s = sub_start + 1; s <= sub_end; s++) {
-    if (track_i[s] < bb_min_i) bb_min_i = track_i[s];
-    if (track_i[s] > bb_max_i) bb_max_i = track_i[s];
-    if (track_j[s] < bb_min_j) bb_min_j = track_j[s];
-    if (track_j[s] > bb_max_j) bb_max_j = track_j[s];
-  }
-
-  ptrdiff_t i_lo = (ptrdiff_t)(bb_min_i - hw_pixels - 1.0f);
-  ptrdiff_t i_hi = (ptrdiff_t)(bb_max_i + hw_pixels + 2.0f);
-  ptrdiff_t j_lo = (ptrdiff_t)(bb_min_j - hw_pixels - 1.0f);
-  ptrdiff_t j_hi = (ptrdiff_t)(bb_max_j + hw_pixels + 2.0f);
-
-  if (i_lo < 0) i_lo = 0;
-  if (i_hi > dims[0]) i_hi = dims[0];
-  if (j_lo < 0) j_lo = 0;
-  if (j_hi > dims[1]) j_hi = dims[1];
-
-  ptrdiff_t n = 0;
-  for (ptrdiff_t j = j_lo; j < j_hi; j++) {
-    for (ptrdiff_t i = i_lo; i < i_hi; i++) {
-      float px = (float)i;
-      float py = (float)j;
-
-      float min_dist, proj_x, proj_y, lambda;
-      ptrdiff_t seg = find_nearest_segment(
-          px, py, track_i, track_j, n_track_points,
-          sub_start, sub_end, &min_dist, &proj_x, &proj_y, &lambda);
-
-      if (seg < 0) continue;
+    for (ptrdiff_t s = 0; s <= n_steps; s++) {
+      float t = n_steps > 0 ? (float)s / (float)n_steps : 0.0f;
 
       if (exclude_extended_bin) {
-        if (seg == sub_start && lambda < 1e-6f && sub_start > 0)
-          continue;
-        if (seg == sub_end - 1 && lambda > (1.0f - 1e-6f) &&
-            sub_end < n_track_points - 1)
-          continue;
+        if (k == 0 && t < 1e-3f) continue;
+        if (k == n_track_points - 2 && t > (1.0f - 1e-3f)) continue;
       }
 
-      float dist_m = fabsf(min_dist) * cellsize;
-      if (dist_m > half_width) continue;
+      ptrdiff_t pi = (ptrdiff_t)(track_i[k] + t * si + 0.5f);
+      ptrdiff_t pj = (ptrdiff_t)(track_j[k] + t * sj + 0.5f);
+      if (pi < 0 || pi >= dims[0] || pj < 0 || pj >= dims[1]) continue;
 
-      pixels_i[n] = i;
-      pixels_j[n] = j;
-      n++;
+      ptrdiff_t idx = pj * dims[0] + pi;
+      int dup = 0;
+      for (ptrdiff_t d = 0; d < n_seeds; d++) {
+        if (seed_buf[d] == idx) { dup = 1; break; }
+      }
+      if (dup) continue;
+
+      if (n_seeds >= seed_cap) {
+        seed_cap *= 2;
+        seed_buf = (ptrdiff_t *)realloc(seed_buf, seed_cap * sizeof(ptrdiff_t));
+      }
+      seed_buf[n_seeds++] = idx;
     }
   }
 
-  return n;
+  // Tree march on global distance map
+  char *visited = (char *)calloc(total_pixels, sizeof(char));
+  ptrdiff_t pixel_cap = 4096;
+  ptrdiff_t *pixel_list = (ptrdiff_t *)malloc(pixel_cap * sizeof(ptrdiff_t));
+
+  ptrdiff_t n_pixels = tree_march_fill(
+      &pixel_list, &pixel_cap,
+      best_abs, signed_dist_map,
+      seed_buf, n_seeds,
+      dims, hw_px, visited);
+
+  // Convert linear indices to (i, j) coordinates
+  for (ptrdiff_t p = 0; p < n_pixels; p++) {
+    ptrdiff_t idx = pixel_list[p];
+    pixels_i[p] = idx % dims[0];
+    pixels_j[p] = idx / dims[0];
+  }
+
+  free(pixel_list);
+  free(visited);
+  free(seed_buf);
+  free(best_abs);
+  free(signed_dist_map);
+  free(nearest_seg);
+  free(cum_dist);
+  return n_pixels;
 }
