@@ -1056,6 +1056,22 @@ ptrdiff_t swath_get_point_pixels(
   frontier_distance_map(best_abs, signed_dist_map, nearest_seg,
                         track_i, track_j, n_track_points, dims, hw_px);
 
+  // Full window mode: return all pixels within hw_px of the entire track
+  if (!exclude_extended_bin) {
+    ptrdiff_t count = 0;
+    for (ptrdiff_t idx = 0; idx < total_pixels; idx++) {
+      if (best_abs[idx] != FLT_MAX && best_abs[idx] <= hw_px) {
+        pixels_i[count] = idx % dims[0];
+        pixels_j[count] = idx / dims[0];
+        count++;
+      }
+    }
+    free(best_abs);
+    free(signed_dist_map);
+    free(nearest_seg);
+    return count;
+  }
+
   // Cumulative along-track distance for segment range
   float *cum_dist = (float *)malloc(n_track_points * sizeof(float));
   cum_dist[0] = 0.0f;
@@ -1146,4 +1162,224 @@ ptrdiff_t swath_get_point_pixels(
   free(nearest_seg);
   free(cum_dist);
   return n_pixels;
+}
+
+// ============================================================================
+// Inverted Distance Map — Centre Line + Width from Boundary-Inward Dijkstra
+// ============================================================================
+//
+// Given a track and half_width, computes the swath mask via the global distance
+// map, then grows inward from the mask boundary using two Dijkstra passes
+// (one from each side's boundary). The centre line is the ridge of the
+// distance-from-boundary field. Width at each centre-line pixel is the sum
+// of distances from the positive-side and negative-side boundaries.
+
+// Helper: single-source Dijkstra from a set of boundary seed pixels, expanding
+// D8 inward within the mask. Fills dist_out[total] with Euclidean distance
+// from nearest boundary seed.
+static void boundary_dijkstra(
+    float *restrict dist_out,
+    const float *restrict best_abs,
+    const ptrdiff_t *seeds, ptrdiff_t n_seeds,
+    ptrdiff_t dims[2], float hw_px)
+{
+  ptrdiff_t total = dims[0] * dims[1];
+
+  for (ptrdiff_t i = 0; i < total; i++)
+    dist_out[i] = FLT_MAX;
+
+  min_heap heap;
+  heap_init(&heap, n_seeds * 4);
+
+  // Seed boundary pixels with distance 0
+  for (ptrdiff_t s = 0; s < n_seeds; s++) {
+    ptrdiff_t idx = seeds[s];
+    dist_out[idx] = 0.0f;
+    heap_push(&heap, 0.0f, idx);
+  }
+
+  // D8 neighbor offsets and distances
+  static const int di8[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
+  static const int dj8[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
+  static const float dd8[8] = {1.41421356f, 1.0f, 1.41421356f, 1.0f,
+                                1.0f, 1.41421356f, 1.0f, 1.41421356f};
+
+  while (heap.size > 0) {
+    heap_entry top = heap_pop(&heap);
+    ptrdiff_t idx = top.idx;
+
+    if (top.abs_dist > dist_out[idx])
+      continue;  // stale
+
+    ptrdiff_t ci = idx % dims[0];
+    ptrdiff_t cj = idx / dims[0];
+
+    for (int n = 0; n < 8; n++) {
+      ptrdiff_t ni = ci + di8[n];
+      ptrdiff_t nj = cj + dj8[n];
+      if (ni < 0 || ni >= dims[0] || nj < 0 || nj >= dims[1]) continue;
+
+      ptrdiff_t nidx = nj * dims[0] + ni;
+      // Only expand within the swath mask
+      if (best_abs[nidx] == FLT_MAX || best_abs[nidx] > hw_px) continue;
+
+      float new_dist = dist_out[idx] + dd8[n];
+      if (new_dist < dist_out[nidx]) {
+        dist_out[nidx] = new_dist;
+        heap_push(&heap, new_dist, nidx);
+      }
+    }
+  }
+
+  heap_free(&heap);
+}
+
+TOPOTOOLBOX_API
+ptrdiff_t swath_invert_distance_map(
+    float *restrict centre_line_i,
+    float *restrict centre_line_j,
+    float *restrict width,
+    float *restrict dist_from_boundary_out,
+    const float *restrict track_i,
+    const float *restrict track_j,
+    ptrdiff_t n_track_points,
+    ptrdiff_t dims[2],
+    float cellsize,
+    float half_width)
+{
+  if (n_track_points < 2)
+    return 0;
+
+  ptrdiff_t total = dims[0] * dims[1];
+  float hw_px = half_width / cellsize;
+
+  // Step 1: Global distance map
+  float *best_abs = (float *)malloc(total * sizeof(float));
+  float *signed_dist = (float *)malloc(total * sizeof(float));
+  frontier_distance_map(best_abs, signed_dist, NULL,
+                        track_i, track_j, n_track_points, dims, hw_px);
+
+  // Step 2: Find boundary pixels and split by side
+  // A boundary pixel is inside the mask but has a D4 neighbour outside
+  static const int dn_i[4] = {-1, 1, 0, 0};
+  static const int dn_j[4] = {0, 0, -1, 1};
+
+  ptrdiff_t pos_cap = 4096, neg_cap = 4096;
+  ptrdiff_t n_pos = 0, n_neg = 0;
+  ptrdiff_t *pos_seeds = (ptrdiff_t *)calloc(pos_cap, sizeof(ptrdiff_t));
+  ptrdiff_t *neg_seeds = (ptrdiff_t *)calloc(neg_cap, sizeof(ptrdiff_t));
+
+  for (ptrdiff_t idx = 0; idx < total; idx++) {
+    if (best_abs[idx] == FLT_MAX || best_abs[idx] > hw_px)
+      continue;
+
+    ptrdiff_t ci = idx % dims[0];
+    ptrdiff_t cj = idx / dims[0];
+    int is_boundary = 0;
+
+    for (int n = 0; n < 4; n++) {
+      ptrdiff_t ni = ci + dn_i[n];
+      ptrdiff_t nj = cj + dn_j[n];
+      if (ni < 0 || ni >= dims[0] || nj < 0 || nj >= dims[1]) {
+        is_boundary = 1;
+        break;
+      }
+      ptrdiff_t nidx = nj * dims[0] + ni;
+      if (best_abs[nidx] == FLT_MAX || best_abs[nidx] > hw_px) {
+        is_boundary = 1;
+        break;
+      }
+    }
+
+    if (!is_boundary) continue;
+
+    if (signed_dist[idx] >= 0.0f) {
+      if (n_pos >= pos_cap) {
+        pos_cap *= 2;
+        pos_seeds = (ptrdiff_t *)realloc(pos_seeds, pos_cap * sizeof(ptrdiff_t));
+      }
+      pos_seeds[n_pos++] = idx;
+    }
+    if (signed_dist[idx] <= 0.0f) {
+      if (n_neg >= neg_cap) {
+        neg_cap *= 2;
+        neg_seeds = (ptrdiff_t *)realloc(neg_seeds, neg_cap * sizeof(ptrdiff_t));
+      }
+      neg_seeds[n_neg++] = idx;
+    }
+  }
+
+  // Step 3: Dijkstra from positive-side boundary
+  float *dist_pos = (float *)malloc(total * sizeof(float));
+  boundary_dijkstra(dist_pos, best_abs, pos_seeds, n_pos, dims, hw_px);
+
+  // Step 4: Dijkstra from negative-side boundary
+  float *dist_neg = (float *)malloc(total * sizeof(float));
+  boundary_dijkstra(dist_neg, best_abs, neg_seeds, n_neg, dims, hw_px);
+
+  free(pos_seeds);
+  free(neg_seeds);
+
+  // Step 5: Compute combined distance-from-boundary = min(dist_pos, dist_neg)
+  // and extract centre line via ridge detection
+  float *dfb = dist_from_boundary_out;
+  int free_dfb = 0;
+  if (dfb == NULL) {
+    dfb = (float *)malloc(total * sizeof(float));
+    free_dfb = 1;
+  }
+
+  for (ptrdiff_t idx = 0; idx < total; idx++) {
+    dfb[idx] = dist_pos[idx] < dist_neg[idx] ? dist_pos[idx] : dist_neg[idx];
+  }
+
+  // Centre line: ridge of dfb — local maxima in at least 2 opposing D4
+  // directions (i.e., value >= both neighbours along at least one axis)
+  ptrdiff_t count = 0;
+  for (ptrdiff_t idx = 0; idx < total; idx++) {
+    if (best_abs[idx] == FLT_MAX || best_abs[idx] > hw_px)
+      continue;
+    if (dfb[idx] == FLT_MAX || dfb[idx] == 0.0f)
+      continue;
+
+    ptrdiff_t ci = idx % dims[0];
+    ptrdiff_t cj = idx / dims[0];
+    float val = dfb[idx];
+
+    // Check if ridge along i-axis (left-right)
+    int ridge_i = 0;
+    if (ci > 0 && ci < dims[0] - 1) {
+      float left = dfb[idx - 1];
+      float right = dfb[idx + 1];
+      if (val >= left && val >= right)
+        ridge_i = 1;
+    }
+
+    // Check if ridge along j-axis (up-down)
+    int ridge_j = 0;
+    if (cj > 0 && cj < dims[1] - 1) {
+      float up = dfb[idx - dims[0]];
+      float down = dfb[idx + dims[0]];
+      if (val >= up && val >= down)
+        ridge_j = 1;
+    }
+
+    if (!ridge_i && !ridge_j)
+      continue;
+
+    // This pixel is on the centre line
+    centre_line_i[count] = (float)ci;
+    centre_line_j[count] = (float)cj;
+    width[count] = (dist_pos[idx] + dist_neg[idx]) * cellsize;
+    count++;
+  }
+
+  // Cleanup
+  free(dist_pos);
+  free(dist_neg);
+  free(best_abs);
+  free(signed_dist);
+  if (free_dfb) free(dfb);
+
+  return count;
 }
