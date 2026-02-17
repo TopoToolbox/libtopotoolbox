@@ -961,20 +961,66 @@ void swath_longitudinal(
       }
     }
 
-    // Tree march from seeds on the global distance map
-    ptrdiff_t n_pixels = tree_march_fill(
-        &pixel_list, &pixel_cap,
-        best_abs, signed_dist_map,
-        seed_buf, n_seeds,
-        dims, hw_px, visited);
+    if (exclude_extended_bin) {
+      // Tree march from seeds on the global distance map (no end caps)
+      ptrdiff_t n_pixels = tree_march_fill(
+          &pixel_list, &pixel_cap,
+          best_abs, signed_dist_map,
+          seed_buf, n_seeds,
+          dims, hw_px, visited);
 
-    // Feed activated pixels' DEM values into accumulator
-    for (ptrdiff_t p = 0; p < n_pixels; p++) {
-      ptrdiff_t idx = pixel_list[p];
-      if (isnan(dem[idx])) continue;
-      accumulator_add(&accumulators[pt], dem[idx]);
-      if (compute_percentiles) {
-        percentile_accumulator_add(&p_accumulators[pt], dem[idx]);
+      for (ptrdiff_t p = 0; p < n_pixels; p++) {
+        ptrdiff_t idx = pixel_list[p];
+        if (isnan(dem[idx])) continue;
+        accumulator_add(&accumulators[pt], dem[idx]);
+        if (compute_percentiles) {
+          percentile_accumulator_add(&p_accumulators[pt], dem[idx]);
+        }
+      }
+    } else {
+      // Full bean: all pixels within hw_px of the sub-track segments
+      float bb_i0 = track_i[seg_start], bb_i1 = track_i[seg_start];
+      float bb_j0 = track_j[seg_start], bb_j1 = track_j[seg_start];
+      for (ptrdiff_t k = seg_start; k <= seg_end + 1; k++) {
+        if (track_i[k] < bb_i0) bb_i0 = track_i[k];
+        if (track_i[k] > bb_i1) bb_i1 = track_i[k];
+        if (track_j[k] < bb_j0) bb_j0 = track_j[k];
+        if (track_j[k] > bb_j1) bb_j1 = track_j[k];
+      }
+      ptrdiff_t i0 = (ptrdiff_t)(bb_i0 - hw_px - 1.0f);
+      ptrdiff_t i1 = (ptrdiff_t)(bb_i1 + hw_px + 2.0f);
+      ptrdiff_t j0 = (ptrdiff_t)(bb_j0 - hw_px - 1.0f);
+      ptrdiff_t j1 = (ptrdiff_t)(bb_j1 + hw_px + 2.0f);
+      if (i0 < 0) i0 = 0;
+      if (j0 < 0) j0 = 0;
+      if (i1 >= dims[0]) i1 = dims[0] - 1;
+      if (j1 >= dims[1]) j1 = dims[1] - 1;
+
+      for (ptrdiff_t pj = j0; pj <= j1; pj++) {
+        for (ptrdiff_t pi = i0; pi <= i1; pi++) {
+          float px = (float)pi;
+          float py = (float)pj;
+          float min_d = FLT_MAX;
+
+          for (ptrdiff_t k = seg_start; k <= seg_end; k++) {
+            float proj_i, proj_j, lam;
+            float d = point_to_segment_distance(
+                px, py, track_i[k], track_j[k],
+                track_i[k + 1], track_j[k + 1],
+                &proj_i, &proj_j, &lam);
+            float ad = fabsf(d);
+            if (ad < min_d) min_d = ad;
+          }
+
+          if (min_d <= hw_px) {
+            ptrdiff_t idx = pj * dims[0] + pi;
+            if (isnan(dem[idx])) continue;
+            accumulator_add(&accumulators[pt], dem[idx]);
+            if (compute_percentiles) {
+              percentile_accumulator_add(&p_accumulators[pt], dem[idx]);
+            }
+          }
+        }
       }
     }
   }
@@ -1056,22 +1102,6 @@ ptrdiff_t swath_get_point_pixels(
   frontier_distance_map(best_abs, signed_dist_map, nearest_seg,
                         track_i, track_j, n_track_points, dims, hw_px);
 
-  // Full window mode: return all pixels within hw_px of the entire track
-  if (!exclude_extended_bin) {
-    ptrdiff_t count = 0;
-    for (ptrdiff_t idx = 0; idx < total_pixels; idx++) {
-      if (best_abs[idx] != FLT_MAX && best_abs[idx] <= hw_px) {
-        pixels_i[count] = idx % dims[0];
-        pixels_j[count] = idx / dims[0];
-        count++;
-      }
-    }
-    free(best_abs);
-    free(signed_dist_map);
-    free(nearest_seg);
-    return count;
-  }
-
   // Cumulative along-track distance for segment range
   float *cum_dist = (float *)malloc(n_track_points * sizeof(float));
   cum_dist[0] = 0.0f;
@@ -1136,26 +1166,74 @@ ptrdiff_t swath_get_point_pixels(
     }
   }
 
-  // Tree march on global distance map
-  char *visited = (char *)calloc(total_pixels, sizeof(char));
-  ptrdiff_t pixel_cap = 4096;
-  ptrdiff_t *pixel_list = (ptrdiff_t *)malloc(pixel_cap * sizeof(ptrdiff_t));
+  ptrdiff_t n_pixels = 0;
 
-  ptrdiff_t n_pixels = tree_march_fill(
-      &pixel_list, &pixel_cap,
-      best_abs, signed_dist_map,
-      seed_buf, n_seeds,
-      dims, hw_px, visited);
+  if (exclude_extended_bin) {
+    // Tree march on global distance map (no end caps)
+    char *visited = (char *)calloc(total_pixels, sizeof(char));
+    ptrdiff_t pixel_cap = 4096;
+    ptrdiff_t *pixel_list = (ptrdiff_t *)malloc(pixel_cap * sizeof(ptrdiff_t));
 
-  // Convert linear indices to (i, j) coordinates
-  for (ptrdiff_t p = 0; p < n_pixels; p++) {
-    ptrdiff_t idx = pixel_list[p];
-    pixels_i[p] = idx % dims[0];
-    pixels_j[p] = idx / dims[0];
+    n_pixels = tree_march_fill(
+        &pixel_list, &pixel_cap,
+        best_abs, signed_dist_map,
+        seed_buf, n_seeds,
+        dims, hw_px, visited);
+
+    for (ptrdiff_t p = 0; p < n_pixels; p++) {
+      ptrdiff_t idx = pixel_list[p];
+      pixels_i[p] = idx % dims[0];
+      pixels_j[p] = idx / dims[0];
+    }
+
+    free(pixel_list);
+    free(visited);
+  } else {
+    // Full bean: all pixels within hw_px of the sub-track segments
+    // Compute bounding box of sub-track ± hw_px
+    float bb_i0 = track_i[seg_start], bb_i1 = track_i[seg_start];
+    float bb_j0 = track_j[seg_start], bb_j1 = track_j[seg_start];
+    for (ptrdiff_t k = seg_start; k <= seg_end + 1; k++) {
+      if (track_i[k] < bb_i0) bb_i0 = track_i[k];
+      if (track_i[k] > bb_i1) bb_i1 = track_i[k];
+      if (track_j[k] < bb_j0) bb_j0 = track_j[k];
+      if (track_j[k] > bb_j1) bb_j1 = track_j[k];
+    }
+    ptrdiff_t i0 = (ptrdiff_t)(bb_i0 - hw_px - 1.0f);
+    ptrdiff_t i1 = (ptrdiff_t)(bb_i1 + hw_px + 2.0f);
+    ptrdiff_t j0 = (ptrdiff_t)(bb_j0 - hw_px - 1.0f);
+    ptrdiff_t j1 = (ptrdiff_t)(bb_j1 + hw_px + 2.0f);
+    if (i0 < 0) i0 = 0;
+    if (j0 < 0) j0 = 0;
+    if (i1 >= dims[0]) i1 = dims[0] - 1;
+    if (j1 >= dims[1]) j1 = dims[1] - 1;
+
+    // For each pixel in the bounding box, check distance to sub-track
+    for (ptrdiff_t pj = j0; pj <= j1; pj++) {
+      for (ptrdiff_t pi = i0; pi <= i1; pi++) {
+        float px = (float)pi;
+        float py = (float)pj;
+        float min_d = FLT_MAX;
+
+        for (ptrdiff_t k = seg_start; k <= seg_end; k++) {
+          float proj_i, proj_j, lam;
+          float d = point_to_segment_distance(
+              px, py, track_i[k], track_j[k],
+              track_i[k + 1], track_j[k + 1],
+              &proj_i, &proj_j, &lam);
+          float ad = fabsf(d);
+          if (ad < min_d) min_d = ad;
+        }
+
+        if (min_d <= hw_px) {
+          pixels_i[n_pixels] = pi;
+          pixels_j[n_pixels] = pj;
+          n_pixels++;
+        }
+      }
+    }
   }
 
-  free(pixel_list);
-  free(visited);
   free(seed_buf);
   free(best_abs);
   free(signed_dist_map);
