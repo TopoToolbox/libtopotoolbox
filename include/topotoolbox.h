@@ -2556,4 +2556,33 @@ ptrdiff_t swath_get_point_pixels(ptrdiff_t *pixels_i, ptrdiff_t *pixels_j,
                                   float half_width, float binning_distance,
                                   int exclude_extended_bin);
 
+/**
+   @brief Rasterize a continuous path between ordered reference points.
+
+   Connects consecutive reference points using Bresenham's line algorithm,
+   producing a continuous rasterized path with either D4 or D8 connectivity.
+   Duplicate points at segment junctions are removed.
+
+   @param[out] out_i   Fast-dim coordinates of sampled path
+   @param[out] out_j   Slow-dim coordinates of sampled path
+   @param[in]  ref_i   Reference point coordinates (fast dim)
+   @param[in]  ref_j   Reference point coordinates (slow dim)
+   @param[in]  n_refs  Number of reference points (must be >= 2)
+   @param[in]  close_loop  If nonzero, connect last point back to first
+   @param[in]  use_d4      If nonzero, D4 connectivity; otherwise D8
+
+   @return Total number of output points written to out_i/out_j.
+           Caller allocates out_i/out_j with upper bound:
+           sum of max(|di|,|dj|) for each segment pair, plus n_refs, times 2 for D4.
+*/
+TOPOTOOLBOX_API
+ptrdiff_t sample_points_between_refs(
+    ptrdiff_t *out_i,
+    ptrdiff_t *out_j,
+    const ptrdiff_t *ref_i,
+    const ptrdiff_t *ref_j,
+    ptrdiff_t n_refs,
+    int close_loop,
+    int use_d4);
+
 #endif  // TOPOTOOLBOX_H

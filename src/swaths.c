@@ -1519,3 +1519,166 @@ static void boundary_dijkstra(
 }
 
 // swath_invert_distance_map removed — logic now in swath_compute_distance_map
+
+// ============================================================================
+// Bresenham Path Rasterization Between Reference Points
+// ============================================================================
+
+// D8 Bresenham: standard line algorithm, each step moves 1 pixel
+// (cardinal or diagonal).
+static ptrdiff_t bresenham_d8(ptrdiff_t *out_i, ptrdiff_t *out_j,
+                              ptrdiff_t i0, ptrdiff_t j0,
+                              ptrdiff_t i1, ptrdiff_t j1,
+                              int skip_first) {
+  ptrdiff_t di = i1 - i0;
+  ptrdiff_t dj = j1 - j0;
+  ptrdiff_t si = di > 0 ? 1 : (di < 0 ? -1 : 0);
+  ptrdiff_t sj = dj > 0 ? 1 : (dj < 0 ? -1 : 0);
+  ptrdiff_t adi = di < 0 ? -di : di;
+  ptrdiff_t adj = dj < 0 ? -dj : dj;
+
+  ptrdiff_t count = 0;
+  ptrdiff_t ci = i0, cj = j0;
+
+  if (!skip_first) {
+    out_i[count] = ci;
+    out_j[count] = cj;
+    count++;
+  }
+
+  if (adi >= adj) {
+    // i is the driving axis
+    ptrdiff_t err = adi / 2;
+    for (ptrdiff_t step = 0; step < adi; step++) {
+      err -= adj;
+      if (err < 0) {
+        cj += sj;
+        err += adi;
+      }
+      ci += si;
+      out_i[count] = ci;
+      out_j[count] = cj;
+      count++;
+    }
+  } else {
+    // j is the driving axis
+    ptrdiff_t err = adj / 2;
+    for (ptrdiff_t step = 0; step < adj; step++) {
+      err -= adi;
+      if (err < 0) {
+        ci += si;
+        err += adj;
+      }
+      cj += sj;
+      out_i[count] = ci;
+      out_j[count] = cj;
+      count++;
+    }
+  }
+
+  return count;
+}
+
+// D4 Bresenham: only cardinal moves. When the standard algorithm would step
+// diagonally, two cardinal steps are emitted instead.
+static ptrdiff_t bresenham_d4(ptrdiff_t *out_i, ptrdiff_t *out_j,
+                              ptrdiff_t i0, ptrdiff_t j0,
+                              ptrdiff_t i1, ptrdiff_t j1,
+                              int skip_first) {
+  ptrdiff_t di = i1 - i0;
+  ptrdiff_t dj = j1 - j0;
+  ptrdiff_t si = di > 0 ? 1 : (di < 0 ? -1 : 0);
+  ptrdiff_t sj = dj > 0 ? 1 : (dj < 0 ? -1 : 0);
+  ptrdiff_t adi = di < 0 ? -di : di;
+  ptrdiff_t adj = dj < 0 ? -dj : dj;
+
+  ptrdiff_t count = 0;
+  ptrdiff_t ci = i0, cj = j0;
+
+  if (!skip_first) {
+    out_i[count] = ci;
+    out_j[count] = cj;
+    count++;
+  }
+
+  if (adi >= adj) {
+    // i is the driving axis
+    ptrdiff_t err = adi / 2;
+    for (ptrdiff_t step = 0; step < adi; step++) {
+      err -= adj;
+      if (err < 0) {
+        // Would be diagonal: emit two cardinal steps
+        // Order based on error: step in j first if error is more negative
+        cj += sj;
+        out_i[count] = ci;
+        out_j[count] = cj;
+        count++;
+        err += adi;
+      }
+      ci += si;
+      out_i[count] = ci;
+      out_j[count] = cj;
+      count++;
+    }
+  } else {
+    // j is the driving axis
+    ptrdiff_t err = adj / 2;
+    for (ptrdiff_t step = 0; step < adj; step++) {
+      err -= adi;
+      if (err < 0) {
+        // Would be diagonal: emit two cardinal steps
+        ci += si;
+        out_i[count] = ci;
+        out_j[count] = cj;
+        count++;
+        err += adj;
+      }
+      cj += sj;
+      out_i[count] = ci;
+      out_j[count] = cj;
+      count++;
+    }
+  }
+
+  return count;
+}
+
+TOPOTOOLBOX_API
+ptrdiff_t sample_points_between_refs(
+    ptrdiff_t *out_i,
+    ptrdiff_t *out_j,
+    const ptrdiff_t *ref_i,
+    const ptrdiff_t *ref_j,
+    ptrdiff_t n_refs,
+    int close_loop,
+    int use_d4)
+{
+  if (n_refs < 2)
+    return 0;
+
+  ptrdiff_t total = 0;
+  ptrdiff_t n_segments = close_loop ? n_refs : n_refs - 1;
+
+  for (ptrdiff_t k = 0; k < n_segments; k++) {
+    ptrdiff_t i0 = ref_i[k];
+    ptrdiff_t j0 = ref_j[k];
+    ptrdiff_t i1 = ref_i[(k + 1) % n_refs];
+    ptrdiff_t j1 = ref_j[(k + 1) % n_refs];
+
+    // First segment emits start point; subsequent segments skip it
+    // (it was the end point of the previous segment)
+    int skip_first = (k > 0) ? 1 : 0;
+
+    ptrdiff_t n;
+    if (use_d4) {
+      n = bresenham_d4(out_i + total, out_j + total, i0, j0, i1, j1,
+                       skip_first);
+    } else {
+      n = bresenham_d8(out_i + total, out_j + total, i0, j0, i1, j1,
+                       skip_first);
+    }
+    total += n;
+  }
+
+  return total;
+}
