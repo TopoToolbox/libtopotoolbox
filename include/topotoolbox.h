@@ -2377,207 +2377,99 @@ TOPOTOOLBOX_API
 ptrdiff_t swath_compute_nbins(float half_width, float bin_resolution);
 
 /**
-   @brief Compute distance map from DEM pixels to track
+   @brief Compute clipped distance map from track with optional centre-line
 
    @details
-   For each DEM pixel, computes the signed perpendicular distance to the
-   nearest track segment. Negative distances indicate pixels to the left
-   of the track direction, positive to the right.
+   Computes the distance map for all pixels within half_width of the track.
+   Pixels outside the swath get NAN. All distance outputs are in meters.
 
-   Uses Euclidean distance in pixel space scaled by cellsize.
+   Optionally computes the centre line via boundary-inward Dijkstra: grows
+   from both sides' boundaries inward, detects the ridge (medial axis), and
+   reports local width as the sum of distances from both sides' boundaries.
 
-   @param[out] distance Distance map
-   @parblock
-   A pointer to a `float` array of size `dims[0]` x `dims[1]`
+   NOTE: swath_transverse and swath_longitudinal expect a SIGNED distance
+   map (compute_signed=1) as input.
 
-   Each element contains the signed perpendicular distance in meters from
-   the pixel to the nearest track segment.
-   @endparblock
+   @param[out] distance_from_track Signed or absolute distance per pixel (meters).
+   NAN for pixels outside the swath. Size dims[0]*dims[1].
+   @param[out] nearest_segment Nearest segment index per pixel, or NULL to skip
+   @param[out] dist_from_boundary Inward distance from boundary (meters), or NULL
+   @param[out] centre_line_i Centre-line pixel coords (fast dim), or NULL
+   @param[out] centre_line_j Centre-line pixel coords (slow dim), or NULL
+   @param[out] centre_width Local width at each centre-line pixel (meters), or NULL
+   @param[in] track_i Track coords in fast dimension (pixel space)
+   @param[in] track_j Track coords in slow dimension (pixel space)
+   @param[in] n_track_points Number of track vertices (>= 2)
+   @param[in] dims Grid dimensions [fast, slow]
+   @param[in] cellsize Cell size in meters
+   @param[in] half_width Swath half-width in meters
+   @param[in] compute_signed If nonzero, output signed distance; otherwise absolute
 
-   @param[out] nearest_segment Nearest segment map (optional)
-   @parblock
-   A pointer to a `ptrdiff_t` array of size `dims[0]` x `dims[1]`, or NULL
-
-   If provided, each element will contain the index of the nearest track
-   segment (0 to n_track_points-2). Pass NULL to skip this output.
-   @endparblock
-
-   @param[in] track_i Track point coordinates in fast dimension
-   @parblock
-   A pointer to a `float` array of size `n_track_points`
-
-   Contains pixel coordinates (can be sub-pixel values) in the fast-changing
-   dimension. For column-major arrays, these are row indices. For row-major
-   arrays, these are column indices.
-   @endparblock
-
-   @param[in] track_j Track point coordinates in slow dimension
-   @parblock
-   A pointer to a `float` array of size `n_track_points`
-
-   Contains pixel coordinates (can be sub-pixel values) in the slow-changing
-   dimension. For column-major arrays, these are column indices. For row-major
-   arrays, these are row indices.
-   @endparblock
-
-   @param[in] n_track_points Number of points in the track
-   @parblock
-   Must be at least 2 to form segments.
-   @endparblock
-
-   @param[in] dims The dimensions of the DEM arrays
-   @parblock
-   A pointer to a `ptrdiff_t` array of size 2
-
-   The fastest changing dimension should be provided first. For column-major
-   arrays, `dims = {nrows,ncols}`. For row-major arrays, `dims = {ncols,nrows}`.
-   @endparblock
-
-   @param[in] cellsize Physical size of one pixel in meters
+   @return Number of centre-line pixels (0 if centre outputs are NULL)
  */
 TOPOTOOLBOX_API
-void swath_distance_map(float *distance, ptrdiff_t *nearest_segment,
-                        const float *track_i, const float *track_j,
-                        ptrdiff_t n_track_points, ptrdiff_t dims[2],
-                        float cellsize);
+ptrdiff_t swath_compute_distance_map(
+    float *distance_from_track, ptrdiff_t *nearest_segment,
+    float *dist_from_boundary,
+    float *centre_line_i, float *centre_line_j, float *centre_width,
+    const float *track_i, const float *track_j,
+    ptrdiff_t n_track_points, ptrdiff_t dims[2],
+    float cellsize, float half_width, int compute_signed);
+
+/**
+   @brief Compute full (unclipped) distance map from track
+
+   @details
+   Computes distance from every grid pixel to the nearest track segment.
+   No half_width clipping. Skips NaN pixels in the DEM and masked-out pixels.
+   All distance outputs are in meters.
+
+   @param[out] distance Distance per pixel (meters). NAN for skipped pixels.
+   @param[out] nearest_segment Nearest segment index, or NULL to skip
+   @param[in] track_i Track coords in fast dimension (pixel space)
+   @param[in] track_j Track coords in slow dimension (pixel space)
+   @param[in] n_track_points Number of track vertices (>= 2)
+   @param[in] dims Grid dimensions [fast, slow]
+   @param[in] cellsize Cell size in meters
+   @param[in] dem DEM for NaN detection, or NULL to skip NaN check
+   @param[in] mask Active mask (nonzero=active), or NULL for all active
+   @param[in] compute_signed If nonzero, output signed distance; otherwise absolute
+ */
+TOPOTOOLBOX_API
+void swath_compute_full_distance_map(
+    float *distance, ptrdiff_t *nearest_segment,
+    const float *track_i, const float *track_j,
+    ptrdiff_t n_track_points, ptrdiff_t dims[2], float cellsize,
+    const float *dem, const int8_t *mask, int compute_signed);
 
 /**
    @brief Compute binned swath profile perpendicular to track
 
    @details
-   Aggregates DEM elevations by perpendicular distance to the track,
-   creating a single averaged cross-sectional profile. All pixels along
-   the entire track length are binned by their perpendicular distance,
-   producing statistics for each distance bin.
+   Aggregates DEM elevations by perpendicular distance to the track.
+   Takes a pre-computed SIGNED distance map (in meters) from
+   swath_compute_distance_map (with compute_signed=1).
 
-   This is useful for analyzing typical valley cross-sections or ridge
-   profiles averaged over a long track.
-
-   @param[out] bin_distances Distance of each bin center from track
-   @parblock
-   A pointer to a `float` array of size `n_bins`
-
-   Contains the distance in meters from the track for each bin center.
-   Negative values are to the left of the track, positive to the right.
-   @endparblock
-
-   @param[out] bin_means Mean elevation in each bin
-   @parblock
-   A pointer to a `float` array of size `n_bins`
-
-   Contains the mean elevation in meters for all pixels in each distance bin.
-   @endparblock
-
-   @param[out] bin_stddevs Standard deviation of elevation in each bin
-   @parblock
-   A pointer to a `float` array of size `n_bins`
-
-   Contains the standard deviation of elevations in meters for each bin.
-   @endparblock
-
-   @param[out] bin_mins Minimum elevation in each bin
-   @parblock
-   A pointer to a `float` array of size `n_bins`
-
-   Contains the minimum elevation in meters for each bin.
-   @endparblock
-
-   @param[out] bin_maxs Maximum elevation in each bin
-   @parblock
-   A pointer to a `float` array of size `n_bins`
-
-   Contains the maximum elevation in meters for each bin.
-   @endparblock
-
-   @param[out] bin_counts Number of pixels in each bin
-   @parblock
-   A pointer to a `ptrdiff_t` array of size `n_bins`
-
-   Contains the count of valid (non-NaN) pixels contributing to each bin.
-   @endparblock
-
-   @param[out] bin_medians Median elevation in each bin
-   @parblock
-   A pointer to a `float` array of size `n_bins`, or NULL to skip
-
-   Contains the median (50th percentile) elevation in meters for each bin.
-   @endparblock
-
-   @param[out] bin_q1 First quartile elevation in each bin
-   @parblock
-   A pointer to a `float` array of size `n_bins`, or NULL to skip
-
-   Contains the 25th percentile elevation in meters for each bin.
-   @endparblock
-
-   @param[out] bin_q3 Third quartile elevation in each bin
-   @parblock
-   A pointer to a `float` array of size `n_bins`, or NULL to skip
-
-   Contains the 75th percentile elevation in meters for each bin.
-   @endparblock
-
-   @param[in] percentile_list List of percentiles to compute
-   @parblock
-   A pointer to an `int` array containing percentile values (0-100), or NULL
-
-   Each value should be between 0 and 100. Pass NULL if no custom percentiles needed.
-   @endparblock
-
-   @param[in] n_percentiles Number of percentiles in percentile_list
-   @parblock
-   Number of elements in percentile_list. Ignored if percentile_list is NULL.
-   @endparblock
-
-   @param[out] bin_percentiles Custom percentiles for each bin
-   @parblock
-   A pointer to a `float` array of size `n_bins` x `n_percentiles`, or NULL
-
-   Layout: bin_percentiles[bin * n_percentiles + p] contains the p-th percentile
-   for the given bin. Both percentile_list and this must be non-NULL to compute.
-   @endparblock
-
-   @param[in] dem The input DEM
-   @parblock
-   A pointer to a `float` array of size `dims[0]` x `dims[1]`
-
-   NaN values in the DEM are ignored in statistics computation.
-   @endparblock
-
-   @param[in] track_i Track point coordinates in fast dimension
-   @parblock
-   A pointer to a `float` array of size `n_track_points`
-   @endparblock
-
-   @param[in] track_j Track point coordinates in slow dimension
-   @parblock
-   A pointer to a `float` array of size `n_track_points`
-   @endparblock
-
-   @param[in] n_track_points Number of points in the track (must be >= 2)
-
-   @param[in] dims The dimensions of the DEM arrays
-   @parblock
-   A pointer to a `ptrdiff_t` array of size 2
-   @endparblock
-
-   @param[in] cellsize Physical size of one pixel in meters
-
-   @param[in] half_width Half-width of the swath in meters
-   @parblock
-   Only pixels within this perpendicular distance from the track are included.
-   @endparblock
-
-   @param[in] bin_resolution Spacing between bin centers in meters
-
-   @param[in] n_bins Number of bins (use swath_compute_nbins to calculate)
-
-   @param[in] normalize Normalize elevations to track elevation
-   @parblock
-   If non-zero, elevations are normalized by subtracting the mean track
-   elevation before binning, then adding it back to the output. This
-   highlights relative elevation patterns perpendicular to the track.
-   @endparblock
+   @param[out] bin_distances Distance of each bin center from track (meters)
+   @param[out] bin_means Mean elevation per bin
+   @param[out] bin_stddevs Standard deviation per bin
+   @param[out] bin_mins Minimum elevation per bin
+   @param[out] bin_maxs Maximum elevation per bin
+   @param[out] bin_counts Pixel count per bin
+   @param[out] bin_medians Median per bin, or NULL
+   @param[out] bin_q1 25th percentile per bin, or NULL
+   @param[out] bin_q3 75th percentile per bin, or NULL
+   @param[in] percentile_list Custom percentiles (0-100), or NULL
+   @param[in] n_percentiles Number of percentiles
+   @param[out] bin_percentiles Custom percentile output (n_bins x n_percentiles), or NULL
+   @param[in] dem DEM array (dims[0]*dims[1])
+   @param[in] distance_from_track SIGNED distance map in meters (from swath_compute_distance_map)
+   @param[in] dims Grid dimensions [fast, slow]
+   @param[in] cellsize Cell size in meters
+   @param[in] half_width Swath half-width in meters
+   @param[in] bin_resolution Bin spacing in meters
+   @param[in] n_bins Number of bins (use swath_compute_nbins)
+   @param[in] normalize If nonzero, normalize elevations to track elevation
  */
 TOPOTOOLBOX_API
 void swath_transverse(float *bin_distances, float *bin_means,
@@ -2585,149 +2477,39 @@ void swath_transverse(float *bin_distances, float *bin_means,
                       ptrdiff_t *bin_counts, float *bin_medians, float *bin_q1,
                       float *bin_q3, const int *percentile_list,
                       ptrdiff_t n_percentiles, float *bin_percentiles,
-                      const float *dem, const float *track_i,
-                      const float *track_j, ptrdiff_t n_track_points,
+                      const float *dem, const float *distance_from_track,
                       ptrdiff_t dims[2], float cellsize, float half_width,
                       float bin_resolution, ptrdiff_t n_bins, int normalize);
-
 
 /**
    @brief Compute per-point swath profile along track
 
    @details
-   For each track point, computes statistics of DEM elevations within a
-   perpendicular swath at that point. This shows how the swath profile
-   changes along the track length.
+   For each track point, computes statistics of DEM elevations within its
+   perpendicular swath. Takes a pre-computed SIGNED distance map (meters).
 
-   This is useful for analyzing how valley depth, width, or asymmetry
-   varies along a river or ridge line.
-
-   @param[out] point_means Mean elevation for each track point
-   @parblock
-   A pointer to a `float` array of size `n_track_points`
-
-   Contains the mean elevation in meters of all pixels within the swath
-   at each track point.
-   @endparblock
-
-   @param[out] point_stddevs Standard deviation for each track point
-   @parblock
-   A pointer to a `float` array of size `n_track_points`
-
-   Contains the standard deviation of elevations in meters for each point's swath.
-   @endparblock
-
-   @param[out] point_mins Minimum elevation for each track point
-   @parblock
-   A pointer to a `float` array of size `n_track_points`
-
-   Contains the minimum elevation in meters within each point's swath.
-   @endparblock
-
-   @param[out] point_maxs Maximum elevation for each track point
-   @parblock
-   A pointer to a `float` array of size `n_track_points`
-
-   Contains the maximum elevation in meters within each point's swath.
-   @endparblock
-
-   @param[out] point_counts Number of pixels for each track point
-   @parblock
-   A pointer to a `ptrdiff_t` array of size `n_track_points`
-
-   Contains the count of valid pixels within each point's swath.
-   @endparblock
-
-   @param[out] point_medians Median elevation for each track point
-   @parblock
-   A pointer to a `float` array of size `n_track_points`, or NULL to skip
-
-   Contains the median (50th percentile) elevation in meters for each point.
-   @endparblock
-
-   @param[out] point_q1 First quartile elevation for each track point
-   @parblock
-   A pointer to a `float` array of size `n_track_points`, or NULL to skip
-
-   Contains the 25th percentile elevation in meters for each point.
-   @endparblock
-
-   @param[out] point_q3 Third quartile elevation for each track point
-   @parblock
-   A pointer to a `float` array of size `n_track_points`, or NULL to skip
-
-   Contains the 75th percentile elevation in meters for each point.
-   @endparblock
-
-   @param[in] percentile_list List of percentiles to compute
-   @parblock
-   A pointer to an `int` array containing percentile values (0-100), or NULL
-
-   Each value should be between 0 and 100. Pass NULL if no custom percentiles needed.
-   @endparblock
-
-   @param[in] n_percentiles Number of percentiles in percentile_list
-   @parblock
-   Number of elements in percentile_list. Ignored if percentile_list is NULL.
-   @endparblock
-
-   @param[out] point_percentiles Custom percentiles for each track point
-   @parblock
-   A pointer to a `float` array of size `n_track_points` x `n_percentiles`, or NULL
-
-   Layout: point_percentiles[point * n_percentiles + p] contains the p-th percentile
-   for the given point. Both percentile_list and this must be non-NULL to compute.
-   @endparblock
-
-   @param[in] dem The input DEM
-   @parblock
-   A pointer to a `float` array of size `dims[0]` x `dims[1]`
-   @endparblock
-
-   @param[in] track_i Track point coordinates in fast dimension
-   @parblock
-   A pointer to a `float` array of size `n_track_points`
-   @endparblock
-
-   @param[in] track_j Track point coordinates in slow dimension
-   @parblock
-   A pointer to a `float` array of size `n_track_points`
-   @endparblock
-
-   @param[in] n_track_points Number of points in the track (must be >= 2)
-
-   @param[in] dims The dimensions of the DEM arrays
-   @parblock
-   A pointer to a `ptrdiff_t` array of size 2
-   @endparblock
-
-   @param[in] cellsize Physical size of one pixel in meters
-
-   @param[in] half_width Half-width of the swath in meters
-   @parblock
-   Defines the perpendicular extent of the swath on each side of the track.
-   @endparblock
-
+   @param[out] point_means Mean elevation per track point
+   @param[out] point_stddevs Standard deviation per track point
+   @param[out] point_mins Minimum elevation per track point
+   @param[out] point_maxs Maximum elevation per track point
+   @param[out] point_counts Pixel count per track point
+   @param[out] point_medians Median per point, or NULL
+   @param[out] point_q1 25th percentile per point, or NULL
+   @param[out] point_q3 75th percentile per point, or NULL
+   @param[in] percentile_list Custom percentiles (0-100), or NULL
+   @param[in] n_percentiles Number of percentiles
+   @param[out] point_percentiles Custom percentile output, or NULL
+   @param[in] dem DEM array
+   @param[in] track_i Track coords fast dim (pixel space)
+   @param[in] track_j Track coords slow dim (pixel space)
+   @param[in] n_track_points Number of track vertices (>= 2)
+   @param[in] distance_from_track SIGNED distance map in meters
+   @param[in] dims Grid dimensions [fast, slow]
+   @param[in] cellsize Cell size in meters
+   @param[in] half_width Swath half-width in meters
    @param[in] binning_distance Along-track binning distance in meters
-   @parblock
-   For each track point, all track points within ±binning_distance (measured
-   along the track) form a local sub-track. Pixels are gathered using
-   perpendicular distance to this sub-track, same as the transverse method.
-
-   If binning_distance < cellsize: the sub-track reduces to a single
-   orthogonal line at the track point (minimal along-track extent).
-
-   If binning_distance >= cellsize: the sub-track covers a longer portion,
-   gathering more pixels and producing smoother statistics.
-   @endparblock
-
-   @param[in] exclude_extended_bin Clip bean-shaped lobes at sub-track endpoints
-   @parblock
-   If nonzero, pixels whose nearest projection lands exactly at a sub-track
-   endpoint are excluded, unless that endpoint is also a terminus of the full
-   track. This prevents the rounded lobes that form at sub-track boundaries
-   and produces clean perpendicular strips instead.
-   @endparblock
+   @param[in] exclude_extended_bin If nonzero, use tree march (no end caps);
+   if zero, use full bean (rounded caps at sub-track endpoints)
  */
 TOPOTOOLBOX_API
 void swath_longitudinal(float *point_means, float *point_stddevs,
@@ -2737,82 +2519,41 @@ void swath_longitudinal(float *point_means, float *point_stddevs,
                          const int *percentile_list, ptrdiff_t n_percentiles,
                          float *point_percentiles, const float *dem,
                          const float *track_i, const float *track_j,
-                         ptrdiff_t n_track_points, ptrdiff_t dims[2],
-                         float cellsize, float half_width,
-                         float binning_distance,
-                         int exclude_extended_bin);
+                         ptrdiff_t n_track_points,
+                         const float *distance_from_track,
+                         ptrdiff_t dims[2], float cellsize, float half_width,
+                         float binning_distance, int exclude_extended_bin);
 
 /**
-   @brief Get pixel coordinates associated with a single track point.
+   @brief Get pixel coordinates associated with a single track point
 
    @details
-   Uses the same sub-track + perpendicular distance logic as swath_longitudinal.
-   For the given track point, finds all grid pixels within half_width of the
-   local sub-track (defined by ±binning_distance along the track).
+   Takes a pre-computed SIGNED distance map (meters). For the given track
+   point, finds all grid pixels within half_width of the local sub-track.
 
-   Caller allocates pixels_i and pixels_j large enough (safe upper bound:
-   dims[0] * dims[1], though actual count will be much smaller). The function
-   returns the number of pixels written.
+   @param[out] pixels_i Fast-dim coordinates of associated pixels
+   @param[out] pixels_j Slow-dim coordinates of associated pixels
+   @param[in] track_i Track coords fast dim (pixel space)
+   @param[in] track_j Track coords slow dim (pixel space)
+   @param[in] n_track_points Number of track vertices (>= 2)
+   @param[in] point_index Index of query point
+   @param[in] distance_from_track SIGNED distance map in meters
+   @param[in] dims Grid dimensions [fast, slow]
+   @param[in] cellsize Cell size in meters
+   @param[in] half_width Swath half-width in meters
+   @param[in] binning_distance Along-track binning distance in meters
+   @param[in] exclude_extended_bin If nonzero, tree march; if zero, full bean
 
-   @param[out] pixels_i Fast-dimension coordinates of associated pixels (node indices)
-   @param[out] pixels_j Slow-dimension coordinates of associated pixels (node indices)
-   @param[in] track_i Track point coordinates in fast dimension (pixel indices)
-   @param[in] track_j Track point coordinates in slow dimension (pixel indices)
-   @param[in] n_track_points Number of points in the track (must be >= 2)
-   @param[in] point_index Index into track_i/track_j for the query point
-   @param[in] dims Dimensions of the DEM grid (pixel counts)
-   @param[in] cellsize Physical size of one pixel (meters/pixel)
-   @param[in] half_width Perpendicular half-width of the swath (meters)
-   @param[in] binning_distance Along-track binning distance (meters)
-   @param[in] exclude_extended_bin If nonzero, exclude pixels projecting
-   beyond sub-track endpoints (unless at full profile terminus)
-
-   @return Number of pixels written to pixels_i and pixels_j
+   @return Number of pixels written
  */
 TOPOTOOLBOX_API
 ptrdiff_t swath_get_point_pixels(ptrdiff_t *pixels_i, ptrdiff_t *pixels_j,
                                   const float *track_i, const float *track_j,
                                   ptrdiff_t n_track_points,
-                                  ptrdiff_t point_index, ptrdiff_t dims[2],
-                                  float cellsize, float half_width,
-                                  float binning_distance,
+                                  ptrdiff_t point_index,
+                                  const float *distance_from_track,
+                                  ptrdiff_t dims[2], float cellsize,
+                                  float half_width, float binning_distance,
                                   int exclude_extended_bin);
-
-/**
-   @brief Compute centre line and local width from boundary-inward distance
-
-   @details
-   Computes the swath mask (all pixels within half_width of the track), then
-   grows inward from the mask boundary using Dijkstra. Two passes are run:
-   one from the positive-side boundary (right of track) and one from the
-   negative-side boundary (left of track). The centre line is detected as the
-   ridge (local maxima) of the distance-from-boundary field. Width at each
-   centre-line pixel is the sum of distances from both sides' boundaries,
-   giving the real orthogonal-ish width of the swath.
-
-   Caller allocates centre_line_i, centre_line_j, and width with a safe upper
-   bound (dims[0] * dims[1], though actual count will be much smaller).
-
-   @param[out] centre_line_i Fast-dimension coordinates of centre-line pixels
-   @param[out] centre_line_j Slow-dimension coordinates of centre-line pixels
-   @param[out] width Local width at each centre-line pixel in meters
-   @param[out] dist_from_boundary Optional distance-from-boundary map
-   (dims[0]*dims[1] floats). NULL to skip.
-   @param[in] track_i Track coordinates in fast dimension (pixel space)
-   @param[in] track_j Track coordinates in slow dimension (pixel space)
-   @param[in] n_track_points Number of track vertices
-   @param[in] dims Grid dimensions [fast, slow]
-   @param[in] cellsize Grid cell size in meters
-   @param[in] half_width Half-width of the swath in meters
-
-   @return Number of centre-line pixels written
- */
-TOPOTOOLBOX_API
-ptrdiff_t swath_invert_distance_map(
-    float *centre_line_i, float *centre_line_j,
-    float *width, float *dist_from_boundary,
-    const float *track_i, const float *track_j,
-    ptrdiff_t n_track_points, ptrdiff_t dims[2],
-    float cellsize, float half_width);
 
 #endif  // TOPOTOOLBOX_H

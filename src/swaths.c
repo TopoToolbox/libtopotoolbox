@@ -492,6 +492,13 @@ cleanup:
   return count;
 }
 
+// Forward declaration
+static void boundary_dijkstra(
+    float *restrict dist_out,
+    const float *restrict best_abs,
+    const ptrdiff_t *seeds, ptrdiff_t n_seeds,
+    ptrdiff_t dims[2], float hw_px);
+
 // ============================================================================
 // Frontier-based Distance Map (Dijkstra from track, bounded by max_dist_px)
 // ============================================================================
@@ -515,7 +522,9 @@ static void frontier_distance_map(
     const float *restrict track_i,
     const float *restrict track_j,
     ptrdiff_t n_track_points, ptrdiff_t dims[2],
-    float max_dist_px) {
+    float max_dist_px,
+    const float *dem,
+    const int8_t *mask) {
   ptrdiff_t total = dims[0] * dims[1];
 
   // We always need best_abs for Dijkstra tracking
@@ -543,6 +552,8 @@ static void frontier_distance_map(
   #define TRY_PIXEL(pi, pj, seg_lo, seg_hi) do {                             \
     if ((pi) >= 0 && (pi) < dims[0] && (pj) >= 0 && (pj) < dims[1]) {       \
       ptrdiff_t _idx = (pj) * dims[0] + (pi);                                \
+      if (dem && isnan(dem[_idx])) break;                                      \
+      if (mask && !mask[_idx]) break;                                          \
       float _px = (float)(pi);                                                \
       float _py = (float)(pj);                                                \
       float _best_sd = 0.0f, _best_ad = FLT_MAX;                             \
@@ -632,43 +643,234 @@ ptrdiff_t swath_compute_nbins(float half_width, float bin_resolution) {
 }
 
 // ============================================================================
-// Distance Map (Public API)
+// Clipped Distance Map with Optional Centre-Line Inversion (Public API)
 // ============================================================================
 
 TOPOTOOLBOX_API
-void swath_distance_map(float *restrict distance,
-                        ptrdiff_t *restrict nearest_segment,
-                        const float *restrict track_i,
-                        const float *restrict track_j,
-                        ptrdiff_t n_track_points, ptrdiff_t dims[2],
-                        float cellsize) {
+ptrdiff_t swath_compute_distance_map(
+    float *restrict distance_from_track,
+    ptrdiff_t *restrict nearest_segment,
+    float *restrict dist_from_boundary,
+    float *restrict centre_line_i,
+    float *restrict centre_line_j,
+    float *restrict centre_width,
+    const float *restrict track_i,
+    const float *restrict track_j,
+    ptrdiff_t n_track_points,
+    ptrdiff_t dims[2],
+    float cellsize,
+    float half_width,
+    int compute_signed)
+{
   if (n_track_points < 2)
-    return;
+    return 0;
 
-  ptrdiff_t total_pixels = dims[0] * dims[1];
+  ptrdiff_t total = dims[0] * dims[1];
+  float hw_px = half_width / cellsize;
 
-  // Allocate temporary nearest_segment if caller doesn't want it
-  ptrdiff_t *temp_nearest = NULL;
-  int need_free = 0;
-  if (nearest_segment == NULL) {
-    temp_nearest = (ptrdiff_t *)malloc(total_pixels * sizeof(ptrdiff_t));
-    need_free = 1;
+  // Allocate internal pixel-unit arrays
+  float *best_abs = (float *)malloc(total * sizeof(float));
+  float *signed_dist_px = (float *)malloc(total * sizeof(float));
+
+  // Need nearest_seg for Dijkstra; share with caller if requested
+  ptrdiff_t *nseg = NULL;
+  int free_nseg = 0;
+  if (nearest_segment != NULL) {
+    nseg = nearest_segment;
   } else {
-    temp_nearest = nearest_segment;
+    nseg = (ptrdiff_t *)malloc(total * sizeof(ptrdiff_t));
+    free_nseg = 1;
   }
 
-  // Use frontier with no distance cutoff (process all pixels)
-  float *best_abs = (float *)malloc(total_pixels * sizeof(float));
-  frontier_distance_map(best_abs, distance, temp_nearest,
-                        track_i, track_j, n_track_points, dims, FLT_MAX);
+  frontier_distance_map(best_abs, signed_dist_px, nseg,
+                        track_i, track_j, n_track_points, dims, hw_px,
+                        NULL, NULL);
 
-  // Convert signed distance from pixels to meters
-  for (ptrdiff_t i = 0; i < total_pixels; i++) {
-    distance[i] *= cellsize;
+  // Fill distance_from_track output (meters)
+  for (ptrdiff_t i = 0; i < total; i++) {
+    if (best_abs[i] == FLT_MAX || best_abs[i] > hw_px) {
+      distance_from_track[i] = NAN;
+    } else if (compute_signed) {
+      distance_from_track[i] = signed_dist_px[i] * cellsize;
+    } else {
+      distance_from_track[i] = best_abs[i] * cellsize;
+    }
+  }
+
+  // Optional centre-line inversion
+  ptrdiff_t n_centre = 0;
+  int want_centre = (centre_line_i != NULL && centre_line_j != NULL &&
+                     centre_width != NULL);
+  int want_dfb = (dist_from_boundary != NULL);
+
+  if (want_centre || want_dfb) {
+    // Find boundary pixels, split by side
+    static const int dn_i[4] = {-1, 1, 0, 0};
+    static const int dn_j[4] = {0, 0, -1, 1};
+
+    ptrdiff_t pos_cap = 4096, neg_cap = 4096;
+    ptrdiff_t n_pos = 0, n_neg = 0;
+    ptrdiff_t *pos_seeds = (ptrdiff_t *)calloc(pos_cap, sizeof(ptrdiff_t));
+    ptrdiff_t *neg_seeds = (ptrdiff_t *)calloc(neg_cap, sizeof(ptrdiff_t));
+
+    for (ptrdiff_t idx = 0; idx < total; idx++) {
+      if (best_abs[idx] == FLT_MAX || best_abs[idx] > hw_px)
+        continue;
+
+      ptrdiff_t ci = idx % dims[0];
+      ptrdiff_t cj = idx / dims[0];
+      int is_boundary = 0;
+
+      for (int n = 0; n < 4; n++) {
+        ptrdiff_t ni = ci + dn_i[n];
+        ptrdiff_t nj = cj + dn_j[n];
+        if (ni < 0 || ni >= dims[0] || nj < 0 || nj >= dims[1]) {
+          is_boundary = 1; break;
+        }
+        ptrdiff_t nidx = nj * dims[0] + ni;
+        if (best_abs[nidx] == FLT_MAX || best_abs[nidx] > hw_px) {
+          is_boundary = 1; break;
+        }
+      }
+      if (!is_boundary) continue;
+
+      if (signed_dist_px[idx] >= 0.0f) {
+        if (n_pos >= pos_cap) {
+          pos_cap *= 2;
+          pos_seeds = (ptrdiff_t *)realloc(pos_seeds, pos_cap * sizeof(ptrdiff_t));
+        }
+        pos_seeds[n_pos++] = idx;
+      }
+      if (signed_dist_px[idx] <= 0.0f) {
+        if (n_neg >= neg_cap) {
+          neg_cap *= 2;
+          neg_seeds = (ptrdiff_t *)realloc(neg_seeds, neg_cap * sizeof(ptrdiff_t));
+        }
+        neg_seeds[n_neg++] = idx;
+      }
+    }
+
+    float *dist_pos = (float *)malloc(total * sizeof(float));
+    float *dist_neg = (float *)malloc(total * sizeof(float));
+    boundary_dijkstra(dist_pos, best_abs, pos_seeds, n_pos, dims, hw_px);
+    boundary_dijkstra(dist_neg, best_abs, neg_seeds, n_neg, dims, hw_px);
+    free(pos_seeds);
+    free(neg_seeds);
+
+    // Compute dfb = min(dist_pos, dist_neg)
+    float *dfb = dist_from_boundary;
+    int free_dfb = 0;
+    if (dfb == NULL) {
+      dfb = (float *)malloc(total * sizeof(float));
+      free_dfb = 1;
+    }
+    for (ptrdiff_t i = 0; i < total; i++) {
+      float dp = dist_pos[i], dn = dist_neg[i];
+      float mn = dp < dn ? dp : dn;
+      dfb[i] = (mn == FLT_MAX) ? NAN : mn * cellsize;
+    }
+
+    // Centre line: ridge detection on dfb (pixel-unit min for comparison)
+    if (want_centre) {
+      for (ptrdiff_t idx = 0; idx < total; idx++) {
+        if (best_abs[idx] == FLT_MAX || best_abs[idx] > hw_px)
+          continue;
+        float dp = dist_pos[idx], dn = dist_neg[idx];
+        float val = dp < dn ? dp : dn;  // pixel units for comparison
+        if (val == FLT_MAX || val == 0.0f)
+          continue;
+
+        ptrdiff_t ci = idx % dims[0];
+        ptrdiff_t cj = idx / dims[0];
+
+        int ridge_i = 0;
+        if (ci > 0 && ci < dims[0] - 1) {
+          float l = dist_pos[idx-1] < dist_neg[idx-1] ? dist_pos[idx-1] : dist_neg[idx-1];
+          float r = dist_pos[idx+1] < dist_neg[idx+1] ? dist_pos[idx+1] : dist_neg[idx+1];
+          if (val >= l && val >= r) ridge_i = 1;
+        }
+        int ridge_j = 0;
+        if (cj > 0 && cj < dims[1] - 1) {
+          ptrdiff_t u = idx - dims[0], d = idx + dims[0];
+          float uv = dist_pos[u] < dist_neg[u] ? dist_pos[u] : dist_neg[u];
+          float dv = dist_pos[d] < dist_neg[d] ? dist_pos[d] : dist_neg[d];
+          if (val >= uv && val >= dv) ridge_j = 1;
+        }
+        if (!ridge_i && !ridge_j) continue;
+
+        centre_line_i[n_centre] = (float)ci;
+        centre_line_j[n_centre] = (float)cj;
+        centre_width[n_centre] = (dp + dn) * cellsize;
+        n_centre++;
+      }
+    }
+
+    free(dist_pos);
+    free(dist_neg);
+    if (free_dfb) free(dfb);
   }
 
   free(best_abs);
-  if (need_free) free(temp_nearest);
+  free(signed_dist_px);
+  if (free_nseg) free(nseg);
+
+  return n_centre;
+}
+
+// ============================================================================
+// Full (Unclipped) Distance Map (Public API)
+// ============================================================================
+
+TOPOTOOLBOX_API
+void swath_compute_full_distance_map(
+    float *restrict distance,
+    ptrdiff_t *restrict nearest_segment,
+    const float *restrict track_i,
+    const float *restrict track_j,
+    ptrdiff_t n_track_points,
+    ptrdiff_t dims[2],
+    float cellsize,
+    const float *dem,
+    const int8_t *mask,
+    int compute_signed)
+{
+  if (n_track_points < 2)
+    return;
+
+  ptrdiff_t total = dims[0] * dims[1];
+
+  ptrdiff_t *nseg = NULL;
+  int free_nseg = 0;
+  if (nearest_segment != NULL) {
+    nseg = nearest_segment;
+  } else {
+    nseg = (ptrdiff_t *)malloc(total * sizeof(ptrdiff_t));
+    free_nseg = 1;
+  }
+
+  float *best_abs = (float *)malloc(total * sizeof(float));
+  float *signed_dist_px = NULL;
+  if (compute_signed) {
+    signed_dist_px = (float *)malloc(total * sizeof(float));
+  }
+
+  frontier_distance_map(best_abs, signed_dist_px, nseg,
+                        track_i, track_j, n_track_points, dims, FLT_MAX,
+                        dem, mask);
+
+  for (ptrdiff_t i = 0; i < total; i++) {
+    if (best_abs[i] == FLT_MAX) {
+      distance[i] = NAN;
+    } else if (compute_signed && signed_dist_px) {
+      distance[i] = signed_dist_px[i] * cellsize;
+    } else {
+      distance[i] = best_abs[i] * cellsize;
+    }
+  }
+
+  free(best_abs);
+  if (signed_dist_px) free(signed_dist_px);
+  if (free_nseg) free(nseg);
 }
 
 // ============================================================================
@@ -683,15 +885,15 @@ void swath_transverse(
     float *restrict bin_medians, float *restrict bin_q1,
     float *restrict bin_q3, const int *restrict percentile_list,
     ptrdiff_t n_percentiles, float *restrict bin_percentiles,
-    const float *restrict dem, const float *restrict track_i,
-    const float *restrict track_j, ptrdiff_t n_track_points, ptrdiff_t dims[2],
+    const float *restrict dem,
+    const float *restrict distance_from_track,
+    ptrdiff_t dims[2],
     float cellsize, float half_width, float bin_resolution, ptrdiff_t n_bins,
     int normalize) {
-  if (n_track_points < 2 || n_bins <= 0)
+  if (n_bins <= 0)
     return;
 
   ptrdiff_t total_pixels = dims[0] * dims[1];
-  float hw_px = half_width / cellsize;
 
   int compute_percentiles =
       (bin_medians != NULL || bin_q1 != NULL || bin_q3 != NULL ||
@@ -710,32 +912,26 @@ void swath_transverse(
       percentile_accumulator_init(&p_accumulators[b], 64);
   }
 
-  // Frontier expansion bounded by half_width
-  float *best_abs = (float *)malloc(total_pixels * sizeof(float));
-  float *signed_dist_px = (float *)malloc(total_pixels * sizeof(float));
-  frontier_distance_map(best_abs, signed_dist_px, NULL,
-                        track_i, track_j, n_track_points, dims, hw_px);
-
   // Normalization: mean elevation near track center
   float reference_elevation = 0.0f;
   if (normalize) {
     swath_stats_accumulator track_acc;
     accumulator_init(&track_acc);
-    float bin_res_px = bin_resolution / cellsize;
     for (ptrdiff_t idx = 0; idx < total_pixels; idx++) {
-      if (best_abs[idx] <= bin_res_px) {
+      if (isnan(distance_from_track[idx])) continue;
+      if (fabsf(distance_from_track[idx]) <= bin_resolution) {
         accumulator_add(&track_acc, dem[idx]);
       }
     }
     reference_elevation = accumulator_mean(&track_acc);
   }
 
-  // Bin pixels by signed perpendicular distance
+  // Bin pixels by signed perpendicular distance (input is in meters)
   for (ptrdiff_t idx = 0; idx < total_pixels; idx++) {
-    if (best_abs[idx] > hw_px) continue;  // unvisited or outside
+    float dist_m = distance_from_track[idx];
+    if (isnan(dist_m)) continue;
+    if (fabsf(dist_m) > half_width) continue;
     if (isnan(dem[idx])) continue;
-
-    float dist_m = signed_dist_px[idx] * cellsize;
 
     ptrdiff_t bin_idx =
         (ptrdiff_t)((dist_m + half_width) / bin_resolution + 0.5f);
@@ -750,9 +946,6 @@ void swath_transverse(
       percentile_accumulator_add(&p_accumulators[bin_idx], value);
     }
   }
-
-  free(best_abs);
-  free(signed_dist_px);
 
   // Percentiles
   if (compute_percentiles) {
@@ -854,7 +1047,9 @@ void swath_longitudinal(
     const int *restrict percentile_list, ptrdiff_t n_percentiles,
     float *restrict point_percentiles, const float *restrict dem,
     const float *restrict track_i, const float *restrict track_j,
-    ptrdiff_t n_track_points, ptrdiff_t dims[2], float cellsize,
+    ptrdiff_t n_track_points,
+    const float *restrict distance_from_track,
+    ptrdiff_t dims[2], float cellsize,
     float half_width, float binning_distance,
     int exclude_extended_bin) {
   if (n_track_points < 2)
@@ -868,13 +1063,18 @@ void swath_longitudinal(
        (percentile_list != NULL && n_percentiles > 0 &&
         point_percentiles != NULL));
 
-  // Step 1: Global frontier distance map bounded by half_width
-  // Need best_abs + signed_dist for tree march, nearest_seg for exclude check
+  // Convert input distance map (meters) to pixel-unit arrays for tree march
   float *best_abs = (float *)malloc(total_pixels * sizeof(float));
   float *signed_dist_map = (float *)malloc(total_pixels * sizeof(float));
-  ptrdiff_t *nearest_seg = (ptrdiff_t *)malloc(total_pixels * sizeof(ptrdiff_t));
-  frontier_distance_map(best_abs, signed_dist_map, nearest_seg,
-                        track_i, track_j, n_track_points, dims, hw_px);
+  for (ptrdiff_t i = 0; i < total_pixels; i++) {
+    if (isnan(distance_from_track[i])) {
+      best_abs[i] = FLT_MAX;
+      signed_dist_map[i] = 0.0f;
+    } else {
+      best_abs[i] = fabsf(distance_from_track[i]) / cellsize;
+      signed_dist_map[i] = distance_from_track[i] / cellsize;
+    }
+  }
 
   // Step 2: Cumulative along-track distance (meters)
   float *cum_dist = (float *)malloc(n_track_points * sizeof(float));
@@ -1062,7 +1262,6 @@ void swath_longitudinal(
   // Cleanup
   free(best_abs);
   free(signed_dist_map);
-  free(nearest_seg);
   free(cum_dist);
   free(accumulators);
   if (compute_percentiles) {
@@ -1084,7 +1283,9 @@ TOPOTOOLBOX_API
 ptrdiff_t swath_get_point_pixels(
     ptrdiff_t *restrict pixels_i, ptrdiff_t *restrict pixels_j,
     const float *restrict track_i, const float *restrict track_j,
-    ptrdiff_t n_track_points, ptrdiff_t point_index, ptrdiff_t dims[2],
+    ptrdiff_t n_track_points, ptrdiff_t point_index,
+    const float *restrict distance_from_track,
+    ptrdiff_t dims[2],
     float cellsize, float half_width, float binning_distance,
     int exclude_extended_bin) {
   if (n_track_points < 2)
@@ -1095,12 +1296,18 @@ ptrdiff_t swath_get_point_pixels(
   ptrdiff_t total_pixels = dims[0] * dims[1];
   float hw_px = half_width / cellsize;
 
-  // Global distance map (nearest_seg is required for correct Dijkstra expansion)
+  // Convert input distance map (meters) to pixel-unit arrays for tree march
   float *best_abs = (float *)malloc(total_pixels * sizeof(float));
   float *signed_dist_map = (float *)malloc(total_pixels * sizeof(float));
-  ptrdiff_t *nearest_seg = (ptrdiff_t *)malloc(total_pixels * sizeof(ptrdiff_t));
-  frontier_distance_map(best_abs, signed_dist_map, nearest_seg,
-                        track_i, track_j, n_track_points, dims, hw_px);
+  for (ptrdiff_t i = 0; i < total_pixels; i++) {
+    if (isnan(distance_from_track[i])) {
+      best_abs[i] = FLT_MAX;
+      signed_dist_map[i] = 0.0f;
+    } else {
+      best_abs[i] = fabsf(distance_from_track[i]) / cellsize;
+      signed_dist_map[i] = distance_from_track[i] / cellsize;
+    }
+  }
 
   // Cumulative along-track distance for segment range
   float *cum_dist = (float *)malloc(n_track_points * sizeof(float));
@@ -1237,7 +1444,6 @@ ptrdiff_t swath_get_point_pixels(
   free(seed_buf);
   free(best_abs);
   free(signed_dist_map);
-  free(nearest_seg);
   free(cum_dist);
   return n_pixels;
 }
@@ -1312,152 +1518,4 @@ static void boundary_dijkstra(
   heap_free(&heap);
 }
 
-TOPOTOOLBOX_API
-ptrdiff_t swath_invert_distance_map(
-    float *restrict centre_line_i,
-    float *restrict centre_line_j,
-    float *restrict width,
-    float *restrict dist_from_boundary_out,
-    const float *restrict track_i,
-    const float *restrict track_j,
-    ptrdiff_t n_track_points,
-    ptrdiff_t dims[2],
-    float cellsize,
-    float half_width)
-{
-  if (n_track_points < 2)
-    return 0;
-
-  ptrdiff_t total = dims[0] * dims[1];
-  float hw_px = half_width / cellsize;
-
-  // Step 1: Global distance map
-  float *best_abs = (float *)malloc(total * sizeof(float));
-  float *signed_dist = (float *)malloc(total * sizeof(float));
-  frontier_distance_map(best_abs, signed_dist, NULL,
-                        track_i, track_j, n_track_points, dims, hw_px);
-
-  // Step 2: Find boundary pixels and split by side
-  // A boundary pixel is inside the mask but has a D4 neighbour outside
-  static const int dn_i[4] = {-1, 1, 0, 0};
-  static const int dn_j[4] = {0, 0, -1, 1};
-
-  ptrdiff_t pos_cap = 4096, neg_cap = 4096;
-  ptrdiff_t n_pos = 0, n_neg = 0;
-  ptrdiff_t *pos_seeds = (ptrdiff_t *)calloc(pos_cap, sizeof(ptrdiff_t));
-  ptrdiff_t *neg_seeds = (ptrdiff_t *)calloc(neg_cap, sizeof(ptrdiff_t));
-
-  for (ptrdiff_t idx = 0; idx < total; idx++) {
-    if (best_abs[idx] == FLT_MAX || best_abs[idx] > hw_px)
-      continue;
-
-    ptrdiff_t ci = idx % dims[0];
-    ptrdiff_t cj = idx / dims[0];
-    int is_boundary = 0;
-
-    for (int n = 0; n < 4; n++) {
-      ptrdiff_t ni = ci + dn_i[n];
-      ptrdiff_t nj = cj + dn_j[n];
-      if (ni < 0 || ni >= dims[0] || nj < 0 || nj >= dims[1]) {
-        is_boundary = 1;
-        break;
-      }
-      ptrdiff_t nidx = nj * dims[0] + ni;
-      if (best_abs[nidx] == FLT_MAX || best_abs[nidx] > hw_px) {
-        is_boundary = 1;
-        break;
-      }
-    }
-
-    if (!is_boundary) continue;
-
-    if (signed_dist[idx] >= 0.0f) {
-      if (n_pos >= pos_cap) {
-        pos_cap *= 2;
-        pos_seeds = (ptrdiff_t *)realloc(pos_seeds, pos_cap * sizeof(ptrdiff_t));
-      }
-      pos_seeds[n_pos++] = idx;
-    }
-    if (signed_dist[idx] <= 0.0f) {
-      if (n_neg >= neg_cap) {
-        neg_cap *= 2;
-        neg_seeds = (ptrdiff_t *)realloc(neg_seeds, neg_cap * sizeof(ptrdiff_t));
-      }
-      neg_seeds[n_neg++] = idx;
-    }
-  }
-
-  // Step 3: Dijkstra from positive-side boundary
-  float *dist_pos = (float *)malloc(total * sizeof(float));
-  boundary_dijkstra(dist_pos, best_abs, pos_seeds, n_pos, dims, hw_px);
-
-  // Step 4: Dijkstra from negative-side boundary
-  float *dist_neg = (float *)malloc(total * sizeof(float));
-  boundary_dijkstra(dist_neg, best_abs, neg_seeds, n_neg, dims, hw_px);
-
-  free(pos_seeds);
-  free(neg_seeds);
-
-  // Step 5: Compute combined distance-from-boundary = min(dist_pos, dist_neg)
-  // and extract centre line via ridge detection
-  float *dfb = dist_from_boundary_out;
-  int free_dfb = 0;
-  if (dfb == NULL) {
-    dfb = (float *)malloc(total * sizeof(float));
-    free_dfb = 1;
-  }
-
-  for (ptrdiff_t idx = 0; idx < total; idx++) {
-    dfb[idx] = dist_pos[idx] < dist_neg[idx] ? dist_pos[idx] : dist_neg[idx];
-  }
-
-  // Centre line: ridge of dfb — local maxima in at least 2 opposing D4
-  // directions (i.e., value >= both neighbours along at least one axis)
-  ptrdiff_t count = 0;
-  for (ptrdiff_t idx = 0; idx < total; idx++) {
-    if (best_abs[idx] == FLT_MAX || best_abs[idx] > hw_px)
-      continue;
-    if (dfb[idx] == FLT_MAX || dfb[idx] == 0.0f)
-      continue;
-
-    ptrdiff_t ci = idx % dims[0];
-    ptrdiff_t cj = idx / dims[0];
-    float val = dfb[idx];
-
-    // Check if ridge along i-axis (left-right)
-    int ridge_i = 0;
-    if (ci > 0 && ci < dims[0] - 1) {
-      float left = dfb[idx - 1];
-      float right = dfb[idx + 1];
-      if (val >= left && val >= right)
-        ridge_i = 1;
-    }
-
-    // Check if ridge along j-axis (up-down)
-    int ridge_j = 0;
-    if (cj > 0 && cj < dims[1] - 1) {
-      float up = dfb[idx - dims[0]];
-      float down = dfb[idx + dims[0]];
-      if (val >= up && val >= down)
-        ridge_j = 1;
-    }
-
-    if (!ridge_i && !ridge_j)
-      continue;
-
-    // This pixel is on the centre line
-    centre_line_i[count] = (float)ci;
-    centre_line_j[count] = (float)cj;
-    width[count] = (dist_pos[idx] + dist_neg[idx]) * cellsize;
-    count++;
-  }
-
-  // Cleanup
-  free(dist_pos);
-  free(dist_neg);
-  free(best_abs);
-  free(signed_dist);
-  if (free_dfb) free(dfb);
-
-  return count;
-}
+// swath_invert_distance_map removed — logic now in swath_compute_distance_map
