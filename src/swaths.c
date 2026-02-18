@@ -807,23 +807,38 @@ static void compute_local_tangent(
 
   float tang_i, tang_j;
 
-  // Check for degeneracy: with quantised (integer) track coordinates on a
-  // near-axis-aligned track, a small window can have cov_ij ≈ 0 because the
-  // cross-axis variation is less than 1 pixel. PCA then snaps the tangent
-  // to a grid axis. Detect this and fall back to endpoint direction with
-  // progressive expansion.
-  float total_var = cov_ii + cov_jj;
-  int degenerate = (total_var <= 0.0f ||
-                    fabsf(cov_ij) < 0.01f * total_var);
+  // Principal eigenvector of the 2x2 covariance matrix [[a, b], [b, c]]
+  // via direct algebraic formula (no atan2/trig, avoids quadrant issues).
+  //
+  // λ_max = (a + c + D) / 2  where D = sqrt((a-c)² + 4b²)
+  // Eigenvector for λ_max: proportional to (2b, c - a + D)
+  //   or equivalently (a - c + D, 2b) when c < a.
+  //
+  // Falls back to endpoint direction when the covariance is degenerate
+  // (quantised/integer track coordinates with < 1 pixel cross-axis variation).
 
-  if (!degenerate) {
-    // PCA: principal eigenvector of 2x2 symmetric matrix (closed-form)
-    float theta = 0.5f * atan2f(2.0f * cov_ij, cov_ii - cov_jj);
-    tang_i = cosf(theta);
-    tang_j = sinf(theta);
+  float diff = cov_ii - cov_jj;
+  float D = sqrtf(diff * diff + 4.0f * cov_ij * cov_ij);
+  float vi, vj;
+
+  if (cov_ii >= cov_jj) {
+    // Use form (a - c + D, 2b) — stable when cov_ii >= cov_jj
+    vi = diff + D;
+    vj = 2.0f * cov_ij;
   } else {
-    // Fall back: direction between endpoints, expanding until both axes
-    // show meaningful variation (at least ~2 pixels in each non-zero axis).
+    // Use form (2b, c - a + D) — stable when cov_jj > cov_ii
+    vi = 2.0f * cov_ij;
+    vj = -diff + D;
+  }
+
+  float vlen = sqrtf(vi * vi + vj * vj);
+
+  if (vlen > 1e-10f) {
+    tang_i = vi / vlen;
+    tang_j = vj / vlen;
+  } else {
+    // Degenerate: cov_ij ≈ 0 and cov_ii ≈ cov_jj (or both ≈ 0).
+    // Fall back to endpoint direction, expanding window until resolved.
     tang_i = 0.0f;
     tang_j = 0.0f;
     ptrdiff_t lo = win_lo, hi = win_hi;
@@ -832,8 +847,6 @@ static void compute_local_tangent(
       float dj = track_j[hi] - track_j[lo];
       float len = sqrtf(di * di + dj * dj);
 
-      // Accept when both axes have resolved (the minor axis has at least
-      // ~2 pixels of change relative to the major), or we can't expand more
       if (len > 0.5f) {
         float minor = (fabsf(di) < fabsf(dj)) ? fabsf(di) : fabsf(dj);
         if (minor >= 2.0f || (lo == 0 && hi == n_track_points - 1)) {
@@ -843,7 +856,6 @@ static void compute_local_tangent(
         }
       }
 
-      // Can't expand further
       if (lo == 0 && hi == n_track_points - 1) {
         if (len > 0.0f) {
           tang_i = di / len;
@@ -855,7 +867,6 @@ static void compute_local_tangent(
         break;
       }
 
-      // Expand window
       if (lo > 0) lo--;
       if (hi < n_track_points - 1) hi++;
     }
@@ -910,7 +921,8 @@ void swath_longitudinal(
     const float *restrict distance_from_track,
     ptrdiff_t dims[2], float cellsize,
     float half_width, float binning_distance,
-    ptrdiff_t n_points_regression) {
+    ptrdiff_t n_points_regression,
+    ptrdiff_t n_internal_cuts) {
   if (n_track_points < 2)
     return;
 
@@ -985,7 +997,12 @@ void swath_longitudinal(
           percentile_accumulator_add(&p_accumulators[pt], dem[idx]);
       }
     } else {
-      // --- Case 2: bounding box between edge orthogonals ---
+      // --- Case 2: regression rectangle on binning window ---
+      //
+      // Linear regression (PCA) on all track points in [pt_lo..pt_hi]
+      // gives one tangent direction. Build one oriented rectangle along
+      // that direction. Pixel is selected if inside the rectangle AND
+      // within the distance map band.
 
       // Find edge track points of the binning window
       ptrdiff_t pt_lo = pt, pt_hi = pt;
@@ -996,53 +1013,93 @@ void swath_longitudinal(
              cum_dist[pt_hi + 1] - cum_dist[pt] <= binning_distance)
         pt_hi++;
 
-      // Robust tangent from pt_lo to pt_hi for the along-track filter.
-      // This uses a long baseline (binning_distance), so it's immune to
-      // coordinate quantisation artifacts that afflict small PCA windows.
-      float robust_ti = track_i[pt_hi] - track_i[pt_lo];
-      float robust_tj = track_j[pt_hi] - track_j[pt_lo];
-      float robust_len = sqrtf(robust_ti * robust_ti + robust_tj * robust_tj);
-      if (robust_len > 0.0f) {
-        robust_ti /= robust_len;
-        robust_tj /= robust_len;
-      } else {
-        // Degenerate (all track points identical), use PCA tangent
-        robust_ti = tang_i;
-        robust_tj = tang_j;
+      // PCA on track points [pt_lo..pt_hi]
+      ptrdiff_t nw = pt_hi - pt_lo + 1;
+      float mean_i = 0, mean_j = 0;
+      for (ptrdiff_t k = pt_lo; k <= pt_hi; k++) {
+        mean_i += track_i[k];
+        mean_j += track_j[k];
+      }
+      mean_i /= (float)nw;
+      mean_j /= (float)nw;
+
+      float cov_ii = 0, cov_ij = 0, cov_jj = 0;
+      for (ptrdiff_t k = pt_lo; k <= pt_hi; k++) {
+        float di = track_i[k] - mean_i;
+        float dj = track_j[k] - mean_j;
+        cov_ii += di * di;
+        cov_ij += di * dj;
+        cov_jj += dj * dj;
       }
 
-      // Orthogonal from the robust tangent (for bounding box corners)
-      float robust_oi = -robust_tj;
-      float robust_oj = robust_ti;
+      // Principal eigenvector (tangent direction)
+      float diff = cov_ii - cov_jj;
+      float D = sqrtf(diff * diff + 4.0f * cov_ij * cov_ij);
+      float reg_ti, reg_tj;
+      if (cov_ii >= cov_jj) {
+        reg_ti = diff + D;
+        reg_tj = 2.0f * cov_ij;
+      } else {
+        reg_ti = 2.0f * cov_ij;
+        reg_tj = -diff + D;
+      }
+      float vlen = sqrtf(reg_ti * reg_ti + reg_tj * reg_tj);
+      if (vlen > 1e-10f) {
+        reg_ti /= vlen;
+        reg_tj /= vlen;
+      } else {
+        // Degenerate: fall back to endpoint direction
+        reg_ti = track_i[pt_hi] - track_i[pt_lo];
+        reg_tj = track_j[pt_hi] - track_j[pt_lo];
+        vlen = sqrtf(reg_ti * reg_ti + reg_tj * reg_tj);
+        if (vlen > 0) { reg_ti /= vlen; reg_tj /= vlen; }
+        else { reg_ti = 1; reg_tj = 0; }
+      }
 
-      // 4 corner points of the bounding quadrilateral
-      float c0_i = track_i[pt_lo] - robust_oi * hw_px;
-      float c0_j = track_j[pt_lo] - robust_oj * hw_px;
-      float c1_i = track_i[pt_lo] + robust_oi * hw_px;
-      float c1_j = track_j[pt_lo] + robust_oj * hw_px;
-      float c2_i = track_i[pt_hi] - robust_oi * hw_px;
-      float c2_j = track_j[pt_hi] - robust_oj * hw_px;
-      float c3_i = track_i[pt_hi] + robust_oi * hw_px;
-      float c3_j = track_j[pt_hi] + robust_oj * hw_px;
+      // Orient consistently with track direction
+      float fwd_i = track_i[pt_hi] - track_i[pt_lo];
+      float fwd_j = track_j[pt_hi] - track_j[pt_lo];
+      if (fwd_i * reg_ti + fwd_j * reg_tj < 0) {
+        reg_ti = -reg_ti;
+        reg_tj = -reg_tj;
+      }
 
-      // Axis-aligned bounding box of corners + track points in window
-      float bb_i0 = c0_i, bb_i1 = c0_i, bb_j0 = c0_j, bb_j1 = c0_j;
+      float reg_oi = -reg_tj, reg_oj = reg_ti;  // orthogonal
+
+      // Project all window track points onto tangent to get along-track extent
+      float along_min = 0, along_max = 0;
+      for (ptrdiff_t k = pt_lo; k <= pt_hi; k++) {
+        float d = (track_i[k] - mean_i) * reg_ti +
+                  (track_j[k] - mean_j) * reg_tj;
+        if (d < along_min) along_min = d;
+        if (d > along_max) along_max = d;
+      }
+      // Small buffer for edge pixels
+      along_min -= 1.0f;
+      along_max += 1.0f;
+
+      // Rectangle corners (centered on mean, along tangent, ±hw_px orthogonal)
+      float c0_i = mean_i + reg_ti * along_min + reg_oi * hw_px;
+      float c0_j = mean_j + reg_tj * along_min + reg_oj * hw_px;
+      float c1_i = mean_i + reg_ti * along_max + reg_oi * hw_px;
+      float c1_j = mean_j + reg_tj * along_max + reg_oj * hw_px;
+      float c2_i = mean_i + reg_ti * along_max - reg_oi * hw_px;
+      float c2_j = mean_j + reg_tj * along_max - reg_oj * hw_px;
+      float c3_i = mean_i + reg_ti * along_min - reg_oi * hw_px;
+      float c3_j = mean_j + reg_tj * along_min - reg_oj * hw_px;
+
+      // Axis-aligned bounding box of the 4 corners
       float corners_i[4] = {c0_i, c1_i, c2_i, c3_i};
       float corners_j[4] = {c0_j, c1_j, c2_j, c3_j};
+      float bb_i0 = corners_i[0], bb_i1 = corners_i[0];
+      float bb_j0 = corners_j[0], bb_j1 = corners_j[0];
       for (int c = 1; c < 4; c++) {
         if (corners_i[c] < bb_i0) bb_i0 = corners_i[c];
         if (corners_i[c] > bb_i1) bb_i1 = corners_i[c];
         if (corners_j[c] < bb_j0) bb_j0 = corners_j[c];
         if (corners_j[c] > bb_j1) bb_j1 = corners_j[c];
       }
-      for (ptrdiff_t k = pt_lo; k <= pt_hi; k++) {
-        if (track_i[k] < bb_i0) bb_i0 = track_i[k];
-        if (track_i[k] > bb_i1) bb_i1 = track_i[k];
-        if (track_j[k] < bb_j0) bb_j0 = track_j[k];
-        if (track_j[k] > bb_j1) bb_j1 = track_j[k];
-      }
 
-      // Clamp to grid
       ptrdiff_t i0 = (ptrdiff_t)bb_i0 - 1;
       ptrdiff_t i1 = (ptrdiff_t)bb_i1 + 2;
       ptrdiff_t j0 = (ptrdiff_t)bb_j0 - 1;
@@ -1052,8 +1109,6 @@ void swath_longitudinal(
       if (i1 >= dims[0]) i1 = dims[0] - 1;
       if (j1 >= dims[1]) j1 = dims[1] - 1;
 
-      float bd_px = binning_distance / cellsize;
-
       for (ptrdiff_t pj = j0; pj <= j1; pj++) {
         for (ptrdiff_t pi = i0; pi <= i1; pi++) {
           ptrdiff_t idx = pj * dims[0] + pi;
@@ -1062,12 +1117,13 @@ void swath_longitudinal(
           if (fabsf(dist_m) > half_width) continue;
           if (isnan(dem[idx])) continue;
 
-          // Check pixel is between the two edge orthogonals:
-          // project onto robust tangent at pt, check within ±bd_px
-          float dpi = (float)pi - track_i[pt];
-          float dpj = (float)pj - track_j[pt];
-          float along = dpi * robust_ti + dpj * robust_tj;
-          if (along < -bd_px || along > bd_px) continue;
+          // Oriented rectangle check: project onto tangent and orthogonal
+          float di = (float)pi - mean_i;
+          float dj = (float)pj - mean_j;
+          float along = di * reg_ti + dj * reg_tj;
+          float across = di * reg_oi + dj * reg_oj;
+          if (along < along_min || along > along_max) continue;
+          if (across < -hw_px || across > hw_px) continue;
 
           accumulator_add(&accumulators[pt], dem[idx]);
           if (compute_percentiles)
@@ -1134,7 +1190,8 @@ ptrdiff_t swath_get_point_pixels(
     const float *restrict distance_from_track,
     ptrdiff_t dims[2],
     float cellsize, float half_width, float binning_distance,
-    ptrdiff_t n_points_regression) {
+    ptrdiff_t n_points_regression,
+    ptrdiff_t n_internal_cuts) {
   if (n_track_points < 2)
     return 0;
   if (point_index < 0 || point_index >= n_track_points)
@@ -1178,7 +1235,7 @@ ptrdiff_t swath_get_point_pixels(
     free(bres_i);
     free(bres_j);
   } else {
-    // --- Case 2: bounding box between edge orthogonals ---
+    // --- Case 2: regression rectangle on binning window ---
 
     // Cumulative along-track distance
     float *cum_dist = (float *)malloc(n_track_points * sizeof(float));
@@ -1198,47 +1255,86 @@ ptrdiff_t swath_get_point_pixels(
            cum_dist[pt_hi + 1] - cum_dist[point_index] <= binning_distance)
       pt_hi++;
 
-    // Robust tangent from pt_lo to pt_hi for the along-track filter.
-    float robust_ti = track_i[pt_hi] - track_i[pt_lo];
-    float robust_tj = track_j[pt_hi] - track_j[pt_lo];
-    float robust_len = sqrtf(robust_ti * robust_ti + robust_tj * robust_tj);
-    if (robust_len > 0.0f) {
-      robust_ti /= robust_len;
-      robust_tj /= robust_len;
-    } else {
-      robust_ti = tang_i;
-      robust_tj = tang_j;
+    // PCA on track points [pt_lo..pt_hi]
+    ptrdiff_t nw = pt_hi - pt_lo + 1;
+    float mean_i = 0, mean_j = 0;
+    for (ptrdiff_t k = pt_lo; k <= pt_hi; k++) {
+      mean_i += track_i[k];
+      mean_j += track_j[k];
+    }
+    mean_i /= (float)nw;
+    mean_j /= (float)nw;
+
+    float cov_ii = 0, cov_ij = 0, cov_jj = 0;
+    for (ptrdiff_t k = pt_lo; k <= pt_hi; k++) {
+      float di = track_i[k] - mean_i;
+      float dj = track_j[k] - mean_j;
+      cov_ii += di * di;
+      cov_ij += di * dj;
+      cov_jj += dj * dj;
     }
 
-    // Orthogonal from the robust tangent (for bounding box corners)
-    float robust_oi = -robust_tj;
-    float robust_oj = robust_ti;
+    float diff = cov_ii - cov_jj;
+    float D = sqrtf(diff * diff + 4.0f * cov_ij * cov_ij);
+    float reg_ti, reg_tj;
+    if (cov_ii >= cov_jj) {
+      reg_ti = diff + D;
+      reg_tj = 2.0f * cov_ij;
+    } else {
+      reg_ti = 2.0f * cov_ij;
+      reg_tj = -diff + D;
+    }
+    float vlen = sqrtf(reg_ti * reg_ti + reg_tj * reg_tj);
+    if (vlen > 1e-10f) {
+      reg_ti /= vlen;
+      reg_tj /= vlen;
+    } else {
+      reg_ti = track_i[pt_hi] - track_i[pt_lo];
+      reg_tj = track_j[pt_hi] - track_j[pt_lo];
+      vlen = sqrtf(reg_ti * reg_ti + reg_tj * reg_tj);
+      if (vlen > 0) { reg_ti /= vlen; reg_tj /= vlen; }
+      else { reg_ti = 1; reg_tj = 0; }
+    }
 
-    // 4 corner points
-    float c0_i = track_i[pt_lo] - robust_oi * hw_px;
-    float c0_j = track_j[pt_lo] - robust_oj * hw_px;
-    float c1_i = track_i[pt_lo] + robust_oi * hw_px;
-    float c1_j = track_j[pt_lo] + robust_oj * hw_px;
-    float c2_i = track_i[pt_hi] - robust_oi * hw_px;
-    float c2_j = track_j[pt_hi] - robust_oj * hw_px;
-    float c3_i = track_i[pt_hi] + robust_oi * hw_px;
-    float c3_j = track_j[pt_hi] + robust_oj * hw_px;
+    float fwd_i = track_i[pt_hi] - track_i[pt_lo];
+    float fwd_j = track_j[pt_hi] - track_j[pt_lo];
+    if (fwd_i * reg_ti + fwd_j * reg_tj < 0) {
+      reg_ti = -reg_ti;
+      reg_tj = -reg_tj;
+    }
 
-    // Axis-aligned bounding box
-    float bb_i0 = c0_i, bb_i1 = c0_i, bb_j0 = c0_j, bb_j1 = c0_j;
+    float reg_oi = -reg_tj, reg_oj = reg_ti;
+
+    // Project all window track points onto tangent to get along-track extent
+    float along_min = 0, along_max = 0;
+    for (ptrdiff_t k = pt_lo; k <= pt_hi; k++) {
+      float d = (track_i[k] - mean_i) * reg_ti +
+                (track_j[k] - mean_j) * reg_tj;
+      if (d < along_min) along_min = d;
+      if (d > along_max) along_max = d;
+    }
+    along_min -= 1.0f;
+    along_max += 1.0f;
+
+    // Rectangle corners
+    float c0_i = mean_i + reg_ti * along_min + reg_oi * hw_px;
+    float c0_j = mean_j + reg_tj * along_min + reg_oj * hw_px;
+    float c1_i = mean_i + reg_ti * along_max + reg_oi * hw_px;
+    float c1_j = mean_j + reg_tj * along_max + reg_oj * hw_px;
+    float c2_i = mean_i + reg_ti * along_max - reg_oi * hw_px;
+    float c2_j = mean_j + reg_tj * along_max - reg_oj * hw_px;
+    float c3_i = mean_i + reg_ti * along_min - reg_oi * hw_px;
+    float c3_j = mean_j + reg_tj * along_min - reg_oj * hw_px;
+
     float corners_i[4] = {c0_i, c1_i, c2_i, c3_i};
     float corners_j[4] = {c0_j, c1_j, c2_j, c3_j};
+    float bb_i0 = corners_i[0], bb_i1 = corners_i[0];
+    float bb_j0 = corners_j[0], bb_j1 = corners_j[0];
     for (int c = 1; c < 4; c++) {
       if (corners_i[c] < bb_i0) bb_i0 = corners_i[c];
       if (corners_i[c] > bb_i1) bb_i1 = corners_i[c];
       if (corners_j[c] < bb_j0) bb_j0 = corners_j[c];
       if (corners_j[c] > bb_j1) bb_j1 = corners_j[c];
-    }
-    for (ptrdiff_t k = pt_lo; k <= pt_hi; k++) {
-      if (track_i[k] < bb_i0) bb_i0 = track_i[k];
-      if (track_i[k] > bb_i1) bb_i1 = track_i[k];
-      if (track_j[k] < bb_j0) bb_j0 = track_j[k];
-      if (track_j[k] > bb_j1) bb_j1 = track_j[k];
     }
 
     ptrdiff_t i0 = (ptrdiff_t)bb_i0 - 1;
@@ -1250,8 +1346,6 @@ ptrdiff_t swath_get_point_pixels(
     if (i1 >= dims[0]) i1 = dims[0] - 1;
     if (j1 >= dims[1]) j1 = dims[1] - 1;
 
-    float bd_px = binning_distance / cellsize;
-
     for (ptrdiff_t pj = j0; pj <= j1; pj++) {
       for (ptrdiff_t pi = i0; pi <= i1; pi++) {
         ptrdiff_t idx = pj * dims[0] + pi;
@@ -1259,11 +1353,12 @@ ptrdiff_t swath_get_point_pixels(
         if (isnan(dist_m)) continue;
         if (fabsf(dist_m) > half_width) continue;
 
-        // Check between edge orthogonals using robust tangent
-        float dpi = (float)pi - track_i[point_index];
-        float dpj = (float)pj - track_j[point_index];
-        float along = dpi * robust_ti + dpj * robust_tj;
-        if (along < -bd_px || along > bd_px) continue;
+        float di = (float)pi - mean_i;
+        float dj = (float)pj - mean_j;
+        float along = di * reg_ti + dj * reg_tj;
+        float across = di * reg_oi + dj * reg_oj;
+        if (along < along_min || along > along_max) continue;
+        if (across < -hw_px || across > hw_px) continue;
 
         pixels_i[n_pixels] = pi;
         pixels_j[n_pixels] = pj;

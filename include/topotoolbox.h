@@ -2514,6 +2514,9 @@ void swath_transverse(float *bin_distances, float *bin_means,
    @param[in] n_points_regression Number of track points used for PCA
    regression to determine the local tangent direction at each point.
    Centred on the query point; clamped to track bounds. Minimum 2.
+   @param[in] n_internal_cuts Number of internal cutting lines between the
+   two edge orthogonals. 0 = only the two extreme lines (original behavior).
+   Higher values produce tighter selection on sinuous tracks.
  */
 TOPOTOOLBOX_API
 void swath_longitudinal(float *point_means, float *point_stddevs,
@@ -2527,7 +2530,8 @@ void swath_longitudinal(float *point_means, float *point_stddevs,
                          const float *distance_from_track,
                          ptrdiff_t dims[2], float cellsize, float half_width,
                          float binning_distance,
-                         ptrdiff_t n_points_regression);
+                         ptrdiff_t n_points_regression,
+                         ptrdiff_t n_internal_cuts);
 
 /**
    @brief Get pixel coordinates associated with a single track point
@@ -2550,6 +2554,7 @@ void swath_longitudinal(float *point_means, float *point_stddevs,
    If <= 0, gathers pixels along the orthogonal cross-section only.
    If > 0, gathers pixels within bounding box between edge orthogonals.
    @param[in] n_points_regression Number of track points for PCA regression
+   @param[in] n_internal_cuts Number of internal cutting lines (0 = two extremes only)
 
    @return Number of pixels written
  */
@@ -2561,7 +2566,8 @@ ptrdiff_t swath_get_point_pixels(ptrdiff_t *pixels_i, ptrdiff_t *pixels_j,
                                   const float *distance_from_track,
                                   ptrdiff_t dims[2], float cellsize,
                                   float half_width, float binning_distance,
-                                  ptrdiff_t n_points_regression);
+                                  ptrdiff_t n_points_regression,
+                                  ptrdiff_t n_internal_cuts);
 
 /**
    @brief Rasterize a continuous path between ordered reference points.
