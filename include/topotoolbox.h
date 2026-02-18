@@ -2507,9 +2507,13 @@ void swath_transverse(float *bin_distances, float *bin_means,
    @param[in] dims Grid dimensions [fast, slow]
    @param[in] cellsize Cell size in meters
    @param[in] half_width Swath half-width in meters
-   @param[in] binning_distance Along-track binning distance in meters
-   @param[in] exclude_extended_bin If nonzero, use tree march (no end caps);
-   if zero, use full bean (rounded caps at sub-track endpoints)
+   @param[in] binning_distance Along-track binning distance in meters.
+   If <= 0, each point gathers pixels along its orthogonal cross-section only.
+   If > 0, gathers pixels within the bounding box between edge orthogonals
+   at ±binning_distance along the track, filtered by distance_from_track.
+   @param[in] n_points_regression Number of track points used for PCA
+   regression to determine the local tangent direction at each point.
+   Centred on the query point; clamped to track bounds. Minimum 2.
  */
 TOPOTOOLBOX_API
 void swath_longitudinal(float *point_means, float *point_stddevs,
@@ -2522,7 +2526,8 @@ void swath_longitudinal(float *point_means, float *point_stddevs,
                          ptrdiff_t n_track_points,
                          const float *distance_from_track,
                          ptrdiff_t dims[2], float cellsize, float half_width,
-                         float binning_distance, int exclude_extended_bin);
+                         float binning_distance,
+                         ptrdiff_t n_points_regression);
 
 /**
    @brief Get pixel coordinates associated with a single track point
@@ -2541,8 +2546,10 @@ void swath_longitudinal(float *point_means, float *point_stddevs,
    @param[in] dims Grid dimensions [fast, slow]
    @param[in] cellsize Cell size in meters
    @param[in] half_width Swath half-width in meters
-   @param[in] binning_distance Along-track binning distance in meters
-   @param[in] exclude_extended_bin If nonzero, tree march; if zero, full bean
+   @param[in] binning_distance Along-track binning distance in meters.
+   If <= 0, gathers pixels along the orthogonal cross-section only.
+   If > 0, gathers pixels within bounding box between edge orthogonals.
+   @param[in] n_points_regression Number of track points for PCA regression
 
    @return Number of pixels written
  */
@@ -2554,7 +2561,7 @@ ptrdiff_t swath_get_point_pixels(ptrdiff_t *pixels_i, ptrdiff_t *pixels_j,
                                   const float *distance_from_track,
                                   ptrdiff_t dims[2], float cellsize,
                                   float half_width, float binning_distance,
-                                  int exclude_extended_bin);
+                                  ptrdiff_t n_points_regression);
 
 /**
    @brief Rasterize a continuous path between ordered reference points.
