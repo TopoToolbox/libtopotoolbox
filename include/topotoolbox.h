@@ -2478,7 +2478,7 @@ void swath_transverse(float *bin_distances, float *bin_means,
                       float *bin_q3, const int *percentile_list,
                       ptrdiff_t n_percentiles, float *bin_percentiles,
                       const float *dem, const float *distance_from_track,
-                      ptrdiff_t dims[2], float cellsize, float half_width,
+                      ptrdiff_t dims[2], float half_width,
                       float bin_resolution, ptrdiff_t n_bins, int normalize);
 
 /**
@@ -2514,9 +2514,9 @@ void swath_transverse(float *bin_distances, float *bin_means,
    @param[in] n_points_regression Number of track points used for PCA
    regression to determine the local tangent direction at each point.
    Centred on the query point; clamped to track bounds. Minimum 2.
-   @param[in] n_internal_cuts Number of internal cutting lines between the
-   two edge orthogonals. 0 = only the two extreme lines (original behavior).
-   Higher values produce tighter selection on sinuous tracks.
+   @param[in] use_segment_seeds 0 = BFS assignment seeded from rounded track
+   point positions; nonzero = Meijster exact EDT with sub-pixel segment
+   rasterization (more accurate for coarsely sampled tracks, same O(n) cost).
  */
 TOPOTOOLBOX_API
 void swath_longitudinal(float *point_means, float *point_stddevs,

@@ -515,38 +515,178 @@ ptrdiff_t swath_compute_distance_map(
       dfb[i] = (mn == FLT_MAX) ? NAN : mn * cellsize;
     }
 
-    // Centre line: ridge detection on dfb (pixel-unit min for comparison)
+    // Centre line: Voronoi boundary between positive-side and negative-side
+    // boundary wavefronts, 1 pixel wide.
+    //
+    // Only keep pixels with my_sign >= 0 (equidistant or closer to positive
+    // boundary) that have a -1 neighbour — this gives exactly one side of
+    // the boundary so the line is 1 pixel wide.
+    //
+    // End-cap clipping: pixels whose nearest-segment projection falls outside
+    // [0,1] on the first or last segment are beyond the track endpoints
+    // (inside the semicircular cap) and are excluded.
     if (want_centre) {
+      static const int cdi8[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
+      static const int cdj8[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
+
       for (ptrdiff_t idx = 0; idx < total; idx++) {
-        if (best_abs[idx] == FLT_MAX || best_abs[idx] > hw_px)
-          continue;
+        if (best_abs[idx] == FLT_MAX || best_abs[idx] > hw_px) continue;
         float dp = dist_pos[idx], dn = dist_neg[idx];
-        float val = dp < dn ? dp : dn;  // pixel units for comparison
-        if (val == FLT_MAX || val == 0.0f)
-          continue;
+        if (dp == FLT_MAX || dn == FLT_MAX) continue;
+
+        int my_sign = (dp < dn) ? 1 : (dp > dn) ? -1 : 0;
+
+        // Keep only one side of the boundary (my_sign >= 0) → 1 pixel wide
+        if (my_sign < 0) continue;
 
         ptrdiff_t ci = idx % dims[0];
         ptrdiff_t cj = idx / dims[0];
 
-        int ridge_i = 0;
-        if (ci > 0 && ci < dims[0] - 1) {
-          float l = dist_pos[idx-1] < dist_neg[idx-1] ? dist_pos[idx-1] : dist_neg[idx-1];
-          float r = dist_pos[idx+1] < dist_neg[idx+1] ? dist_pos[idx+1] : dist_neg[idx+1];
-          if (val >= l && val >= r) ridge_i = 1;
+        // Equidistant pixels are always on centreline; my_sign==1 needs a -1 neighbour
+        int on_cl = (my_sign == 0);
+        if (!on_cl) {
+          for (int n = 0; n < 8; n++) {
+            ptrdiff_t ni = ci + cdi8[n];
+            ptrdiff_t nj = cj + cdj8[n];
+            if (ni < 0 || ni >= dims[0] || nj < 0 || nj >= dims[1]) continue;
+            ptrdiff_t nidx = nj * dims[0] + ni;
+            if (best_abs[nidx] == FLT_MAX || best_abs[nidx] > hw_px) continue;
+            float ndp = dist_pos[nidx], ndn = dist_neg[nidx];
+            if (ndp == FLT_MAX || ndn == FLT_MAX) continue;
+            if (ndp > ndn) { on_cl = 1; break; }  // nb_sign == -1
+          }
         }
-        int ridge_j = 0;
-        if (cj > 0 && cj < dims[1] - 1) {
-          ptrdiff_t u = idx - dims[0], d = idx + dims[0];
-          float uv = dist_pos[u] < dist_neg[u] ? dist_pos[u] : dist_neg[u];
-          float dv = dist_pos[d] < dist_neg[d] ? dist_pos[d] : dist_neg[d];
-          if (val >= uv && val >= dv) ridge_j = 1;
+        if (!on_cl) continue;
+
+        // End-cap clipping: recompute unclamped projection t onto nearest segment
+        ptrdiff_t seg = nseg[idx];
+        float si = track_i[seg + 1] - track_i[seg];
+        float sj = track_j[seg + 1] - track_j[seg];
+        float len2 = si * si + sj * sj;
+        if (len2 > 0.0f) {
+          float t = ((ci - track_i[seg]) * si + (cj - track_j[seg]) * sj) / len2;
+          if (seg == 0 && t < 0.0f) continue;
+          if (seg == n_track_points - 2 && t > 1.0f) continue;
         }
-        if (!ridge_i && !ridge_j) continue;
 
         centre_line_i[n_centre] = (float)ci;
         centre_line_j[n_centre] = (float)cj;
         centre_width[n_centre] = (dp + dn) * cellsize;
         n_centre++;
+      }
+    }
+
+    // Post-process: remove staircase elbows by working on the ORDERED path.
+    // Previous approach checked D8-neighbour count in the pixel grid — this
+    // fails when the Voronoi boundary has nc>2 at corners (other on_cl pixels
+    // happen to be geometrically adjacent but are not path-neighbours).
+    //
+    // Instead: traverse the path in order, then in the ordered sequence a
+    // pixel path[i] is an elbow iff path[i-1] and path[i+1] are D8-adjacent.
+    // After removing path[i], skip path[i+1] to prevent adjacent removals
+    // (which would disconnect the path).  Repeat until stable.
+    if (want_centre && n_centre > 2) {
+      static const int pp_di[8] = {-1,-1,-1, 0, 0, 1, 1, 1};
+      static const int pp_dj[8] = {-1, 0, 1,-1, 1,-1, 0, 1};
+
+      uint8_t *on_cl  = (uint8_t *)calloc(total, 1);
+      uint8_t *vis    = (uint8_t *)calloc(total, 1);
+      ptrdiff_t *path = (ptrdiff_t *)malloc(n_centre * sizeof(ptrdiff_t));
+
+      if (on_cl && vis && path) {
+        for (ptrdiff_t k = 0; k < n_centre; k++)
+          on_cl[(ptrdiff_t)centre_line_j[k] * dims[0] +
+                (ptrdiff_t)centre_line_i[k]] = 1;
+
+        int changed = 1;
+        while (changed) {
+          changed = 0;
+
+          // Find an endpoint (nc==1); fall back to first on_cl pixel
+          ptrdiff_t start = -1;
+          for (ptrdiff_t k = 0; k < n_centre && start < 0; k++) {
+            ptrdiff_t ci = (ptrdiff_t)centre_line_i[k];
+            ptrdiff_t cj = (ptrdiff_t)centre_line_j[k];
+            if (!on_cl[cj * dims[0] + ci]) continue;
+            int nc = 0;
+            for (int n = 0; n < 8; n++) {
+              ptrdiff_t ni = ci + pp_di[n], nj = cj + pp_dj[n];
+              if (ni < 0 || ni >= dims[0] || nj < 0 || nj >= dims[1]) continue;
+              if (on_cl[nj * dims[0] + ni]) nc++;
+            }
+            if (nc == 1) start = cj * dims[0] + ci;
+          }
+          if (start < 0)
+            start = (ptrdiff_t)centre_line_j[0] * dims[0] +
+                    (ptrdiff_t)centre_line_i[0];
+
+          // Traverse path in order.
+          // MUST check cardinal neighbours before diagonal: at a D4 corner the
+          // diagonal next-next pixel is geometrically adjacent to the corner
+          // pixel, so a diagonal-first ordering would skip the cardinal next
+          // pixel and produce a wrong traversal sequence.
+          static const int c_di[4] = {-1, 0, 0, 1};
+          static const int c_dj[4] = { 0,-1, 1, 0};
+          static const int d_di[4] = {-1,-1, 1, 1};
+          static const int d_dj[4] = {-1, 1,-1, 1};
+
+          memset(vis, 0, (size_t)total);
+          ptrdiff_t n_path = 0;
+          ptrdiff_t cur = start;
+          while (cur >= 0 && n_path < n_centre) {
+            path[n_path++] = cur;
+            vis[cur] = 1;
+            ptrdiff_t ci = cur % dims[0], cj = cur / dims[0];
+            ptrdiff_t nxt = -1;
+            for (int n = 0; n < 4 && nxt < 0; n++) {
+              ptrdiff_t ni = ci + c_di[n], nj = cj + c_dj[n];
+              if (ni < 0 || ni >= dims[0] || nj < 0 || nj >= dims[1]) continue;
+              ptrdiff_t nidx = nj * dims[0] + ni;
+              if (on_cl[nidx] && !vis[nidx]) nxt = nidx;
+            }
+            for (int n = 0; n < 4 && nxt < 0; n++) {
+              ptrdiff_t ni = ci + d_di[n], nj = cj + d_dj[n];
+              if (ni < 0 || ni >= dims[0] || nj < 0 || nj >= dims[1]) continue;
+              ptrdiff_t nidx = nj * dims[0] + ni;
+              if (on_cl[nidx] && !vis[nidx]) nxt = nidx;
+            }
+            cur = nxt;
+          }
+
+          // Remove elbows in the ordered sequence.
+          // path[i] is an elbow if its ordered predecessor path[i-1] and
+          // successor path[i+1] are D8-adjacent.  Skip path[i+1] after
+          // removing path[i] to prevent removing two adjacent pixels.
+          for (ptrdiff_t i = 1; i < n_path - 1; i++) {
+            ptrdiff_t ai = path[i-1] % dims[0], aj = path[i-1] / dims[0];
+            ptrdiff_t bi = path[i+1] % dims[0], bj = path[i+1] / dims[0];
+            ptrdiff_t di = ai - bi, dj = aj - bj;
+            if (di >= -1 && di <= 1 && dj >= -1 && dj <= 1) {
+              on_cl[path[i]] = 0;
+              changed = 1;
+              i++;  // skip successor — it now has a different predecessor
+            }
+          }
+        }
+      }
+
+      free(vis);
+      free(path);
+
+      if (on_cl) {
+        ptrdiff_t new_n = 0;
+        for (ptrdiff_t k = 0; k < n_centre; k++) {
+          ptrdiff_t ci = (ptrdiff_t)centre_line_i[k];
+          ptrdiff_t cj = (ptrdiff_t)centre_line_j[k];
+          if (on_cl[cj * dims[0] + ci]) {
+            centre_line_i[new_n] = centre_line_i[k];
+            centre_line_j[new_n] = centre_line_j[k];
+            centre_width[new_n]  = centre_width[k];
+            new_n++;
+          }
+        }
+        n_centre = new_n;
+        free(on_cl);
       }
     }
 
@@ -633,7 +773,7 @@ void swath_transverse(
     const float *restrict dem,
     const float *restrict distance_from_track,
     ptrdiff_t dims[2],
-    float cellsize, float half_width, float bin_resolution, ptrdiff_t n_bins,
+    float half_width, float bin_resolution, ptrdiff_t n_bins,
     int normalize) {
   if (n_bins <= 0)
     return;
@@ -1086,6 +1226,7 @@ void swath_longitudinal(
       (point_medians != NULL || point_q1 != NULL || point_q3 != NULL ||
        (percentile_list != NULL && n_percentiles > 0 &&
         point_percentiles != NULL));
+  int case2_done = 0;
 
   // Cumulative along-track distance (meters) — needed for binning_distance > 0
   float *cum_dist = NULL;
@@ -1099,11 +1240,14 @@ void swath_longitudinal(
     }
   }
 
-  // Initialize per-point accumulators
-  swath_stats_accumulator *accumulators = (swath_stats_accumulator *)calloc(
-      n_track_points, sizeof(swath_stats_accumulator));
-  for (ptrdiff_t k = 0; k < n_track_points; k++)
-    accumulator_init(&accumulators[k]);
+  // Per-point accumulators — only needed for Case 1 (Bresenham cross-sections)
+  swath_stats_accumulator *accumulators = NULL;
+  if (binning_distance <= 0.0f) {
+    accumulators = (swath_stats_accumulator *)calloc(
+        n_track_points, sizeof(swath_stats_accumulator));
+    for (ptrdiff_t k = 0; k < n_track_points; k++)
+      accumulator_init(&accumulators[k]);
+  }
 
   percentile_accumulator *p_accumulators = NULL;
   if (compute_percentiles) {
@@ -1150,72 +1294,157 @@ void swath_longitudinal(
     free(bres_i);
     free(bres_j);
   } else {
-    // --- Case 2: Meijster EDT nearest-track-point assignment ---
+    // --- Case 2: sliding window over pre-computed per-block stats ---
     ptrdiff_t total = dims[0] * dims[1];
     ptrdiff_t *assignment = compute_track_assignment(
         track_i, track_j, n_track_points,
         distance_from_track, dims, half_width,
         (int)use_segment_seeds);
 
-    // Build CSR pixel lists per track point
-    ptrdiff_t *pt_count = (ptrdiff_t *)calloc(n_track_points, sizeof(ptrdiff_t));
-    ptrdiff_t n_assigned = 0;
-    for (ptrdiff_t idx = 0; idx < total; idx++) {
-      if (assignment[idx] >= 0 && !isnan(dem[idx])) {
-        pt_count[assignment[idx]]++;
-        n_assigned++;
-      }
+    // Per-block precomputed stats
+    double    *blk_sum   = (double    *)calloc(n_track_points, sizeof(double));
+    double    *blk_sum2  = (double    *)calloc(n_track_points, sizeof(double));
+    ptrdiff_t *blk_count = (ptrdiff_t *)calloc(n_track_points, sizeof(ptrdiff_t));
+    float     *blk_min   = (float     *)malloc(n_track_points * sizeof(float));
+    float     *blk_max   = (float     *)malloc(n_track_points * sizeof(float));
+    for (ptrdiff_t k = 0; k < n_track_points; k++) {
+      blk_min[k] =  FLT_MAX;
+      blk_max[k] = -FLT_MAX;
     }
 
-    ptrdiff_t *pt_offset = (ptrdiff_t *)malloc((n_track_points + 1) * sizeof(ptrdiff_t));
-    pt_offset[0] = 0;
-    for (ptrdiff_t k = 0; k < n_track_points; k++)
-      pt_offset[k + 1] = pt_offset[k] + pt_count[k];
-
-    ptrdiff_t *pt_pixels = (ptrdiff_t *)malloc(n_assigned * sizeof(ptrdiff_t));
-    ptrdiff_t *pt_fill = (ptrdiff_t *)calloc(n_track_points, sizeof(ptrdiff_t));
-    for (ptrdiff_t idx = 0; idx < total; idx++) {
-      if (assignment[idx] >= 0 && !isnan(dem[idx])) {
-        ptrdiff_t a = assignment[idx];
-        pt_pixels[pt_offset[a] + pt_fill[a]] = idx;
-        pt_fill[a]++;
-      }
-    }
-
-    // For each track point, accumulate from binning window
-    for (ptrdiff_t pt = 0; pt < n_track_points; pt++) {
-      ptrdiff_t pt_lo = pt, pt_hi = pt;
-      while (pt_lo > 0 &&
-             cum_dist[pt] - cum_dist[pt_lo - 1] <= binning_distance)
-        pt_lo--;
-      while (pt_hi < n_track_points - 1 &&
-             cum_dist[pt_hi + 1] - cum_dist[pt] <= binning_distance)
-        pt_hi++;
-
-      for (ptrdiff_t k = pt_lo; k <= pt_hi; k++) {
-        for (ptrdiff_t q = pt_offset[k]; q < pt_offset[k + 1]; q++) {
-          ptrdiff_t idx = pt_pixels[q];
-          accumulator_add(&accumulators[pt], dem[idx]);
-          if (compute_percentiles)
-            percentile_accumulator_add(&p_accumulators[pt], dem[idx]);
+    // CSR pixel lists (only needed for percentiles)
+    ptrdiff_t *pt_offset = NULL, *pt_pixels = NULL, *pt_fill_arr = NULL;
+    if (compute_percentiles) {
+      ptrdiff_t *cnt = (ptrdiff_t *)calloc(n_track_points, sizeof(ptrdiff_t));
+      ptrdiff_t n_assigned = 0;
+      for (ptrdiff_t idx = 0; idx < total; idx++) {
+        if (assignment[idx] >= 0 && !isnan(dem[idx])) {
+          cnt[assignment[idx]]++;
+          n_assigned++;
         }
       }
+      pt_offset = (ptrdiff_t *)malloc((n_track_points + 1) * sizeof(ptrdiff_t));
+      pt_offset[0] = 0;
+      for (ptrdiff_t k = 0; k < n_track_points; k++)
+        pt_offset[k + 1] = pt_offset[k] + cnt[k];
+      free(cnt);
+      pt_pixels   = (ptrdiff_t *)malloc(n_assigned * sizeof(ptrdiff_t));
+      pt_fill_arr = (ptrdiff_t *)calloc(n_track_points, sizeof(ptrdiff_t));
+      // Fill block stats and CSR in one pass
+      for (ptrdiff_t idx = 0; idx < total; idx++) {
+        ptrdiff_t a = assignment[idx];
+        if (a < 0 || isnan(dem[idx])) continue;
+        double v = (double)dem[idx];
+        blk_sum[a]  += v;
+        blk_sum2[a] += v * v;
+        blk_count[a]++;
+        if (dem[idx] < blk_min[a]) blk_min[a] = dem[idx];
+        if (dem[idx] > blk_max[a]) blk_max[a] = dem[idx];
+        pt_pixels[pt_offset[a] + pt_fill_arr[a]] = idx;
+        pt_fill_arr[a]++;
+      }
+    } else {
+      // Block stats only
+      for (ptrdiff_t idx = 0; idx < total; idx++) {
+        ptrdiff_t a = assignment[idx];
+        if (a < 0 || isnan(dem[idx])) continue;
+        double v = (double)dem[idx];
+        blk_sum[a]  += v;
+        blk_sum2[a] += v * v;
+        blk_count[a]++;
+        if (dem[idx] < blk_min[a]) blk_min[a] = dem[idx];
+        if (dem[idx] > blk_max[a]) blk_max[a] = dem[idx];
+      }
+    }
+    free(assignment);
+
+    // Monotonic deques for sliding window min/max
+    ptrdiff_t *min_dq = (ptrdiff_t *)malloc(n_track_points * sizeof(ptrdiff_t));
+    ptrdiff_t *max_dq = (ptrdiff_t *)malloc(n_track_points * sizeof(ptrdiff_t));
+    ptrdiff_t min_head = 0, min_tail = -1;
+    ptrdiff_t max_head = 0, max_tail = -1;
+    double    win_sum = 0.0, win_sum2 = 0.0;
+    ptrdiff_t win_count = 0;
+    ptrdiff_t lo = 0, hi = -1;
+
+    for (ptrdiff_t pt = 0; pt < n_track_points; pt++) {
+      // Expand right: add blocks within binning_distance ahead of pt
+      while (hi < n_track_points - 1 &&
+             cum_dist[hi + 1] - cum_dist[pt] <= binning_distance) {
+        hi++;
+        win_sum   += blk_sum[hi];
+        win_sum2  += blk_sum2[hi];
+        win_count += blk_count[hi];
+        if (blk_count[hi] > 0) {
+          while (min_head <= min_tail &&
+                 blk_min[min_dq[min_tail]] >= blk_min[hi])
+            min_tail--;
+          min_dq[++min_tail] = hi;
+          while (max_head <= max_tail &&
+                 blk_max[max_dq[max_tail]] <= blk_max[hi])
+            max_tail--;
+          max_dq[++max_tail] = hi;
+        }
+      }
+      // Shrink left: remove blocks outside binning_distance behind pt
+      while (lo <= hi && cum_dist[pt] - cum_dist[lo] > binning_distance) {
+        win_sum   -= blk_sum[lo];
+        win_sum2  -= blk_sum2[lo];
+        win_count -= blk_count[lo];
+        if (min_head <= min_tail && min_dq[min_head] == lo) min_head++;
+        if (max_head <= max_tail && max_dq[max_head] == lo) max_head++;
+        lo++;
+      }
+      // Write output
+      if (win_count > 0) {
+        double mean = win_sum / (double)win_count;
+        double var  = win_sum2 / (double)win_count - mean * mean;
+        point_counts[pt]  = win_count;
+        point_means[pt]   = (float)mean;
+        point_stddevs[pt] = (float)sqrt(var > 0.0 ? var : 0.0);
+        point_mins[pt] = (min_head <= min_tail) ? blk_min[min_dq[min_head]] : NAN;
+        point_maxs[pt] = (max_head <= max_tail) ? blk_max[max_dq[max_head]] : NAN;
+      } else {
+        point_counts[pt]  = 0;
+        point_means[pt]   = NAN;
+        point_stddevs[pt] = NAN;
+        point_mins[pt]    = NAN;
+        point_maxs[pt]    = NAN;
+      }
+      // Percentile accumulation for this window (still O(W*pix) per pt)
+      if (compute_percentiles) {
+        ptrdiff_t pt_lo = pt, pt_hi = pt;
+        while (pt_lo > 0 &&
+               cum_dist[pt] - cum_dist[pt_lo - 1] <= binning_distance)
+          pt_lo--;
+        while (pt_hi < n_track_points - 1 &&
+               cum_dist[pt_hi + 1] - cum_dist[pt] <= binning_distance)
+          pt_hi++;
+        for (ptrdiff_t k = pt_lo; k <= pt_hi; k++)
+          for (ptrdiff_t q = pt_offset[k]; q < pt_offset[k + 1]; q++)
+            percentile_accumulator_add(&p_accumulators[pt],
+                                       dem[pt_pixels[q]]);
+      }
     }
 
-    free(assignment);
-    free(pt_count);
-    free(pt_offset);
-    free(pt_pixels);
-    free(pt_fill);
+    free(blk_sum); free(blk_sum2); free(blk_count);
+    free(blk_min); free(blk_max);
+    free(min_dq);  free(max_dq);
+    if (compute_percentiles) {
+      free(pt_offset); free(pt_pixels); free(pt_fill_arr);
+    }
+    case2_done = 1;
   }
 
   // Finalize statistics
   for (ptrdiff_t k = 0; k < n_track_points; k++) {
-    point_means[k] = accumulator_mean(&accumulators[k]);
-    point_stddevs[k] = accumulator_stddev(&accumulators[k]);
-    point_mins[k] = accumulators[k].count > 0 ? accumulators[k].min_val : NAN;
-    point_maxs[k] = accumulators[k].count > 0 ? accumulators[k].max_val : NAN;
-    point_counts[k] = accumulators[k].count;
+    if (!case2_done) {
+      point_means[k]   = accumulator_mean(&accumulators[k]);
+      point_stddevs[k] = accumulator_stddev(&accumulators[k]);
+      point_mins[k]    = accumulators[k].count > 0 ? accumulators[k].min_val : NAN;
+      point_maxs[k]    = accumulators[k].count > 0 ? accumulators[k].max_val : NAN;
+      point_counts[k]  = accumulators[k].count;
+    }
 
     if (compute_percentiles) {
       percentile_accumulator_sort(&p_accumulators[k]);
@@ -1241,7 +1470,7 @@ void swath_longitudinal(
 
   // Cleanup
   if (cum_dist) free(cum_dist);
-  free(accumulators);
+  if (accumulators) free(accumulators);
   if (compute_percentiles) {
     for (ptrdiff_t k = 0; k < n_track_points; k++)
       percentile_accumulator_free(&p_accumulators[k]);
