@@ -908,6 +908,127 @@ static ptrdiff_t bresenham_d8(ptrdiff_t *out_i, ptrdiff_t *out_j,
                               ptrdiff_t i1, ptrdiff_t j1,
                               int skip_first);
 
+// ============================================================================
+// Meijster exact Euclidean distance transform — nearest track point labeling
+// ============================================================================
+//
+// For each pixel within |distance_from_track| <= half_width, computes the
+// index of the nearest track point using the 2-pass Meijster EDT. Seeds are
+// the rounded-pixel positions of each track point.
+//
+// Returns a malloc'd array of size dims[0]*dims[1]; caller must free().
+// Pixels outside the mask have value -1.
+static ptrdiff_t *compute_track_assignment(
+    const float *track_i, const float *track_j, ptrdiff_t n_track_points,
+    const float *distance_from_track, ptrdiff_t dims[2], float half_width)
+{
+  ptrdiff_t nrows = dims[0], ncols = dims[1];
+  ptrdiff_t total = nrows * ncols;
+  ptrdiff_t INF_VAL = nrows + ncols + 2;
+
+  // g[j*nrows+i]  = row distance from row i to nearest seed in column j
+  // lg[j*nrows+i] = track point index of that nearest seed (-1 = none)
+  ptrdiff_t *g  = (ptrdiff_t *)malloc(total * sizeof(ptrdiff_t));
+  ptrdiff_t *lg = (ptrdiff_t *)malloc(total * sizeof(ptrdiff_t));
+  for (ptrdiff_t idx = 0; idx < total; idx++) { g[idx] = INF_VAL; lg[idx] = -1; }
+
+  // Place seeds: round each track point to nearest grid pixel.
+  // If two track points round to the same pixel, keep the closest in float.
+  for (ptrdiff_t k = 0; k < n_track_points; k++) {
+    ptrdiff_t si = (ptrdiff_t)(track_i[k] + 0.5f);
+    ptrdiff_t sj = (ptrdiff_t)(track_j[k] + 0.5f);
+    if (si < 0 || si >= nrows || sj < 0 || sj >= ncols) continue;
+    ptrdiff_t sidx = sj * nrows + si;
+    if (lg[sidx] < 0) {
+      g[sidx] = 0; lg[sidx] = k;
+    } else {
+      ptrdiff_t prev = lg[sidx];
+      float d2k = (track_i[k]-(float)si)*(track_i[k]-(float)si) +
+                  (track_j[k]-(float)sj)*(track_j[k]-(float)sj);
+      float d2p = (track_i[prev]-(float)si)*(track_i[prev]-(float)si) +
+                  (track_j[prev]-(float)sj)*(track_j[prev]-(float)sj);
+      if (d2k < d2p) lg[sidx] = k;
+    }
+  }
+
+  // Phase 1: column scan — for each column j, propagate nearest-seed row
+  // distance up and down so g[j*nrows+i] = distance to nearest seed in col j.
+  for (ptrdiff_t j = 0; j < ncols; j++) {
+    for (ptrdiff_t i = 1; i < nrows; i++) {
+      ptrdiff_t cur = j*nrows+i, prev = j*nrows+(i-1);
+      if (g[prev] < INF_VAL && g[prev]+1 < g[cur]) { g[cur]=g[prev]+1; lg[cur]=lg[prev]; }
+    }
+    for (ptrdiff_t i = nrows-2; i >= 0; i--) {
+      ptrdiff_t cur = j*nrows+i, next = j*nrows+(i+1);
+      if (g[next] < INF_VAL && g[next]+1 < g[cur]) { g[cur]=g[next]+1; lg[cur]=lg[next]; }
+    }
+  }
+
+  // Phase 2: row parabola envelope (Meijster).
+  // For each row i, find which column j's seed is the globally nearest
+  // using the parabola Sep function: first col where u beats s is
+  //   w = floor((u²+gu² - s²-gs²) / (2*(u-s))) + 1
+  ptrdiff_t *assignment = (ptrdiff_t *)malloc(total * sizeof(ptrdiff_t));
+  for (ptrdiff_t idx = 0; idx < total; idx++) assignment[idx] = -1;
+
+  ptrdiff_t *stk_s = (ptrdiff_t *)malloc(ncols * sizeof(ptrdiff_t));
+  ptrdiff_t *stk_t = (ptrdiff_t *)malloc(ncols * sizeof(ptrdiff_t));
+  ptrdiff_t *stk_l = (ptrdiff_t *)malloc(ncols * sizeof(ptrdiff_t));
+
+  for (ptrdiff_t i = 0; i < nrows; i++) {
+    ptrdiff_t q = -1;
+
+    // Forward scan: build parabola stack
+    for (ptrdiff_t u = 0; u < ncols; u++) {
+      ptrdiff_t gu = g[u*nrows+i];
+      if (gu >= INF_VAL) continue;
+
+      // Pop while u dominates top at top's start column
+      while (q >= 0) {
+        ptrdiff_t s = stk_s[q], gs = g[s*nrows+i];
+        double sep = ((double)(u*u) - (double)(s*s) +
+                      (double)(gu*gu) - (double)(gs*gs)) /
+                     (2.0 * (double)(u - s));
+        ptrdiff_t w = (ptrdiff_t)floor(sep) + 1;
+        if (w > stk_t[q]) break;  // u only takes over after top's range: keep top
+        q--;
+      }
+
+      // Compute where u starts being the closest
+      ptrdiff_t w_start;
+      if (q < 0) {
+        w_start = 0;
+      } else {
+        ptrdiff_t s = stk_s[q], gs = g[s*nrows+i];
+        double sep = ((double)(u*u) - (double)(s*s) +
+                      (double)(gu*gu) - (double)(gs*gs)) /
+                     (2.0 * (double)(u - s));
+        w_start = (ptrdiff_t)floor(sep) + 1;
+      }
+
+      if (w_start < ncols) {
+        q++;
+        stk_s[q] = u; stk_t[q] = w_start; stk_l[q] = lg[u*nrows+i];
+      }
+    }
+
+    if (q < 0) continue;
+
+    // Backward scan: assign each masked pixel to its nearest track point
+    for (ptrdiff_t u = ncols-1; u >= 0; u--) {
+      while (q > 0 && u < stk_t[q]) q--;
+      ptrdiff_t idx = u*nrows+i;
+      float d = distance_from_track[idx];
+      if (!isnan(d) && fabsf(d) <= half_width)
+        assignment[idx] = stk_l[q];
+    }
+  }
+
+  free(g); free(lg);
+  free(stk_s); free(stk_t); free(stk_l);
+  return assignment;
+}
+
 TOPOTOOLBOX_API
 void swath_longitudinal(
     float *restrict point_means, float *restrict point_stddevs,
@@ -959,23 +1080,19 @@ void swath_longitudinal(
       percentile_accumulator_init(&p_accumulators[k], 64);
   }
 
-  // Bresenham work buffers (reused across track points)
-  // Max Bresenham length for hw_px on each side: 2*hw_px + 1 is sufficient
-  ptrdiff_t bres_cap = (ptrdiff_t)(2.0f * hw_px) + 16;
-  ptrdiff_t *bres_i = (ptrdiff_t *)malloc(bres_cap * sizeof(ptrdiff_t));
-  ptrdiff_t *bres_j = (ptrdiff_t *)malloc(bres_cap * sizeof(ptrdiff_t));
+  if (binning_distance <= 0.0f) {
+    // --- Case 1: single cross-section via Bresenham (per track point) ---
+    ptrdiff_t bres_cap = (ptrdiff_t)(2.0f * hw_px) + 16;
+    ptrdiff_t *bres_i = (ptrdiff_t *)malloc(bres_cap * sizeof(ptrdiff_t));
+    ptrdiff_t *bres_j = (ptrdiff_t *)malloc(bres_cap * sizeof(ptrdiff_t));
 
-  // Per-point processing
-  for (ptrdiff_t pt = 0; pt < n_track_points; pt++) {
-    float tang_i, tang_j;
-    compute_local_tangent(track_i, track_j, n_track_points, pt,
-                          n_points_regression, &tang_i, &tang_j);
-    // Orthogonal direction
-    float orth_i = -tang_j;
-    float orth_j = tang_i;
+    for (ptrdiff_t pt = 0; pt < n_track_points; pt++) {
+      float tang_i, tang_j;
+      compute_local_tangent(track_i, track_j, n_track_points, pt,
+                            n_points_regression, &tang_i, &tang_j);
+      float orth_i = -tang_j;
+      float orth_j = tang_i;
 
-    if (binning_distance <= 0.0f) {
-      // --- Case 1: single cross-section via Bresenham ---
       ptrdiff_t ai = (ptrdiff_t)(track_i[pt] - orth_i * hw_px + 0.5f);
       ptrdiff_t aj = (ptrdiff_t)(track_j[pt] - orth_j * hw_px + 0.5f);
       ptrdiff_t bi = (ptrdiff_t)(track_i[pt] + orth_i * hw_px + 0.5f);
@@ -996,15 +1113,43 @@ void swath_longitudinal(
         if (compute_percentiles)
           percentile_accumulator_add(&p_accumulators[pt], dem[idx]);
       }
-    } else {
-      // --- Case 2: regression rectangle on binning window ---
-      //
-      // Linear regression (PCA) on all track points in [pt_lo..pt_hi]
-      // gives one tangent direction. Build one oriented rectangle along
-      // that direction. Pixel is selected if inside the rectangle AND
-      // within the distance map band.
+    }
+    free(bres_i);
+    free(bres_j);
+  } else {
+    // --- Case 2: Meijster EDT nearest-track-point assignment ---
+    ptrdiff_t total = dims[0] * dims[1];
+    ptrdiff_t *assignment = compute_track_assignment(
+        track_i, track_j, n_track_points,
+        distance_from_track, dims, half_width);
 
-      // Find edge track points of the binning window
+    // Build CSR pixel lists per track point
+    ptrdiff_t *pt_count = (ptrdiff_t *)calloc(n_track_points, sizeof(ptrdiff_t));
+    ptrdiff_t n_assigned = 0;
+    for (ptrdiff_t idx = 0; idx < total; idx++) {
+      if (assignment[idx] >= 0 && !isnan(dem[idx])) {
+        pt_count[assignment[idx]]++;
+        n_assigned++;
+      }
+    }
+
+    ptrdiff_t *pt_offset = (ptrdiff_t *)malloc((n_track_points + 1) * sizeof(ptrdiff_t));
+    pt_offset[0] = 0;
+    for (ptrdiff_t k = 0; k < n_track_points; k++)
+      pt_offset[k + 1] = pt_offset[k] + pt_count[k];
+
+    ptrdiff_t *pt_pixels = (ptrdiff_t *)malloc(n_assigned * sizeof(ptrdiff_t));
+    ptrdiff_t *pt_fill = (ptrdiff_t *)calloc(n_track_points, sizeof(ptrdiff_t));
+    for (ptrdiff_t idx = 0; idx < total; idx++) {
+      if (assignment[idx] >= 0 && !isnan(dem[idx])) {
+        ptrdiff_t a = assignment[idx];
+        pt_pixels[pt_offset[a] + pt_fill[a]] = idx;
+        pt_fill[a]++;
+      }
+    }
+
+    // For each track point, accumulate from binning window
+    for (ptrdiff_t pt = 0; pt < n_track_points; pt++) {
       ptrdiff_t pt_lo = pt, pt_hi = pt;
       while (pt_lo > 0 &&
              cum_dist[pt] - cum_dist[pt_lo - 1] <= binning_distance)
@@ -1013,124 +1158,21 @@ void swath_longitudinal(
              cum_dist[pt_hi + 1] - cum_dist[pt] <= binning_distance)
         pt_hi++;
 
-      // PCA on track points [pt_lo..pt_hi]
-      ptrdiff_t nw = pt_hi - pt_lo + 1;
-      float mean_i = 0, mean_j = 0;
       for (ptrdiff_t k = pt_lo; k <= pt_hi; k++) {
-        mean_i += track_i[k];
-        mean_j += track_j[k];
-      }
-      mean_i /= (float)nw;
-      mean_j /= (float)nw;
-
-      float cov_ii = 0, cov_ij = 0, cov_jj = 0;
-      for (ptrdiff_t k = pt_lo; k <= pt_hi; k++) {
-        float di = track_i[k] - mean_i;
-        float dj = track_j[k] - mean_j;
-        cov_ii += di * di;
-        cov_ij += di * dj;
-        cov_jj += dj * dj;
-      }
-
-      // Principal eigenvector (tangent direction)
-      float diff = cov_ii - cov_jj;
-      float D = sqrtf(diff * diff + 4.0f * cov_ij * cov_ij);
-      float reg_ti, reg_tj;
-      if (cov_ii >= cov_jj) {
-        reg_ti = diff + D;
-        reg_tj = 2.0f * cov_ij;
-      } else {
-        reg_ti = 2.0f * cov_ij;
-        reg_tj = -diff + D;
-      }
-      float vlen = sqrtf(reg_ti * reg_ti + reg_tj * reg_tj);
-      if (vlen > 1e-10f) {
-        reg_ti /= vlen;
-        reg_tj /= vlen;
-      } else {
-        // Degenerate: fall back to endpoint direction
-        reg_ti = track_i[pt_hi] - track_i[pt_lo];
-        reg_tj = track_j[pt_hi] - track_j[pt_lo];
-        vlen = sqrtf(reg_ti * reg_ti + reg_tj * reg_tj);
-        if (vlen > 0) { reg_ti /= vlen; reg_tj /= vlen; }
-        else { reg_ti = 1; reg_tj = 0; }
-      }
-
-      // Orient consistently with track direction
-      float fwd_i = track_i[pt_hi] - track_i[pt_lo];
-      float fwd_j = track_j[pt_hi] - track_j[pt_lo];
-      if (fwd_i * reg_ti + fwd_j * reg_tj < 0) {
-        reg_ti = -reg_ti;
-        reg_tj = -reg_tj;
-      }
-
-      float reg_oi = -reg_tj, reg_oj = reg_ti;  // orthogonal
-
-      // Project all window track points onto tangent to get along-track extent
-      float along_min = 0, along_max = 0;
-      for (ptrdiff_t k = pt_lo; k <= pt_hi; k++) {
-        float d = (track_i[k] - mean_i) * reg_ti +
-                  (track_j[k] - mean_j) * reg_tj;
-        if (d < along_min) along_min = d;
-        if (d > along_max) along_max = d;
-      }
-      // Small buffer for edge pixels
-      along_min -= 1.0f;
-      along_max += 1.0f;
-
-      // Rectangle corners (centered on mean, along tangent, ±hw_px orthogonal)
-      float c0_i = mean_i + reg_ti * along_min + reg_oi * hw_px;
-      float c0_j = mean_j + reg_tj * along_min + reg_oj * hw_px;
-      float c1_i = mean_i + reg_ti * along_max + reg_oi * hw_px;
-      float c1_j = mean_j + reg_tj * along_max + reg_oj * hw_px;
-      float c2_i = mean_i + reg_ti * along_max - reg_oi * hw_px;
-      float c2_j = mean_j + reg_tj * along_max - reg_oj * hw_px;
-      float c3_i = mean_i + reg_ti * along_min - reg_oi * hw_px;
-      float c3_j = mean_j + reg_tj * along_min - reg_oj * hw_px;
-
-      // Axis-aligned bounding box of the 4 corners
-      float corners_i[4] = {c0_i, c1_i, c2_i, c3_i};
-      float corners_j[4] = {c0_j, c1_j, c2_j, c3_j};
-      float bb_i0 = corners_i[0], bb_i1 = corners_i[0];
-      float bb_j0 = corners_j[0], bb_j1 = corners_j[0];
-      for (int c = 1; c < 4; c++) {
-        if (corners_i[c] < bb_i0) bb_i0 = corners_i[c];
-        if (corners_i[c] > bb_i1) bb_i1 = corners_i[c];
-        if (corners_j[c] < bb_j0) bb_j0 = corners_j[c];
-        if (corners_j[c] > bb_j1) bb_j1 = corners_j[c];
-      }
-
-      ptrdiff_t i0 = (ptrdiff_t)bb_i0 - 1;
-      ptrdiff_t i1 = (ptrdiff_t)bb_i1 + 2;
-      ptrdiff_t j0 = (ptrdiff_t)bb_j0 - 1;
-      ptrdiff_t j1 = (ptrdiff_t)bb_j1 + 2;
-      if (i0 < 0) i0 = 0;
-      if (j0 < 0) j0 = 0;
-      if (i1 >= dims[0]) i1 = dims[0] - 1;
-      if (j1 >= dims[1]) j1 = dims[1] - 1;
-
-      for (ptrdiff_t pj = j0; pj <= j1; pj++) {
-        for (ptrdiff_t pi = i0; pi <= i1; pi++) {
-          ptrdiff_t idx = pj * dims[0] + pi;
-          float dist_m = distance_from_track[idx];
-          if (isnan(dist_m)) continue;
-          if (fabsf(dist_m) > half_width) continue;
-          if (isnan(dem[idx])) continue;
-
-          // Oriented rectangle check: project onto tangent and orthogonal
-          float di = (float)pi - mean_i;
-          float dj = (float)pj - mean_j;
-          float along = di * reg_ti + dj * reg_tj;
-          float across = di * reg_oi + dj * reg_oj;
-          if (along < along_min || along > along_max) continue;
-          if (across < -hw_px || across > hw_px) continue;
-
+        for (ptrdiff_t q = pt_offset[k]; q < pt_offset[k + 1]; q++) {
+          ptrdiff_t idx = pt_pixels[q];
           accumulator_add(&accumulators[pt], dem[idx]);
           if (compute_percentiles)
             percentile_accumulator_add(&p_accumulators[pt], dem[idx]);
         }
       }
     }
+
+    free(assignment);
+    free(pt_count);
+    free(pt_offset);
+    free(pt_pixels);
+    free(pt_fill);
   }
 
   // Finalize statistics
@@ -1164,8 +1206,6 @@ void swath_longitudinal(
   }
 
   // Cleanup
-  free(bres_i);
-  free(bres_j);
   if (cum_dist) free(cum_dist);
   free(accumulators);
   if (compute_percentiles) {
@@ -1235,9 +1275,8 @@ ptrdiff_t swath_get_point_pixels(
     free(bres_i);
     free(bres_j);
   } else {
-    // --- Case 2: regression rectangle on binning window ---
+    // --- Case 2: Meijster EDT nearest-track-point assignment ---
 
-    // Cumulative along-track distance
     float *cum_dist = (float *)malloc(n_track_points * sizeof(float));
     cum_dist[0] = 0.0f;
     for (ptrdiff_t k = 0; k < n_track_points - 1; k++) {
@@ -1246,7 +1285,6 @@ ptrdiff_t swath_get_point_pixels(
       cum_dist[k + 1] = cum_dist[k] + sqrtf(di * di + dj * dj) * cellsize;
     }
 
-    // Find edge track points of the binning window
     ptrdiff_t pt_lo = point_index, pt_hi = point_index;
     while (pt_lo > 0 &&
            cum_dist[point_index] - cum_dist[pt_lo - 1] <= binning_distance)
@@ -1255,110 +1293,16 @@ ptrdiff_t swath_get_point_pixels(
            cum_dist[pt_hi + 1] - cum_dist[point_index] <= binning_distance)
       pt_hi++;
 
-    // PCA on track points [pt_lo..pt_hi]
-    ptrdiff_t nw = pt_hi - pt_lo + 1;
-    float mean_i = 0, mean_j = 0;
-    for (ptrdiff_t k = pt_lo; k <= pt_hi; k++) {
-      mean_i += track_i[k];
-      mean_j += track_j[k];
-    }
-    mean_i /= (float)nw;
-    mean_j /= (float)nw;
+    ptrdiff_t *assignment = compute_track_assignment(
+        track_i, track_j, n_track_points,
+        distance_from_track, dims, half_width);
 
-    float cov_ii = 0, cov_ij = 0, cov_jj = 0;
-    for (ptrdiff_t k = pt_lo; k <= pt_hi; k++) {
-      float di = track_i[k] - mean_i;
-      float dj = track_j[k] - mean_j;
-      cov_ii += di * di;
-      cov_ij += di * dj;
-      cov_jj += dj * dj;
-    }
-
-    float diff = cov_ii - cov_jj;
-    float D = sqrtf(diff * diff + 4.0f * cov_ij * cov_ij);
-    float reg_ti, reg_tj;
-    if (cov_ii >= cov_jj) {
-      reg_ti = diff + D;
-      reg_tj = 2.0f * cov_ij;
-    } else {
-      reg_ti = 2.0f * cov_ij;
-      reg_tj = -diff + D;
-    }
-    float vlen = sqrtf(reg_ti * reg_ti + reg_tj * reg_tj);
-    if (vlen > 1e-10f) {
-      reg_ti /= vlen;
-      reg_tj /= vlen;
-    } else {
-      reg_ti = track_i[pt_hi] - track_i[pt_lo];
-      reg_tj = track_j[pt_hi] - track_j[pt_lo];
-      vlen = sqrtf(reg_ti * reg_ti + reg_tj * reg_tj);
-      if (vlen > 0) { reg_ti /= vlen; reg_tj /= vlen; }
-      else { reg_ti = 1; reg_tj = 0; }
-    }
-
-    float fwd_i = track_i[pt_hi] - track_i[pt_lo];
-    float fwd_j = track_j[pt_hi] - track_j[pt_lo];
-    if (fwd_i * reg_ti + fwd_j * reg_tj < 0) {
-      reg_ti = -reg_ti;
-      reg_tj = -reg_tj;
-    }
-
-    float reg_oi = -reg_tj, reg_oj = reg_ti;
-
-    // Project all window track points onto tangent to get along-track extent
-    float along_min = 0, along_max = 0;
-    for (ptrdiff_t k = pt_lo; k <= pt_hi; k++) {
-      float d = (track_i[k] - mean_i) * reg_ti +
-                (track_j[k] - mean_j) * reg_tj;
-      if (d < along_min) along_min = d;
-      if (d > along_max) along_max = d;
-    }
-    along_min -= 1.0f;
-    along_max += 1.0f;
-
-    // Rectangle corners
-    float c0_i = mean_i + reg_ti * along_min + reg_oi * hw_px;
-    float c0_j = mean_j + reg_tj * along_min + reg_oj * hw_px;
-    float c1_i = mean_i + reg_ti * along_max + reg_oi * hw_px;
-    float c1_j = mean_j + reg_tj * along_max + reg_oj * hw_px;
-    float c2_i = mean_i + reg_ti * along_max - reg_oi * hw_px;
-    float c2_j = mean_j + reg_tj * along_max - reg_oj * hw_px;
-    float c3_i = mean_i + reg_ti * along_min - reg_oi * hw_px;
-    float c3_j = mean_j + reg_tj * along_min - reg_oj * hw_px;
-
-    float corners_i[4] = {c0_i, c1_i, c2_i, c3_i};
-    float corners_j[4] = {c0_j, c1_j, c2_j, c3_j};
-    float bb_i0 = corners_i[0], bb_i1 = corners_i[0];
-    float bb_j0 = corners_j[0], bb_j1 = corners_j[0];
-    for (int c = 1; c < 4; c++) {
-      if (corners_i[c] < bb_i0) bb_i0 = corners_i[c];
-      if (corners_i[c] > bb_i1) bb_i1 = corners_i[c];
-      if (corners_j[c] < bb_j0) bb_j0 = corners_j[c];
-      if (corners_j[c] > bb_j1) bb_j1 = corners_j[c];
-    }
-
-    ptrdiff_t i0 = (ptrdiff_t)bb_i0 - 1;
-    ptrdiff_t i1 = (ptrdiff_t)bb_i1 + 2;
-    ptrdiff_t j0 = (ptrdiff_t)bb_j0 - 1;
-    ptrdiff_t j1 = (ptrdiff_t)bb_j1 + 2;
-    if (i0 < 0) i0 = 0;
-    if (j0 < 0) j0 = 0;
-    if (i1 >= dims[0]) i1 = dims[0] - 1;
-    if (j1 >= dims[1]) j1 = dims[1] - 1;
-
-    for (ptrdiff_t pj = j0; pj <= j1; pj++) {
-      for (ptrdiff_t pi = i0; pi <= i1; pi++) {
+    // Gather pixels assigned to track points in [pt_lo..pt_hi]
+    for (ptrdiff_t pj = 0; pj < dims[1]; pj++) {
+      for (ptrdiff_t pi = 0; pi < dims[0]; pi++) {
         ptrdiff_t idx = pj * dims[0] + pi;
-        float dist_m = distance_from_track[idx];
-        if (isnan(dist_m)) continue;
-        if (fabsf(dist_m) > half_width) continue;
-
-        float di = (float)pi - mean_i;
-        float dj = (float)pj - mean_j;
-        float along = di * reg_ti + dj * reg_tj;
-        float across = di * reg_oi + dj * reg_oj;
-        if (along < along_min || along > along_max) continue;
-        if (across < -hw_px || across > hw_px) continue;
+        ptrdiff_t a = assignment[idx];
+        if (a < pt_lo || a > pt_hi) continue;
 
         pixels_i[n_pixels] = pi;
         pixels_j[n_pixels] = pj;
@@ -1366,6 +1310,7 @@ ptrdiff_t swath_get_point_pixels(
       }
     }
 
+    free(assignment);
     free(cum_dist);
   }
 
