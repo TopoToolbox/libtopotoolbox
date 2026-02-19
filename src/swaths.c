@@ -920,7 +920,8 @@ static ptrdiff_t bresenham_d8(ptrdiff_t *out_i, ptrdiff_t *out_j,
 // Pixels outside the mask have value -1.
 static ptrdiff_t *compute_track_assignment(
     const float *track_i, const float *track_j, ptrdiff_t n_track_points,
-    const float *distance_from_track, ptrdiff_t dims[2], float half_width)
+    const float *distance_from_track, ptrdiff_t dims[2], float half_width,
+    int use_segment_seeds)
 {
   ptrdiff_t nrows = dims[0], ncols = dims[1];
   ptrdiff_t total = nrows * ncols;
@@ -932,22 +933,54 @@ static ptrdiff_t *compute_track_assignment(
   ptrdiff_t *lg = (ptrdiff_t *)malloc(total * sizeof(ptrdiff_t));
   for (ptrdiff_t idx = 0; idx < total; idx++) { g[idx] = INF_VAL; lg[idx] = -1; }
 
-  // Place seeds: round each track point to nearest grid pixel.
-  // If two track points round to the same pixel, keep the closest in float.
-  for (ptrdiff_t k = 0; k < n_track_points; k++) {
-    ptrdiff_t si = (ptrdiff_t)(track_i[k] + 0.5f);
-    ptrdiff_t sj = (ptrdiff_t)(track_j[k] + 0.5f);
-    if (si < 0 || si >= nrows || sj < 0 || sj >= ncols) continue;
-    ptrdiff_t sidx = sj * nrows + si;
-    if (lg[sidx] < 0) {
-      g[sidx] = 0; lg[sidx] = k;
-    } else {
-      ptrdiff_t prev = lg[sidx];
-      float d2k = (track_i[k]-(float)si)*(track_i[k]-(float)si) +
-                  (track_j[k]-(float)sj)*(track_j[k]-(float)sj);
-      float d2p = (track_i[prev]-(float)si)*(track_i[prev]-(float)si) +
-                  (track_j[prev]-(float)sj)*(track_j[prev]-(float)sj);
-      if (d2k < d2p) lg[sidx] = k;
+  if (use_segment_seeds) {
+    // Rasterize each segment at ~0.5px spacing. For each rasterized pixel,
+    // assign the nearest track point by Euclidean distance.
+    for (ptrdiff_t k = 0; k < n_track_points - 1; k++) {
+      float di = track_i[k+1] - track_i[k];
+      float dj = track_j[k+1] - track_j[k];
+      float seg_len = sqrtf(di*di + dj*dj);
+      ptrdiff_t n_steps = (ptrdiff_t)(seg_len * 2.0f) + 1;
+
+      for (ptrdiff_t s = 0; s <= n_steps; s++) {
+        float t = n_steps > 0 ? (float)s / (float)n_steps : 0.0f;
+        ptrdiff_t si = (ptrdiff_t)(track_i[k] + t*di + 0.5f);
+        ptrdiff_t sj = (ptrdiff_t)(track_j[k] + t*dj + 0.5f);
+        if (si < 0 || si >= nrows || sj < 0 || sj >= ncols) continue;
+        ptrdiff_t sidx = sj * nrows + si;
+
+        float min_d2 = FLT_MAX;
+        ptrdiff_t best_pt = -1;
+        for (ptrdiff_t p = 0; p < n_track_points; p++) {
+          float tdi = (float)si - track_i[p];
+          float tdj = (float)sj - track_j[p];
+          float d2 = tdi*tdi + tdj*tdj;
+          if (d2 < min_d2) { min_d2 = d2; best_pt = p; }
+        }
+
+        if (lg[sidx] < 0) {
+          g[sidx] = 0; lg[sidx] = best_pt;
+        } else {
+          float tdi = (float)si - track_i[lg[sidx]];
+          float tdj = (float)sj - track_j[lg[sidx]];
+          if (min_d2 < tdi*tdi + tdj*tdj) { g[sidx] = 0; lg[sidx] = best_pt; }
+        }
+      }
+    }
+  } else {
+    // One seed per track point at its rounded grid position.
+    for (ptrdiff_t k = 0; k < n_track_points; k++) {
+      ptrdiff_t si = (ptrdiff_t)(track_i[k] + 0.5f);
+      ptrdiff_t sj = (ptrdiff_t)(track_j[k] + 0.5f);
+      if (si < 0 || si >= nrows || sj < 0 || sj >= ncols) continue;
+      ptrdiff_t sidx = sj * nrows + si;
+      if (lg[sidx] < 0) {
+        g[sidx] = 0; lg[sidx] = k;
+      } else {
+        float aki = (float)si - track_i[k],         akj = (float)sj - track_j[k];
+        float api = (float)si - track_i[lg[sidx]],  apj = (float)sj - track_j[lg[sidx]];
+        if (aki*aki + akj*akj < api*api + apj*apj) lg[sidx] = k;
+      }
     }
   }
 
@@ -1043,7 +1076,7 @@ void swath_longitudinal(
     ptrdiff_t dims[2], float cellsize,
     float half_width, float binning_distance,
     ptrdiff_t n_points_regression,
-    ptrdiff_t n_internal_cuts) {
+    ptrdiff_t use_segment_seeds) {
   if (n_track_points < 2)
     return;
 
@@ -1121,7 +1154,8 @@ void swath_longitudinal(
     ptrdiff_t total = dims[0] * dims[1];
     ptrdiff_t *assignment = compute_track_assignment(
         track_i, track_j, n_track_points,
-        distance_from_track, dims, half_width);
+        distance_from_track, dims, half_width,
+        (int)use_segment_seeds);
 
     // Build CSR pixel lists per track point
     ptrdiff_t *pt_count = (ptrdiff_t *)calloc(n_track_points, sizeof(ptrdiff_t));
@@ -1231,7 +1265,7 @@ ptrdiff_t swath_get_point_pixels(
     ptrdiff_t dims[2],
     float cellsize, float half_width, float binning_distance,
     ptrdiff_t n_points_regression,
-    ptrdiff_t n_internal_cuts) {
+    ptrdiff_t use_segment_seeds) {
   if (n_track_points < 2)
     return 0;
   if (point_index < 0 || point_index >= n_track_points)
@@ -1295,7 +1329,8 @@ ptrdiff_t swath_get_point_pixels(
 
     ptrdiff_t *assignment = compute_track_assignment(
         track_i, track_j, n_track_points,
-        distance_from_track, dims, half_width);
+        distance_from_track, dims, half_width,
+        (int)use_segment_seeds);
 
     // Gather pixels assigned to track points in [pt_lo..pt_hi]
     for (ptrdiff_t pj = 0; pj < dims[1]; pj++) {

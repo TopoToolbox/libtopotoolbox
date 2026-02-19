@@ -2531,7 +2531,7 @@ void swath_longitudinal(float *point_means, float *point_stddevs,
                          ptrdiff_t dims[2], float cellsize, float half_width,
                          float binning_distance,
                          ptrdiff_t n_points_regression,
-                         ptrdiff_t n_internal_cuts);
+                         ptrdiff_t use_segment_seeds);
 
 /**
    @brief Get pixel coordinates associated with a single track point
@@ -2554,7 +2554,9 @@ void swath_longitudinal(float *point_means, float *point_stddevs,
    If <= 0, gathers pixels along the orthogonal cross-section only.
    If > 0, gathers pixels within bounding box between edge orthogonals.
    @param[in] n_points_regression Number of track points for PCA regression
-   @param[in] n_internal_cuts Number of internal cutting lines (0 = two extremes only)
+   @param[in] use_segment_seeds 0 = seed EDT from track point positions only;
+   nonzero = rasterize track segments at sub-pixel spacing before seeding
+   (more accurate for coarsely sampled tracks, same O(n) cost)
 
    @return Number of pixels written
  */
@@ -2567,7 +2569,7 @@ ptrdiff_t swath_get_point_pixels(ptrdiff_t *pixels_i, ptrdiff_t *pixels_j,
                                   ptrdiff_t dims[2], float cellsize,
                                   float half_width, float binning_distance,
                                   ptrdiff_t n_points_regression,
-                                  ptrdiff_t n_internal_cuts);
+                                  ptrdiff_t use_segment_seeds);
 
 /**
    @brief Rasterize a continuous path between ordered reference points.
