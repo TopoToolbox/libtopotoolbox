@@ -2690,7 +2690,8 @@ ptrdiff_t sample_points_between_refs(ptrdiff_t *out_i, ptrdiff_t *out_j,
 #define SIMPLIFY_FIXED_N 0 /**< tolerance = exact number of output points */
 #define SIMPLIFY_KNEEDLE 1 /**< tolerance unused; automatic knee detection */
 #define SIMPLIFY_AIC 2 /**< tolerance unused; Akaike information criterion */
-#define SIMPLIFY_BIC 3 /**< tolerance unused; Bayesian information criterion \
+#define SIMPLIFY_BIC                                                         \
+  3                    /**< tolerance unused; Bayesian information criterion \
                         */
 #define SIMPLIFY_MDL 4 /**< tolerance unused; minimum description length */
 #define SIMPLIFY_VW_AREA \
