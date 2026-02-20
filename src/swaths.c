@@ -10,23 +10,32 @@
 #include "topotoolbox.h"
 
 /*
-  Swath profile analysis functions for libtopotoolbox.
+  Swath profile analysis — libtopotoolbox
+  ========================================
 
-  This module provides two complementary approaches for swath profile analysis:
+  Three analysis modes, all operating in pixel-space float coordinates:
 
-  1. Transverse: Aggregates DEM pixels by perpendicular distance to track,
-     creating a single averaged cross-sectional profile.
+  Transverse  — collapses the swath into a single cross-sectional profile
+                binned by signed perpendicular distance from the track.
 
-  2. Longitudinal: Computes individual swath statistics for each track point,
-     showing how the profile changes along the track.
+  Longitudinal — per-track-point statistics using either:
+    Case 1 (binning_distance <= 0): Bresenham cross-section at each point.
+    Case 2 (binning_distance  > 0): Meijster EDT nearest-track-point
+                assignment + sliding-window accumulation along the track.
 
-  Core algorithm: frontier-based Dijkstra expansion from the track outward.
-  Only pixels within the specified distance are visited, making cost
-  proportional to swath area rather than total grid size.
+  Windowed longitudinal — per-track-point statistics gathered from an
+    oriented rectangle (PCA tangent, ±half_width × ±binning_distance).
+    No pre-computed distance map required.
+
+  Distance maps — two public variants:
+    swath_compute_distance_map  : clipped to half_width, optional centre-line.
+    swath_compute_full_distance_map : unbounded, optional mask/dem filter.
+
+  Line simplification — swath_simplify_line (IEF engine, 7 stopping criteria).
 */
 
 // ============================================================================
-// Statistics Accumulator - Welford's online algorithm for numerical stability
+// Statistics accumulator — running mean, variance, min, max (online, O(1))
 // ============================================================================
 
 typedef struct {
@@ -38,7 +47,7 @@ typedef struct {
 } swath_stats_accumulator;
 
 // ============================================================================
-// Percentile Accumulator - Stores values for percentile computation
+// Percentile accumulator — collects values, sorts on demand, queries by rank
 // ============================================================================
 
 typedef struct {
@@ -131,7 +140,7 @@ static inline float accumulator_stddev(const swath_stats_accumulator *acc) {
 }
 
 // ============================================================================
-// Min-Heap for Frontier Expansion (Dijkstra)
+// Min-heap — used by frontier Dijkstra and the IEF simplification engine
 // ============================================================================
 
 typedef struct {
@@ -200,11 +209,10 @@ static void heap_free(min_heap *h) {
 }
 
 // ============================================================================
-// Geometric Distance Computation
+// Signed perpendicular distance from a point to a segment (pixel space)
 // ============================================================================
-
-// Signed perpendicular distance from point to line segment (pixel space).
-// Negative = left of segment direction, positive = right.
+// Returns negative if the point is left of a→b, positive if right.
+// proj_x/proj_y: closest point on segment; lambda: clamped parameter in [0,1].
 static float point_to_segment_distance(float px, float py, float ax, float ay,
                                        float bx, float by, float *proj_x,
                                        float *proj_y, float *lambda) {
@@ -237,7 +245,8 @@ static float point_to_segment_distance(float px, float py, float ax, float ay,
   return cross >= 0.0f ? dist : -dist;
 }
 
-// Forward declaration
+// Forward declaration — defined after swath_get_point_pixels (file order
+// constraint: used by swath_compute_distance_map which comes earlier).
 static void boundary_dijkstra(
     float *restrict dist_out,
     const float *restrict best_abs,
@@ -245,20 +254,17 @@ static void boundary_dijkstra(
     ptrdiff_t dims[2], float hw_px);
 
 // ============================================================================
-// Frontier-based Distance Map (Dijkstra from track, bounded by max_dist_px)
+// Frontier distance map — Dijkstra outward from track, bounded at max_dist_px
 // ============================================================================
 //
-// Expands outward from track pixels using a min-heap ordered by absolute
-// perpendicular distance. Each pixel is processed once. Only pixels within
-// max_dist_px (pixel units) are visited.
+// Seeds: track segments rasterized at ~0.5 px spacing.
+// Expansion: 8-connected, ordered by absolute perpendicular distance.
+// Each pixel is settled once; stale heap entries are skipped.
 //
-// Outputs (caller-allocated, size total_pixels):
-//   best_abs:     absolute perpendicular distance in pixels (FLT_MAX if unvisited)
-//   signed_dist:  signed perpendicular distance in pixels (0 if unvisited)
-//   nearest_seg:  nearest segment index (-1 if unvisited)
-//
-// Any output pointer can be NULL to skip that output, but best_abs is always
-// needed internally and will be allocated temporarily if NULL.
+// Outputs (caller-allocated, size dims[0]*dims[1]; NULL to skip):
+//   best_abs    — absolute perpendicular distance in pixels (FLT_MAX = unvisited)
+//   signed_dist — signed perpendicular distance in pixels
+//   nearest_seg — index of nearest track segment (-1 = unvisited)
 
 static void frontier_distance_map(
     float *restrict best_abs,
@@ -377,9 +383,11 @@ static void frontier_distance_map(
 }
 
 // ============================================================================
-// Public API Functions
+// Public API
 // ============================================================================
 
+// Returns the number of transverse bins covering [-half_width, +half_width]
+// at the given bin_resolution.  Convenience function for pre-allocation.
 TOPOTOOLBOX_API
 ptrdiff_t swath_compute_nbins(float half_width, float bin_resolution) {
   if (bin_resolution <= 0.0f || half_width <= 0.0f)
@@ -388,8 +396,18 @@ ptrdiff_t swath_compute_nbins(float half_width, float bin_resolution) {
 }
 
 // ============================================================================
-// Clipped Distance Map with Optional Centre-Line Inversion (Public API)
+// Clipped distance map — signed/unsigned, optional centre-line extraction
 // ============================================================================
+//
+// Computes a perpendicular distance map clipped to half_width metres.
+// Pixels beyond half_width receive NaN.
+//
+// If centre_line_i/j/width are non-NULL, also extracts the Voronoi ridge
+// between the positive-side and negative-side swath boundaries (the
+// geometric centre line) and the local swath width at each centre pixel.
+// The ridge is thinned to 1-pixel width via elbow removal on the ordered path.
+//
+// Returns the number of centre-line pixels found (0 if not requested).
 
 TOPOTOOLBOX_API
 ptrdiff_t swath_compute_distance_map(
@@ -703,8 +721,9 @@ ptrdiff_t swath_compute_distance_map(
 }
 
 // ============================================================================
-// Full (Unclipped) Distance Map (Public API)
+// Full (unbounded) distance map — expands to all reachable pixels
 // ============================================================================
+// Optional dem/mask restrict expansion to non-NaN / non-zero pixels.
 
 TOPOTOOLBOX_API
 void swath_compute_full_distance_map(
@@ -759,8 +778,10 @@ void swath_compute_full_distance_map(
 }
 
 // ============================================================================
-// Transverse Swath Profile - Averaged Cross-Section
+// Transverse swath — DEM pixels binned by signed perpendicular distance
 // ============================================================================
+// Requires a pre-computed signed distance map (swath_compute_distance_map).
+// If normalize != 0, elevations are shifted so the track-centre bin is at zero.
 
 TOPOTOOLBOX_API
 void swath_transverse(
@@ -894,12 +915,14 @@ void swath_transverse(
 }
 
 // ============================================================================
-// Local Tangent via PCA (for orthogonal cross-sections)
+// Local tangent via PCA — used by longitudinal and windowed swath functions
 // ============================================================================
 //
-// Computes the local tangent direction at a track point by PCA on a
-// window of N neighbouring track points. Returns a unit tangent (ti, tj)
-// in pixel space, oriented consistently along the track direction.
+// Fits a 2×2 covariance matrix over a window of n_points_regression
+// neighbouring track points centred on pt.  The principal eigenvector gives
+// the local tangent direction; orientation is fixed to agree with the
+// forward-difference at pt.  Falls back to the endpoint direction when
+// the covariance is degenerate (e.g. integer-quantised track coordinates).
 
 static void compute_local_tangent(
     const float *track_i, const float *track_j,
@@ -1034,13 +1057,19 @@ static void compute_local_tangent(
 }
 
 // ============================================================================
-// Longitudinal Swath Profile - Orthogonal Cross-Section Approach
+// Longitudinal swath — per-track-point statistics (two modes)
 // ============================================================================
 //
-// Per-point approach: for each track point, compute a local tangent via
-// PCA regression, then gather pixels along the orthogonal cross-section
-// (binning_distance <= 0) or within the bounding box defined by edge
-// orthogonals (binning_distance > 0).
+// Case 1 (binning_distance <= 0):
+//   For each track point, walk a Bresenham line along the orthogonal direction
+//   (±half_width pixels) and accumulate pixels whose distance_from_track is
+//   within half_width metres.
+//
+// Case 2 (binning_distance > 0):
+//   Assigns every swath pixel to its nearest track point via Meijster EDT
+//   (compute_track_assignment), then applies a sliding window of width
+//   ±binning_distance metres along the cumulative track distance, using
+//   Lemire monotonic deques for O(1) amortised min/max per output point.
 
 // Forward declaration for Bresenham (defined later in file)
 static ptrdiff_t bresenham_d8(ptrdiff_t *out_i, ptrdiff_t *out_j,
@@ -1049,15 +1078,17 @@ static ptrdiff_t bresenham_d8(ptrdiff_t *out_i, ptrdiff_t *out_j,
                               int skip_first);
 
 // ============================================================================
-// Meijster exact Euclidean distance transform — nearest track point labeling
+// Meijster EDT nearest-track-point labeling (internal, Case 2 only)
 // ============================================================================
 //
-// For each pixel within |distance_from_track| <= half_width, computes the
-// index of the nearest track point using the 2-pass Meijster EDT. Seeds are
-// the rounded-pixel positions of each track point.
+// Two-pass algorithm: column scan builds row distances, row parabola envelope
+// resolves the 2-D nearest-seed per pixel.
 //
-// Returns a malloc'd array of size dims[0]*dims[1]; caller must free().
-// Pixels outside the mask have value -1.
+// Seeds: one per track point (rounded position) or one per rasterized segment
+// pixel (use_segment_seeds != 0, more accurate for coarsely sampled tracks).
+//
+// Returns a malloc'd array [dims[0]*dims[1]]; caller frees.
+// Value = nearest track-point index, or -1 for pixels outside the mask.
 static ptrdiff_t *compute_track_assignment(
     const float *track_i, const float *track_j, ptrdiff_t n_track_points,
     const float *distance_from_track, ptrdiff_t dims[2], float half_width,
@@ -1203,7 +1234,7 @@ static ptrdiff_t *compute_track_assignment(
 }
 
 TOPOTOOLBOX_API
-void swath_longitudinal(
+ptrdiff_t swath_longitudinal(
     float *restrict point_means, float *restrict point_stddevs,
     float *restrict point_mins, float *restrict point_maxs,
     ptrdiff_t *restrict point_counts, float *restrict point_medians,
@@ -1216,9 +1247,12 @@ void swath_longitudinal(
     ptrdiff_t dims[2], float cellsize,
     float half_width, float binning_distance,
     ptrdiff_t n_points_regression,
-    ptrdiff_t use_segment_seeds) {
+    ptrdiff_t use_segment_seeds,
+    ptrdiff_t skip,
+    float *result_track_i, float *result_track_j) {
   if (n_track_points < 2)
-    return;
+    return 0;
+  ptrdiff_t effective_skip = (skip < 1) ? 1 : skip;
 
   float hw_px = half_width / cellsize;
 
@@ -1264,6 +1298,7 @@ void swath_longitudinal(
     ptrdiff_t *bres_j = (ptrdiff_t *)malloc(bres_cap * sizeof(ptrdiff_t));
 
     for (ptrdiff_t pt = 0; pt < n_track_points; pt++) {
+      if (effective_skip > 1 && pt % effective_skip != 0) continue;
       float tang_i, tang_j;
       compute_local_tangent(track_i, track_j, n_track_points, pt,
                             n_points_regression, &tang_i, &tang_j);
@@ -1395,24 +1430,27 @@ void swath_longitudinal(
         if (max_head <= max_tail && max_dq[max_head] == lo) max_head++;
         lo++;
       }
-      // Write output
-      if (win_count > 0) {
-        double mean = win_sum / (double)win_count;
-        double var  = win_sum2 / (double)win_count - mean * mean;
-        point_counts[pt]  = win_count;
-        point_means[pt]   = (float)mean;
-        point_stddevs[pt] = (float)sqrt(var > 0.0 ? var : 0.0);
-        point_mins[pt] = (min_head <= min_tail) ? blk_min[min_dq[min_head]] : NAN;
-        point_maxs[pt] = (max_head <= max_tail) ? blk_max[max_dq[max_head]] : NAN;
-      } else {
-        point_counts[pt]  = 0;
-        point_means[pt]   = NAN;
-        point_stddevs[pt] = NAN;
-        point_mins[pt]    = NAN;
-        point_maxs[pt]    = NAN;
+      // Write output only for kept track points
+      if (effective_skip <= 1 || pt % effective_skip == 0) {
+        ptrdiff_t out = pt / effective_skip;
+        if (win_count > 0) {
+          double mean = win_sum / (double)win_count;
+          double var  = win_sum2 / (double)win_count - mean * mean;
+          point_counts[out]  = win_count;
+          point_means[out]   = (float)mean;
+          point_stddevs[out] = (float)sqrt(var > 0.0 ? var : 0.0);
+          point_mins[out] = (min_head <= min_tail) ? blk_min[min_dq[min_head]] : NAN;
+          point_maxs[out] = (max_head <= max_tail) ? blk_max[max_dq[max_head]] : NAN;
+        } else {
+          point_counts[out]  = 0;
+          point_means[out]   = NAN;
+          point_stddevs[out] = NAN;
+          point_mins[out]    = NAN;
+          point_maxs[out]    = NAN;
+        }
       }
       // Percentile accumulation for this window (still O(W*pix) per pt)
-      if (compute_percentiles) {
+      if (compute_percentiles && (effective_skip <= 1 || pt % effective_skip == 0)) {
         ptrdiff_t pt_lo = pt, pt_hi = pt;
         while (pt_lo > 0 &&
                cum_dist[pt] - cum_dist[pt_lo - 1] <= binning_distance)
@@ -1437,35 +1475,43 @@ void swath_longitudinal(
   }
 
   // Finalize statistics
+  ptrdiff_t n_result = 0;
   for (ptrdiff_t k = 0; k < n_track_points; k++) {
+    if (effective_skip > 1 && k % effective_skip != 0) continue;
+    ptrdiff_t out = k / effective_skip;
+    n_result = out + 1;
+
     if (!case2_done) {
-      point_means[k]   = accumulator_mean(&accumulators[k]);
-      point_stddevs[k] = accumulator_stddev(&accumulators[k]);
-      point_mins[k]    = accumulators[k].count > 0 ? accumulators[k].min_val : NAN;
-      point_maxs[k]    = accumulators[k].count > 0 ? accumulators[k].max_val : NAN;
-      point_counts[k]  = accumulators[k].count;
+      point_means[out]   = accumulator_mean(&accumulators[k]);
+      point_stddevs[out] = accumulator_stddev(&accumulators[k]);
+      point_mins[out]    = accumulators[k].count > 0 ? accumulators[k].min_val : NAN;
+      point_maxs[out]    = accumulators[k].count > 0 ? accumulators[k].max_val : NAN;
+      point_counts[out]  = accumulators[k].count;
     }
 
     if (compute_percentiles) {
       percentile_accumulator_sort(&p_accumulators[k]);
 
       if (point_medians != NULL)
-        point_medians[k] =
+        point_medians[out] =
             percentile_accumulator_get(&p_accumulators[k], 50.0f);
       if (point_q1 != NULL)
-        point_q1[k] = percentile_accumulator_get(&p_accumulators[k], 25.0f);
+        point_q1[out] = percentile_accumulator_get(&p_accumulators[k], 25.0f);
       if (point_q3 != NULL)
-        point_q3[k] = percentile_accumulator_get(&p_accumulators[k], 75.0f);
+        point_q3[out] = percentile_accumulator_get(&p_accumulators[k], 75.0f);
 
       if (percentile_list != NULL && n_percentiles > 0 &&
           point_percentiles != NULL) {
         for (ptrdiff_t p = 0; p < n_percentiles; p++) {
-          point_percentiles[k * n_percentiles + p] =
+          point_percentiles[out * n_percentiles + p] =
               percentile_accumulator_get(&p_accumulators[k],
                                          (float)percentile_list[p]);
         }
       }
     }
+
+    if (result_track_i) result_track_i[out] = track_i[k];
+    if (result_track_j) result_track_j[out] = track_j[k];
   }
 
   // Cleanup
@@ -1476,21 +1522,28 @@ void swath_longitudinal(
       percentile_accumulator_free(&p_accumulators[k]);
     free(p_accumulators);
   }
+  return n_result;
 }
 
 // ============================================================================
-// Longitudinal Swath — Windowed, All Pixels, Moving Histogram Percentiles
+// Windowed longitudinal swath — oriented rectangle, all interior pixels
 // ============================================================================
 //
-// Same pixel assignment as swath_longitudinal Case 2 (Meijster EDT) so every
-// pixel within half_width is counted. Sliding-window mean/std/min/max use
-// running moments + Lemire deques. Percentiles use a moving histogram
-// (SLW_N_BINS bins) updated O(blk_count) per step.
+// For each (kept) track point:
+//   1. Compute local PCA tangent (ti, tj); orthogonal = (-tj, ti).
+//   2. Define rectangle: ±binning_distance along track, ±half_width orthogonal.
+//   3. Scan the axis-aligned bounding box; accept pixels satisfying both
+//      |Δ·tang| ≤ bd_px  AND  |Δ·orth| ≤ hw_px.
+//   4. Pass 1: accumulate mean/std/min/max/count.
+//   5. Pass 2 (if percentiles requested): 2048-bin histogram over [vmin, vmax],
+//      queries resolved by rank scan.
+//
+// No pre-computed distance map required.  Independent of swath_longitudinal.
 
 #define SLW_N_BINS 2048
 
 TOPOTOOLBOX_API
-void swath_longitudinal_windowed(
+ptrdiff_t swath_longitudinal_windowed(
     float *point_means, float *point_stddevs,
     float *point_mins,  float *point_maxs,
     ptrdiff_t *point_counts, float *point_medians,
@@ -1500,261 +1553,201 @@ void swath_longitudinal_windowed(
     const float *dem,
     const float *track_i, const float *track_j,
     ptrdiff_t n_track_points,
-    const float *distance_from_track,
     ptrdiff_t dims[2], float cellsize,
     float half_width, float binning_distance,
     ptrdiff_t n_points_regression,
-    ptrdiff_t use_segment_seeds)
+    ptrdiff_t skip,
+    float *result_track_i, float *result_track_j)
 {
-  if (n_track_points < 2) return;
+  if (n_track_points < 2) return 0;
+  ptrdiff_t effective_skip = (skip < 1) ? 1 : skip;
 
-  ptrdiff_t total = dims[0] * dims[1];
+  ptrdiff_t nrows = dims[0], ncols = dims[1];
+  float hw_px = half_width / cellsize;
+  float bd_px = binning_distance / cellsize;
 
   int do_percentiles =
       (point_medians != NULL || point_q1 != NULL || point_q3 != NULL ||
        (percentile_list != NULL && n_percentiles > 0 && point_percentiles != NULL));
 
-  // ---- Pixel assignment (Meijster EDT, same as swath_longitudinal Case 2) ----
-  ptrdiff_t *assignment = compute_track_assignment(
-      track_i, track_j, n_track_points,
-      distance_from_track, dims, half_width, (int)use_segment_seeds);
+  ptrdiff_t *hist = do_percentiles
+      ? (ptrdiff_t *)calloc(SLW_N_BINS, sizeof(ptrdiff_t)) : NULL;
 
-  // ---- Per-block stats ----
-  double    *blk_sum   = (double    *)calloc((size_t)n_track_points, sizeof(double));
-  double    *blk_sum2  = (double    *)calloc((size_t)n_track_points, sizeof(double));
-  ptrdiff_t *blk_count = (ptrdiff_t *)calloc((size_t)n_track_points, sizeof(ptrdiff_t));
-  float     *blk_min   = (float     *)malloc((size_t)n_track_points * sizeof(float));
-  float     *blk_max   = (float     *)malloc((size_t)n_track_points * sizeof(float));
-  for (ptrdiff_t k = 0; k < n_track_points; k++) {
-    blk_min[k] =  FLT_MAX;
-    blk_max[k] = -FLT_MAX;
-  }
-
-  // ---- Histogram setup ----
-  ptrdiff_t *blk_bin_offsets = NULL;
-  uint16_t  *blk_bin_data    = NULL;
-  ptrdiff_t *hist             = NULL;
-  float global_min = 0.0f, global_max = 0.0f, bin_width = 1.0f;
-  int hist_valid = 0;
-
-  if (do_percentiles) {
-    // Find global min/max in one pass
-    int found = 0;
-    for (ptrdiff_t idx = 0; idx < total; idx++) {
-      ptrdiff_t a = assignment[idx];
-      if (a < 0 || isnan(dem[idx])) continue;
-      float v = dem[idx];
-      if (!found) { global_min = global_max = v; found = 1; }
-      else { if (v < global_min) global_min = v; if (v > global_max) global_max = v; }
-    }
-    if (found && global_max > global_min) {
-      bin_width = (global_max - global_min) / (float)SLW_N_BINS;
-      hist_valid = 1;
-    }
-
-    // Build CSR of per-block bin values
-    ptrdiff_t *cnt = (ptrdiff_t *)calloc((size_t)n_track_points, sizeof(ptrdiff_t));
-    for (ptrdiff_t idx = 0; idx < total; idx++) {
-      ptrdiff_t a = assignment[idx];
-      if (a >= 0 && !isnan(dem[idx])) cnt[a]++;
-    }
-    blk_bin_offsets = (ptrdiff_t *)malloc((size_t)(n_track_points + 1) * sizeof(ptrdiff_t));
-    blk_bin_offsets[0] = 0;
-    for (ptrdiff_t k = 0; k < n_track_points; k++)
-      blk_bin_offsets[k + 1] = blk_bin_offsets[k] + cnt[k];
-    free(cnt);
-
-    blk_bin_data = (uint16_t *)malloc((size_t)blk_bin_offsets[n_track_points] * sizeof(uint16_t));
-    ptrdiff_t *fill = (ptrdiff_t *)calloc((size_t)n_track_points, sizeof(ptrdiff_t));
-    for (ptrdiff_t idx = 0; idx < total; idx++) {
-      ptrdiff_t a = assignment[idx];
-      if (a < 0 || isnan(dem[idx])) continue;
-      blk_sum[a]  += (double)dem[idx];
-      blk_sum2[a] += (double)dem[idx] * (double)dem[idx];
-      blk_count[a]++;
-      if (dem[idx] < blk_min[a]) blk_min[a] = dem[idx];
-      if (dem[idx] > blk_max[a]) blk_max[a] = dem[idx];
-      int b = hist_valid ? (int)((dem[idx] - global_min) / bin_width) : 0;
-      if (b < 0) b = 0;
-      if (b >= SLW_N_BINS) b = SLW_N_BINS - 1;
-      blk_bin_data[blk_bin_offsets[a] + fill[a]] = (uint16_t)b;
-      fill[a]++;
-    }
-    free(fill);
-    hist = (ptrdiff_t *)calloc(SLW_N_BINS, sizeof(ptrdiff_t));
-  } else {
-    // No percentiles: single pass for block stats
-    for (ptrdiff_t idx = 0; idx < total; idx++) {
-      ptrdiff_t a = assignment[idx];
-      if (a < 0 || isnan(dem[idx])) continue;
-      blk_sum[a]  += (double)dem[idx];
-      blk_sum2[a] += (double)dem[idx] * (double)dem[idx];
-      blk_count[a]++;
-      if (dem[idx] < blk_min[a]) blk_min[a] = dem[idx];
-      if (dem[idx] > blk_max[a]) blk_max[a] = dem[idx];
-    }
-  }
-  free(assignment);
-
-  // ---- Cumulative along-track distance ----
-  float *cum_dist = (float *)malloc((size_t)n_track_points * sizeof(float));
-  cum_dist[0] = 0.0f;
-  for (ptrdiff_t k = 0; k < n_track_points - 1; k++) {
-    float di = track_i[k + 1] - track_i[k];
-    float dj = track_j[k + 1] - track_j[k];
-    cum_dist[k + 1] = cum_dist[k] + sqrtf(di * di + dj * dj) * cellsize;
-  }
-
-  // ---- Sliding window ----
-  ptrdiff_t *min_dq = (ptrdiff_t *)malloc((size_t)n_track_points * sizeof(ptrdiff_t));
-  ptrdiff_t *max_dq = (ptrdiff_t *)malloc((size_t)n_track_points * sizeof(ptrdiff_t));
-  ptrdiff_t min_head = 0, min_tail = -1;
-  ptrdiff_t max_head = 0, max_tail = -1;
-  double win_sum = 0.0, win_sum2 = 0.0;
-  ptrdiff_t win_count = 0;
-  ptrdiff_t lo = 0, hi = -1;
-
+  ptrdiff_t n_result = 0;
   for (ptrdiff_t pt = 0; pt < n_track_points; pt++) {
-    // Expand right
-    while (hi < n_track_points - 1 &&
-           cum_dist[hi + 1] - cum_dist[pt] <= binning_distance) {
-      hi++;
-      win_sum   += blk_sum[hi];
-      win_sum2  += blk_sum2[hi];
-      win_count += blk_count[hi];
-      if (blk_count[hi] > 0) {
-        while (min_head <= min_tail && blk_min[min_dq[min_tail]] >= blk_min[hi]) min_tail--;
-        min_dq[++min_tail] = hi;
-        while (max_head <= max_tail && blk_max[max_dq[max_tail]] <= blk_max[hi]) max_tail--;
-        max_dq[++max_tail] = hi;
-        if (do_percentiles && hist_valid)
-          for (ptrdiff_t q = blk_bin_offsets[hi]; q < blk_bin_offsets[hi + 1]; q++)
-            hist[blk_bin_data[q]]++;
+    if (effective_skip > 1 && pt % effective_skip != 0) continue;
+    ptrdiff_t out = pt / effective_skip;
+    float ti, tj;
+    compute_local_tangent(track_i, track_j, n_track_points, pt,
+                          n_points_regression, &ti, &tj);
+    float oi = -tj, oj = ti;   // orthogonal direction
+    float ci = track_i[pt], cj = track_j[pt];
+
+    // Axis-aligned bounding box of the oriented rectangle
+    float R = hw_px + bd_px;
+    ptrdiff_t pi_lo = (ptrdiff_t)(ci - R);     if (pi_lo < 0)     pi_lo = 0;
+    ptrdiff_t pi_hi = (ptrdiff_t)(ci + R) + 1; if (pi_hi >= nrows) pi_hi = nrows - 1;
+    ptrdiff_t pj_lo = (ptrdiff_t)(cj - R);     if (pj_lo < 0)     pj_lo = 0;
+    ptrdiff_t pj_hi = (ptrdiff_t)(cj + R) + 1; if (pj_hi >= ncols) pj_hi = ncols - 1;
+
+    // Pass 1: mean / std / min / max / count
+    double sum = 0.0, sum2 = 0.0;
+    ptrdiff_t count = 0;
+    float vmin = FLT_MAX, vmax = -FLT_MAX;
+
+    for (ptrdiff_t pj = pj_lo; pj <= pj_hi; pj++) {
+      for (ptrdiff_t pi = pi_lo; pi <= pi_hi; pi++) {
+        float di = (float)pi - ci, dj = (float)pj - cj;
+        if (fabsf(di * ti + dj * tj) > bd_px) continue;   // along-track
+        if (fabsf(di * oi + dj * oj) > hw_px) continue;   // orthogonal
+        float v = dem[pj * nrows + pi];
+        if (isnan(v)) continue;
+        sum  += (double)v;
+        sum2 += (double)v * (double)v;
+        count++;
+        if (v < vmin) vmin = v;
+        if (v > vmax) vmax = v;
       }
     }
-    // Shrink left
-    while (lo <= hi && cum_dist[pt] - cum_dist[lo] > binning_distance) {
-      win_sum   -= blk_sum[lo];
-      win_sum2  -= blk_sum2[lo];
-      win_count -= blk_count[lo];
-      if (min_head <= min_tail && min_dq[min_head] == lo) min_head++;
-      if (max_head <= max_tail && max_dq[max_head] == lo) max_head++;
-      if (do_percentiles && hist_valid && blk_count[lo] > 0)
-        for (ptrdiff_t q = blk_bin_offsets[lo]; q < blk_bin_offsets[lo + 1]; q++)
-          hist[blk_bin_data[q]]--;
-      lo++;
-    }
 
-    // Write scalar stats
-    if (win_count > 0) {
-      double mean = win_sum / (double)win_count;
-      double var  = win_sum2 / (double)win_count - mean * mean;
-      point_counts[pt]  = win_count;
-      point_means[pt]   = (float)mean;
-      point_stddevs[pt] = (float)sqrt(var > 0.0 ? var : 0.0);
-      point_mins[pt] = (min_head <= min_tail) ? blk_min[min_dq[min_head]] : NAN;
-      point_maxs[pt] = (max_head <= max_tail) ? blk_max[max_dq[max_head]] : NAN;
+    if (count > 0) {
+      double mean = sum / (double)count;
+      double var  = sum2 / (double)count - mean * mean;
+      point_counts[out]  = count;
+      point_means[out]   = (float)mean;
+      point_stddevs[out] = (float)sqrt(var > 0.0 ? var : 0.0);
+      point_mins[out]    = vmin;
+      point_maxs[out]    = vmax;
     } else {
-      point_counts[pt]  = 0;
-      point_means[pt]   = NAN;
-      point_stddevs[pt] = NAN;
-      point_mins[pt]    = NAN;
-      point_maxs[pt]    = NAN;
+      point_counts[out]  = 0;
+      point_means[out]   = NAN;
+      point_stddevs[out] = NAN;
+      point_mins[out]    = NAN;
+      point_maxs[out]    = NAN;
     }
 
-    // Percentile queries via histogram scan
+    // Pass 2 (percentiles): histogram over window pixels
     if (do_percentiles) {
-      #define HPCT(pval, out) do {                                               \
-        if (win_count <= 0) { (out) = NAN; }                                    \
-        else if (!hist_valid) { (out) = global_min; }                           \
-        else {                                                                   \
-          ptrdiff_t _t = (ptrdiff_t)ceilf((pval)/100.0f*(float)win_count);      \
-          _t = (_t < 1) ? 1 : (_t > win_count ? win_count : _t);               \
-          ptrdiff_t _c = 0; (out) = global_max;                                 \
-          for (ptrdiff_t _b = 0; _b < SLW_N_BINS; _b++) {                      \
-            _c += hist[_b];                                                      \
-            if (_c >= _t) { (out)=global_min+((float)_b+0.5f)*bin_width; break; } \
-          }                                                                      \
-        }                                                                        \
-      } while(0)
+      if (count <= 0) {
+        if (point_medians) point_medians[out] = NAN;
+        if (point_q1)      point_q1[out]      = NAN;
+        if (point_q3)      point_q3[out]      = NAN;
+        if (percentile_list && n_percentiles > 0 && point_percentiles)
+          for (ptrdiff_t p = 0; p < n_percentiles; p++)
+            point_percentiles[out * n_percentiles + p] = NAN;
+      } else if (vmax <= vmin) {
+        if (point_medians) point_medians[out] = vmin;
+        if (point_q1)      point_q1[out]      = vmin;
+        if (point_q3)      point_q3[out]      = vmin;
+        if (percentile_list && n_percentiles > 0 && point_percentiles)
+          for (ptrdiff_t p = 0; p < n_percentiles; p++)
+            point_percentiles[out * n_percentiles + p] = vmin;
+      } else {
+        float bw = (vmax - vmin) / (float)SLW_N_BINS;
 
-      if (point_medians) HPCT(50.0f, point_medians[pt]);
-      if (point_q1)      HPCT(25.0f, point_q1[pt]);
-      if (point_q3)      HPCT(75.0f, point_q3[pt]);
-      if (percentile_list && n_percentiles > 0 && point_percentiles)
-        for (ptrdiff_t p = 0; p < n_percentiles; p++)
-          HPCT((float)percentile_list[p], point_percentiles[pt * n_percentiles + p]);
+        memset(hist, 0, SLW_N_BINS * sizeof(ptrdiff_t));
 
-      #undef HPCT
+        for (ptrdiff_t pj = pj_lo; pj <= pj_hi; pj++) {
+          for (ptrdiff_t pi = pi_lo; pi <= pi_hi; pi++) {
+            float di = (float)pi - ci, dj = (float)pj - cj;
+            if (fabsf(di * ti + dj * tj) > bd_px) continue;
+            if (fabsf(di * oi + dj * oj) > hw_px) continue;
+            float v = dem[pj * nrows + pi];
+            if (isnan(v)) continue;
+            int b = (int)((v - vmin) / bw);
+            if (b < 0) b = 0;
+            if (b >= SLW_N_BINS) b = SLW_N_BINS - 1;
+            hist[b]++;
+          }
+        }
+
+        #define HPCT(pval, dst) do {                                             \
+          ptrdiff_t _t = (ptrdiff_t)ceilf((pval)/100.0f*(float)count);          \
+          _t = (_t < 1) ? 1 : (_t > count ? count : _t);                        \
+          ptrdiff_t _c = 0; (dst) = vmax;                                        \
+          for (ptrdiff_t _b = 0; _b < SLW_N_BINS; _b++) {                       \
+            _c += hist[_b];                                                       \
+            if (_c >= _t) { (dst) = vmin + ((float)_b + 0.5f) * bw; break; }    \
+          }                                                                       \
+        } while(0)
+
+        if (point_medians) HPCT(50.0f, point_medians[out]);
+        if (point_q1)      HPCT(25.0f, point_q1[out]);
+        if (point_q3)      HPCT(75.0f, point_q3[out]);
+        if (percentile_list && n_percentiles > 0 && point_percentiles)
+          for (ptrdiff_t p = 0; p < n_percentiles; p++)
+            HPCT((float)percentile_list[p], point_percentiles[out * n_percentiles + p]);
+
+        #undef HPCT
+      }
     }
+
+    if (result_track_i) result_track_i[out] = track_i[pt];
+    if (result_track_j) result_track_j[out] = track_j[pt];
+    n_result = out + 1;
   }
 
-  free(cum_dist);
-  free(blk_sum); free(blk_sum2); free(blk_count);
-  free(blk_min); free(blk_max);
-  free(min_dq); free(max_dq);
-  if (do_percentiles) { free(blk_bin_offsets); free(blk_bin_data); free(hist); }
+  if (hist) free(hist);
+  return n_result;
 }
 
 #undef SLW_N_BINS
 
-// Returns integer pixel coordinates of all pixels assigned to track points
-// in the sliding window centred on point_index. Mirrors swath_longitudinal_windowed.
-// Caller must pre-allocate pixels_i/pixels_j; safe upper bound is
-// dims[0]*dims[1] (total grid size).
+// Returns integer pixel coordinates of all pixels inside the oriented rectangle
+// for a single track point.  Mirrors swath_longitudinal_windowed exactly.
+// Safe upper bound for output arrays: dims[0] * dims[1].
 TOPOTOOLBOX_API
 ptrdiff_t swath_windowed_get_point_samples(
     ptrdiff_t *pixels_i, ptrdiff_t *pixels_j,
     const float *track_i, const float *track_j,
     ptrdiff_t n_track_points, ptrdiff_t point_index,
-    const float *distance_from_track,
     ptrdiff_t dims[2], float cellsize,
     float half_width, float binning_distance,
-    ptrdiff_t use_segment_seeds)
+    ptrdiff_t n_points_regression)
 {
   if (n_track_points < 2) return 0;
   if (point_index < 0 || point_index >= n_track_points) return 0;
 
-  // Cumulative distance to determine window
-  float *cum_dist = (float *)malloc((size_t)n_track_points * sizeof(float));
-  cum_dist[0] = 0.0f;
-  for (ptrdiff_t k = 0; k < n_track_points - 1; k++) {
-    float di = track_i[k + 1] - track_i[k];
-    float dj = track_j[k + 1] - track_j[k];
-    cum_dist[k + 1] = cum_dist[k] + sqrtf(di * di + dj * dj) * cellsize;
-  }
+  ptrdiff_t nrows = dims[0], ncols = dims[1];
+  float hw_px = half_width / cellsize;
+  float bd_px = binning_distance / cellsize;
 
-  ptrdiff_t pt_lo = point_index, pt_hi = point_index;
-  while (pt_lo > 0 &&
-         cum_dist[point_index] - cum_dist[pt_lo - 1] <= binning_distance) pt_lo--;
-  while (pt_hi < n_track_points - 1 &&
-         cum_dist[pt_hi + 1] - cum_dist[point_index] <= binning_distance) pt_hi++;
-  free(cum_dist);
+  float ti, tj;
+  compute_local_tangent(track_i, track_j, n_track_points, point_index,
+                        n_points_regression, &ti, &tj);
+  float oi = -tj, oj = ti;
+  float ci = track_i[point_index], cj = track_j[point_index];
 
-  ptrdiff_t *assignment = compute_track_assignment(
-      track_i, track_j, n_track_points,
-      distance_from_track, dims, half_width, (int)use_segment_seeds);
+  float R = hw_px + bd_px;
+  ptrdiff_t pi_lo = (ptrdiff_t)(ci - R);     if (pi_lo < 0)      pi_lo = 0;
+  ptrdiff_t pi_hi = (ptrdiff_t)(ci + R) + 1; if (pi_hi >= nrows)  pi_hi = nrows - 1;
+  ptrdiff_t pj_lo = (ptrdiff_t)(cj - R);     if (pj_lo < 0)      pj_lo = 0;
+  ptrdiff_t pj_hi = (ptrdiff_t)(cj + R) + 1; if (pj_hi >= ncols)  pj_hi = ncols - 1;
 
   ptrdiff_t n_out = 0;
-  for (ptrdiff_t pj = 0; pj < dims[1]; pj++) {
-    for (ptrdiff_t pi = 0; pi < dims[0]; pi++) {
-      ptrdiff_t a = assignment[pj * dims[0] + pi];
-      if (a < pt_lo || a > pt_hi) continue;
+  for (ptrdiff_t pj = pj_lo; pj <= pj_hi; pj++) {
+    for (ptrdiff_t pi = pi_lo; pi <= pi_hi; pi++) {
+      float di = (float)pi - ci, dj = (float)pj - cj;
+      if (fabsf(di * ti + dj * tj) > bd_px) continue;
+      if (fabsf(di * oi + dj * oj) > hw_px) continue;
       pixels_i[n_out] = pi;
       pixels_j[n_out] = pj;
       n_out++;
     }
   }
-  free(assignment);
   return n_out;
 }
 
+
 // ============================================================================
-// Per-Point Pixel Retrieval (Orthogonal Cross-Section)
+// Per-point pixel retrieval — mirrors swath_longitudinal (vanilla)
 // ============================================================================
 //
-// Returns pixel coordinates associated with a single track point using
-// the same regression + orthogonal approach as swath_longitudinal.
+// Case 1 (binning_distance <= 0): Bresenham cross-section filtered by
+//   distance_from_track.
+// Case 2 (binning_distance  > 0): Meijster EDT assignment; gathers all pixels
+//   whose nearest track point falls within [pt_lo, pt_hi] (the ±binning_distance
+//   window around point_index along the cumulative distance).
 
 TOPOTOOLBOX_API
 ptrdiff_t swath_get_point_pixels(
@@ -1853,18 +1846,13 @@ ptrdiff_t swath_get_point_pixels(
 }
 
 // ============================================================================
-// Inverted Distance Map — Centre Line + Width from Boundary-Inward Dijkstra
+// Boundary Dijkstra — inward D8 wavefront from swath-edge pixels
 // ============================================================================
 //
-// Given a track and half_width, computes the swath mask via the global distance
-// map, then grows inward from the mask boundary using two Dijkstra passes
-// (one from each side's boundary). The centre line is the ridge of the
-// distance-from-boundary field. Width at each centre-line pixel is the sum
-// of distances from the positive-side and negative-side boundaries.
-
-// Helper: single-source Dijkstra from a set of boundary seed pixels, expanding
-// D8 inward within the mask. Fills dist_out[total] with Euclidean distance
-// from nearest boundary seed.
+// Used internally by swath_compute_distance_map to build the distance-from-
+// boundary field needed for centre-line extraction.  Seeds are the boundary
+// pixels on one side of the swath (positive or negative); expansion is
+// restricted to pixels within the swath mask (best_abs <= hw_px).
 static void boundary_dijkstra(
     float *restrict dist_out,
     const float *restrict best_abs,
@@ -1922,14 +1910,15 @@ static void boundary_dijkstra(
   heap_free(&heap);
 }
 
-// swath_invert_distance_map removed — logic now in swath_compute_distance_map
-
 // ============================================================================
-// Bresenham Path Rasterization Between Reference Points
+// Bresenham rasterization — D8 (diagonal allowed) and D4 (cardinal only)
 // ============================================================================
+//
+// Both variants produce pixel sequences from (i0,j0) to (i1,j1).
+// D4 splits diagonal steps into two cardinal steps, used by sample_points_between_refs
+// when strict 4-connectivity is needed.
 
-// D8 Bresenham: standard line algorithm, each step moves 1 pixel
-// (cardinal or diagonal).
+// D8: each step moves exactly 1 pixel (cardinal or diagonal).
 static ptrdiff_t bresenham_d8(ptrdiff_t *out_i, ptrdiff_t *out_j,
                               ptrdiff_t i0, ptrdiff_t j0,
                               ptrdiff_t i1, ptrdiff_t j1,
@@ -2047,6 +2036,10 @@ static ptrdiff_t bresenham_d4(ptrdiff_t *out_i, ptrdiff_t *out_j,
   return count;
 }
 
+// Rasterizes a polyline through ref_i/ref_j reference pixels.
+// close_loop != 0 adds a segment from the last ref back to the first.
+// use_d4 != 0 uses D4 (cardinal-only) steps; otherwise D8.
+// Returns total number of pixels written to out_i/out_j.
 TOPOTOOLBOX_API
 ptrdiff_t sample_points_between_refs(
     ptrdiff_t *out_i,
@@ -2088,10 +2081,19 @@ ptrdiff_t sample_points_between_refs(
 }
 
 // ============================================================================
-// Line Simplification — Iterative End-Point Fit (IEF) engine
+// Line simplification — Iterative End-Point Fit (IEF) engine
 // ============================================================================
+//
+// ief_build constructs the full ordered insertion sequence in O(n log n):
+//   seq[k]        = original index of the k-th inserted interior point
+//   rmse_curve[k] = RMSE of the k+2-point approximation (k=0: endpoints only)
+//
+// simplify_line selects a stopping point on that curve via one of 7 criteria
+// (methods 0–6; see SIMPLIFY_* defines in topotoolbox.h), then reconstructs
+// the kept-point set.  Method 5 (VW-area) uses a separate doubly-linked-list
+// insertion path and does not call ief_build.
 
-// Perpendicular distance from point p to infinite line through a->b.
+// Perpendicular distance from point p to infinite line through a→b.
 static float seg_perp_dist(float ax, float ay, float bx, float by,
                             float px, float py) {
   float dx = bx - ax, dy = by - ay;
@@ -2337,32 +2339,40 @@ ptrdiff_t simplify_line(float *out_i, float *out_j,
     n_target = best_k + 2;
 
   } else if (method == 2) {
-    // AIC: 2*(k+2) + n*ln(RSS/n) where RSS = n * rmse^2
+    // AIC: 2*(k+2) + n*ln(rmse²)
+    // tolerance = RMSE noise floor: log term stops improving below it,
+    // preventing the criterion from always preferring all n points.
+    float min_rmse2 = tolerance * tolerance;
+    if (min_rmse2 < 1e-30f) min_rmse2 = 1e-30f;
     ptrdiff_t best_k = 0;
     float best_aic = FLT_MAX;
     for (ptrdiff_t k = 0; k < n - 1; k++) {
-      float rss = (float)n * rmse_curve[k] * rmse_curve[k];
-      float logterm = (rss > 0.0f) ? logf(rss / (float)n) : -30.0f;
-      float aic = 2.0f * (float)(k + 2) + (float)n * logterm;
+      float rmse2 = rmse_curve[k] * rmse_curve[k];
+      if (rmse2 < min_rmse2) rmse2 = min_rmse2;
+      float aic = 2.0f * (float)(k + 2) + (float)n * logf(rmse2);
       if (aic < best_aic) { best_aic = aic; best_k = k; }
     }
     n_target = best_k + 2;
 
   } else if (method == 3) {
-    // BIC: (k+2)*ln(n) + n*ln(RSS/n)
+    // BIC: (k+2)*ln(n) + n*ln(rmse²)
+    // tolerance = RMSE noise floor (same reasoning as AIC).
+    float min_rmse2 = tolerance * tolerance;
+    if (min_rmse2 < 1e-30f) min_rmse2 = 1e-30f;
     float logn = (n > 1) ? logf((float)n) : 0.0f;
     ptrdiff_t best_k = 0;
     float best_bic = FLT_MAX;
     for (ptrdiff_t k = 0; k < n - 1; k++) {
-      float rss = (float)n * rmse_curve[k] * rmse_curve[k];
-      float logterm = (rss > 0.0f) ? logf(rss / (float)n) : -30.0f;
-      float bic = (float)(k + 2) * logn + (float)n * logterm;
+      float rmse2 = rmse_curve[k] * rmse_curve[k];
+      if (rmse2 < min_rmse2) rmse2 = min_rmse2;
+      float bic = (float)(k + 2) * logn + (float)n * logf(rmse2);
       if (bic < best_bic) { best_bic = bic; best_k = k; }
     }
     n_target = best_k + 2;
 
   } else if (method == 4) {
-    // MDL: 2*(k+2)*log2(coord_range) + n*log2(rmse + eps)
+    // MDL: 2*(k+2)*log2(coord_range) + n*log2(rmse)
+    // tolerance = RMSE noise floor.
     float min_i = track_i[0], max_i = track_i[0];
     float min_j = track_j[0], max_j = track_j[0];
     for (ptrdiff_t k = 1; k < n; k++) {
@@ -2376,13 +2386,15 @@ ptrdiff_t simplify_line(float *out_i, float *out_j,
     if (coord_range < 1.0f) coord_range = 1.0f;
     float log2_range = log2f(coord_range);
     float log2e = 1.0f / logf(2.0f);
+    float min_rmse = (tolerance > 1e-15f) ? tolerance : 1e-15f;
 
     ptrdiff_t best_k = 0;
     float best_mdl = FLT_MAX;
     for (ptrdiff_t k = 0; k < n - 1; k++) {
       float rmse_k = rmse_curve[k];
+      if (rmse_k < min_rmse) rmse_k = min_rmse;
       float mdl = 2.0f * (float)(k + 2) * log2_range
-                  + (float)n * log2e * logf(rmse_k + 1e-6f);
+                  + (float)n * log2e * logf(rmse_k);
       if (mdl < best_mdl) { best_mdl = mdl; best_k = k; }
     }
     n_target = best_k + 2;
