@@ -2390,31 +2390,33 @@ ptrdiff_t swath_compute_nbins(float half_width, float bin_resolution);
    NOTE: swath_transverse and swath_longitudinal expect a SIGNED distance
    map (compute_signed=1) as input.
 
-   @param[out] distance_from_track Signed or absolute distance per pixel (meters).
-   NAN for pixels outside the swath. Size dims[0]*dims[1].
+   @param[out] distance_from_track Signed or absolute distance per pixel
+   (meters). NAN for pixels outside the swath. Size dims[0]*dims[1].
    @param[out] nearest_segment Nearest segment index per pixel, or NULL to skip
-   @param[out] dist_from_boundary Inward distance from boundary (meters), or NULL
+   @param[out] dist_from_boundary Inward distance from boundary (meters), or
+   NULL
    @param[out] centre_line_i Centre-line pixel coords (fast dim), or NULL
    @param[out] centre_line_j Centre-line pixel coords (slow dim), or NULL
-   @param[out] centre_width Local width at each centre-line pixel (meters), or NULL
+   @param[out] centre_width Local width at each centre-line pixel (meters), or
+   NULL
    @param[in] track_i Track coords in fast dimension (pixel space)
    @param[in] track_j Track coords in slow dimension (pixel space)
    @param[in] n_track_points Number of track vertices (>= 2)
    @param[in] dims Grid dimensions [fast, slow]
    @param[in] cellsize Cell size in meters
    @param[in] half_width Swath half-width in meters
-   @param[in] compute_signed If nonzero, output signed distance; otherwise absolute
+   @param[in] compute_signed If nonzero, output signed distance; otherwise
+   absolute
 
    @return Number of centre-line pixels (0 if centre outputs are NULL)
  */
 TOPOTOOLBOX_API
 ptrdiff_t swath_compute_distance_map(
     float *distance_from_track, ptrdiff_t *nearest_segment,
-    float *dist_from_boundary,
-    float *centre_line_i, float *centre_line_j, float *centre_width,
-    const float *track_i, const float *track_j,
-    ptrdiff_t n_track_points, ptrdiff_t dims[2],
-    float cellsize, float half_width, int compute_signed);
+    float *dist_from_boundary, float *centre_line_i, float *centre_line_j,
+    float *centre_width, const float *track_i, const float *track_j,
+    ptrdiff_t n_track_points, ptrdiff_t dims[2], float cellsize,
+    float half_width, int compute_signed);
 
 /**
    @brief Compute full (unclipped) distance map from track
@@ -2433,14 +2435,14 @@ ptrdiff_t swath_compute_distance_map(
    @param[in] cellsize Cell size in meters
    @param[in] dem DEM for NaN detection, or NULL to skip NaN check
    @param[in] mask Active mask (nonzero=active), or NULL for all active
-   @param[in] compute_signed If nonzero, output signed distance; otherwise absolute
+   @param[in] compute_signed If nonzero, output signed distance; otherwise
+   absolute
  */
 TOPOTOOLBOX_API
 void swath_compute_full_distance_map(
-    float *distance, ptrdiff_t *nearest_segment,
-    const float *track_i, const float *track_j,
-    ptrdiff_t n_track_points, ptrdiff_t dims[2], float cellsize,
-    const float *dem, const int8_t *mask, int compute_signed);
+    float *distance, ptrdiff_t *nearest_segment, const float *track_i,
+    const float *track_j, ptrdiff_t n_track_points, ptrdiff_t dims[2],
+    float cellsize, const float *dem, const int8_t *mask, int compute_signed);
 
 /**
    @brief Compute binned swath profile perpendicular to track
@@ -2461,9 +2463,11 @@ void swath_compute_full_distance_map(
    @param[out] bin_q3 75th percentile per bin, or NULL
    @param[in] percentile_list Custom percentiles (0-100), or NULL
    @param[in] n_percentiles Number of percentiles
-   @param[out] bin_percentiles Custom percentile output (n_bins x n_percentiles), or NULL
+   @param[out] bin_percentiles Custom percentile output (n_bins x
+   n_percentiles), or NULL
    @param[in] dem DEM array (dims[0]*dims[1])
-   @param[in] distance_from_track SIGNED distance map in meters (from swath_compute_distance_map)
+   @param[in] distance_from_track SIGNED distance map in meters (from
+   swath_compute_distance_map)
    @param[in] dims Grid dimensions [fast, slow]
    @param[in] cellsize Cell size in meters
    @param[in] half_width Swath half-width in meters
@@ -2478,8 +2482,8 @@ void swath_transverse(float *bin_distances, float *bin_means,
                       float *bin_q3, const int *percentile_list,
                       ptrdiff_t n_percentiles, float *bin_percentiles,
                       const float *dem, const float *distance_from_track,
-                      ptrdiff_t dims[2], float half_width,
-                      float bin_resolution, ptrdiff_t n_bins, int normalize);
+                      ptrdiff_t dims[2], float half_width, float bin_resolution,
+                      ptrdiff_t n_bins, int normalize);
 
 /**
    @brief Compute per-point swath profile along track
@@ -2525,21 +2529,16 @@ void swath_transverse(float *bin_distances, float *bin_means,
    @return Number of output points written (= ceil(n_track_points / skip))
  */
 TOPOTOOLBOX_API
-ptrdiff_t swath_longitudinal(float *point_means, float *point_stddevs,
-                              float *point_mins, float *point_maxs,
-                              ptrdiff_t *point_counts, float *point_medians,
-                              float *point_q1, float *point_q3,
-                              const int *percentile_list, ptrdiff_t n_percentiles,
-                              float *point_percentiles, const float *dem,
-                              const float *track_i, const float *track_j,
-                              ptrdiff_t n_track_points,
-                              const float *distance_from_track,
-                              ptrdiff_t dims[2], float cellsize, float half_width,
-                              float binning_distance,
-                              ptrdiff_t n_points_regression,
-                              ptrdiff_t use_segment_seeds,
-                              ptrdiff_t skip,
-                              float *result_track_i, float *result_track_j);
+ptrdiff_t swath_longitudinal(
+    float *point_means, float *point_stddevs, float *point_mins,
+    float *point_maxs, ptrdiff_t *point_counts, float *point_medians,
+    float *point_q1, float *point_q3, const int *percentile_list,
+    ptrdiff_t n_percentiles, float *point_percentiles, const float *dem,
+    const float *track_i, const float *track_j, ptrdiff_t n_track_points,
+    const float *distance_from_track, ptrdiff_t dims[2], float cellsize,
+    float half_width, float binning_distance, ptrdiff_t n_points_regression,
+    ptrdiff_t use_segment_seeds, ptrdiff_t skip, float *result_track_i,
+    float *result_track_j);
 
 /**
    @brief Longitudinal swath profile via bilinear orthogonal sampling and
@@ -2563,7 +2562,8 @@ ptrdiff_t swath_longitudinal(float *point_means, float *point_stddevs,
    @param[out] point_q3       Per-point 75th percentile (NULL to skip)
    @param[in]  percentile_list Integer percentile values 0–100 (NULL to skip)
    @param[in]  n_percentiles   Length of percentile_list
-   @param[out] point_percentiles Output [n_track_points * n_percentiles] (NULL to skip)
+   @param[out] point_percentiles Output [n_track_points * n_percentiles] (NULL
+   to skip)
    @param[in]  dem             DEM array [dims[0] * dims[1]]
    @param[in]  track_i         Track coords fast dim (pixel space)
    @param[in]  track_j         Track coords slow dim (pixel space)
@@ -2582,20 +2582,14 @@ ptrdiff_t swath_longitudinal(float *point_means, float *point_stddevs,
 */
 TOPOTOOLBOX_API
 ptrdiff_t swath_longitudinal_windowed(
-    float *point_means, float *point_stddevs,
-    float *point_mins,  float *point_maxs,
-    ptrdiff_t *point_counts, float *point_medians,
-    float *point_q1, float *point_q3,
-    const int *percentile_list, ptrdiff_t n_percentiles,
-    float *point_percentiles,
-    const float *dem,
-    const float *track_i, const float *track_j,
-    ptrdiff_t n_track_points,
-    ptrdiff_t dims[2], float cellsize,
-    float half_width, float binning_distance,
-    ptrdiff_t n_points_regression,
-    ptrdiff_t skip,
-    float *result_track_i, float *result_track_j);
+    float *point_means, float *point_stddevs, float *point_mins,
+    float *point_maxs, ptrdiff_t *point_counts, float *point_medians,
+    float *point_q1, float *point_q3, const int *percentile_list,
+    ptrdiff_t n_percentiles, float *point_percentiles, const float *dem,
+    const float *track_i, const float *track_j, ptrdiff_t n_track_points,
+    ptrdiff_t dims[2], float cellsize, float half_width, float binning_distance,
+    ptrdiff_t n_points_regression, ptrdiff_t skip, float *result_track_i,
+    float *result_track_j);
 
 /**
    @brief Get pixel coordinates for a single point's oriented-rectangle window.
@@ -2625,11 +2619,9 @@ ptrdiff_t swath_longitudinal_windowed(
 */
 TOPOTOOLBOX_API
 ptrdiff_t swath_windowed_get_point_samples(
-    ptrdiff_t *pixels_i, ptrdiff_t *pixels_j,
-    const float *track_i, const float *track_j,
-    ptrdiff_t n_track_points, ptrdiff_t point_index,
-    ptrdiff_t dims[2], float cellsize,
-    float half_width, float binning_distance,
+    ptrdiff_t *pixels_i, ptrdiff_t *pixels_j, const float *track_i,
+    const float *track_j, ptrdiff_t n_track_points, ptrdiff_t point_index,
+    ptrdiff_t dims[2], float cellsize, float half_width, float binning_distance,
     ptrdiff_t n_points_regression);
 
 /**
@@ -2660,15 +2652,12 @@ ptrdiff_t swath_windowed_get_point_samples(
    @return Number of pixels written
  */
 TOPOTOOLBOX_API
-ptrdiff_t swath_get_point_pixels(ptrdiff_t *pixels_i, ptrdiff_t *pixels_j,
-                                  const float *track_i, const float *track_j,
-                                  ptrdiff_t n_track_points,
-                                  ptrdiff_t point_index,
-                                  const float *distance_from_track,
-                                  ptrdiff_t dims[2], float cellsize,
-                                  float half_width, float binning_distance,
-                                  ptrdiff_t n_points_regression,
-                                  ptrdiff_t use_segment_seeds);
+ptrdiff_t swath_get_point_pixels(
+    ptrdiff_t *pixels_i, ptrdiff_t *pixels_j, const float *track_i,
+    const float *track_j, ptrdiff_t n_track_points, ptrdiff_t point_index,
+    const float *distance_from_track, ptrdiff_t dims[2], float cellsize,
+    float half_width, float binning_distance, ptrdiff_t n_points_regression,
+    ptrdiff_t use_segment_seeds);
 
 /**
    @brief Rasterize a continuous path between ordered reference points.
@@ -2687,27 +2676,26 @@ ptrdiff_t swath_get_point_pixels(ptrdiff_t *pixels_i, ptrdiff_t *pixels_j,
 
    @return Total number of output points written to out_i/out_j.
            Caller allocates out_i/out_j with upper bound:
-           sum of max(|di|,|dj|) for each segment pair, plus n_refs, times 2 for D4.
+           sum of max(|di|,|dj|) for each segment pair, plus n_refs, times 2 for
+   D4.
 */
 TOPOTOOLBOX_API
-ptrdiff_t sample_points_between_refs(
-    ptrdiff_t *out_i,
-    ptrdiff_t *out_j,
-    const ptrdiff_t *ref_i,
-    const ptrdiff_t *ref_j,
-    ptrdiff_t n_refs,
-    int close_loop,
-    int use_d4);
+ptrdiff_t sample_points_between_refs(ptrdiff_t *out_i, ptrdiff_t *out_j,
+                                     const ptrdiff_t *ref_i,
+                                     const ptrdiff_t *ref_j, ptrdiff_t n_refs,
+                                     int close_loop, int use_d4);
 
 /** @name simplify_line method constants */
 /** @{ */
-#define SIMPLIFY_FIXED_N  0  /**< tolerance = exact number of output points */
-#define SIMPLIFY_KNEEDLE  1  /**< tolerance unused; automatic knee detection */
-#define SIMPLIFY_AIC      2  /**< tolerance unused; Akaike information criterion */
-#define SIMPLIFY_BIC      3  /**< tolerance unused; Bayesian information criterion */
-#define SIMPLIFY_MDL      4  /**< tolerance unused; minimum description length */
-#define SIMPLIFY_VW_AREA  5  /**< tolerance = triangle area threshold (coord² units) */
-#define SIMPLIFY_L_METHOD 6  /**< tolerance unused; L-method elbow detection */
+#define SIMPLIFY_FIXED_N 0 /**< tolerance = exact number of output points */
+#define SIMPLIFY_KNEEDLE 1 /**< tolerance unused; automatic knee detection */
+#define SIMPLIFY_AIC 2 /**< tolerance unused; Akaike information criterion */
+#define SIMPLIFY_BIC 3 /**< tolerance unused; Bayesian information criterion \
+                        */
+#define SIMPLIFY_MDL 4 /**< tolerance unused; minimum description length */
+#define SIMPLIFY_VW_AREA \
+  5 /**< tolerance = triangle area threshold (coord² units) */
+#define SIMPLIFY_L_METHOD 6 /**< tolerance unused; L-method elbow detection */
 /** @} */
 
 /**
@@ -2754,8 +2742,8 @@ ptrdiff_t sample_points_between_refs(
    @return Number of vertices in the simplified line
 */
 TOPOTOOLBOX_API
-ptrdiff_t simplify_line(float *out_i, float *out_j,
-                        const float *track_i, const float *track_j,
-                        ptrdiff_t n_points, float tolerance, int method);
+ptrdiff_t simplify_line(float *out_i, float *out_j, const float *track_i,
+                        const float *track_j, ptrdiff_t n_points,
+                        float tolerance, int method);
 
 #endif  // TOPOTOOLBOX_H
