@@ -290,10 +290,11 @@ static void frontier_distance_map(
   heap_init(&heap, n_track_points * 8);
 
 // Helper: test a pixel against candidate segments, update if better
+// clang-format off
 #define TRY_PIXEL(pi, pj, seg_lo, seg_hi)                             \
   do {                                                                \
     if ((pi) >= 0 && (pi) < dims[0] && (pj) >= 0 && (pj) < dims[1]) { \
-      ptrdiff_t _idx = (pj) * dims[0] + (pi);                         \
+      ptrdiff_t _idx = (pj)*dims[0] + (pi);                           \
       if (dem && isnan(dem[_idx])) break;                             \
       if (mask && !mask[_idx]) break;                                 \
       float _px = (float)(pi);                                        \
@@ -371,6 +372,7 @@ static void frontier_distance_map(
   heap_free(&heap);
   if (free_best) free(best_abs);
 }
+// clang-format on
 
 // ============================================================================
 // Public API
