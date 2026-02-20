@@ -35,7 +35,8 @@ float upwind_gradient(float *u, ptrdiff_t row, ptrdiff_t col, float cellsize,
 int32_t test_excess_constraint(float *excess, float *dem, ptrdiff_t dims[2]) {
   for (ptrdiff_t j = 0; j < dims[1]; j++) {
     for (ptrdiff_t i = 0; i < dims[0]; i++) {
-      assert(excess[i + j * dims[0]] <= dem[i + j * dims[0]]);
+      assert(std::isnan(dem[i + j * dims[0]]) ||
+             excess[i + j * dims[0]] <= dem[i + j * dims[0]]);
     }
   }
   return 0;
@@ -46,9 +47,10 @@ int32_t test_upwind_gradient(float *excess, float *threshold, float cellsize,
   for (ptrdiff_t j = 0; j < dims[1]; j++) {
     for (ptrdiff_t i = 0; i < dims[0]; i++) {
       if ((i > 0) && (i < dims[0] - 1) && (j > 0) && (j < dims[1] - 1)) {
-        assert(upwind_gradient(excess, i, j, cellsize, dims) -
-                   threshold[j * dims[0] + i] <
-               1e-4);
+        assert(std::isnan(excess[i + j * dims[0]]) ||
+               upwind_gradient(excess, i, j, cellsize, dims) -
+                       threshold[j * dims[0] + i] <
+                   1e-4);
       }
     }
   }
@@ -95,7 +97,7 @@ int32_t random_dem_test(ptrdiff_t dims[2], ptrdiff_t nlayers, uint32_t seed) {
   for (uint32_t col = 0; col < dims[1]; col++) {
     for (uint32_t row = 0; row < dims[0]; row++) {
       ptrdiff_t idx = col * dims[0] + row;
-      dem[idx] = 100.0f * pcg4d(row, col, seed, 0);
+      dem[idx] = row > 0 ? 100.0f * pcg4d(row, col, seed, 0) : NAN;
       fsm_excess[idx] = dem[idx];
       fmm_excess[idx] = dem[idx];
       threshold[idx] = pcg4d(row, col, seed, 1);
@@ -115,11 +117,13 @@ int32_t random_dem_test(ptrdiff_t dims[2], ptrdiff_t nlayers, uint32_t seed) {
     threshold_slopes3d[layer] = (layer % 2 == 0) ? 1.0f : 0.5f;
   }
 
+  std::cout << "Fast sweeping method" << std::endl;
   excesstopography_fsm2d(fsm_excess, dem, threshold, cellsize, dims);
 
   test_excess_constraint(fsm_excess, dem, dims);
   test_upwind_gradient(fsm_excess, threshold, cellsize, dims);
 
+  std::cout << "Fast marching method" << std::endl;
   excesstopography_fmm2d(fmm_excess, heap, back, dem, threshold, cellsize,
                          dims);
 
@@ -128,6 +132,7 @@ int32_t random_dem_test(ptrdiff_t dims[2], ptrdiff_t nlayers, uint32_t seed) {
 
   test_method_equivalence(fmm_excess, fsm_excess, dims);
 
+  std::cout << "3D fast marching method" << std::endl;
   excesstopography_fmm3d(fmm_excess3d, heap3d, back3d, dem, lithstack,
                          threshold_slopes3d, cellsize, dims, nlayers);
 
@@ -174,6 +179,7 @@ int32_t eikonal_numerics_test(ptrdiff_t dims[2], uint32_t test) {
     }
   }
 
+  std::cout << "Eikonal numerics test" << std::endl;
   excesstopography_fmm2d(excess, heap, back, dem, threshold, 30.0, dims);
 
   test_upwind_gradient(excess, threshold, 30.0, dims);

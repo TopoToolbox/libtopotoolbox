@@ -1,5 +1,6 @@
 #include "priority_queue.h"
 
+#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -32,7 +33,11 @@ static void swap(PriorityQueue *q, ptrdiff_t node1, ptrdiff_t node2) {
 static void siftup(PriorityQueue *q, ptrdiff_t position) {
   while (position > 0) {
     ptrdiff_t node = parent(position);
-    if (q->priorities[q->heap[node]] < q->priorities[q->heap[position]]) {
+    // If my priority is greater than that of my parent's don't keep
+    // sifting. If my parent's priority is a NaN, this comparison will
+    // fail, and we will sift anyway.
+    if (isnan(q->priorities[q->heap[position]]) ||
+        q->priorities[q->heap[node]] < q->priorities[q->heap[position]]) {
       return;
     }
     swap(q, position, node);
@@ -45,12 +50,23 @@ static void siftdown(PriorityQueue *q, ptrdiff_t position) {
     ptrdiff_t child = left_child(position);
 
     // Which child has the smallest value?
+    // If l is a nan and r is not a nan, choose r
+    // If l is not a nan and r is a nan, choose l
+    // If l is not a nan and r is not a nan, choose min(r, l)
+    // If l is a nan, and r is a nan, choose whichever is easiest.
     if ((child + 1 < q->count) &&
-        (q->priorities[q->heap[child + 1]] < q->priorities[q->heap[child]])) {
+        (isnan(q->priorities[q->heap[child]]) ||
+         (q->priorities[q->heap[child + 1]] < q->priorities[q->heap[child]]))) {
       child = child + 1;
     }
 
-    if (q->priorities[q->heap[child]] > q->priorities[q->heap[position]]) {
+    // If I am a nan and my smallest child is not a NaN, swap
+    // If I am a nan and my smallest child is a NaN, don't swap
+    // If I am not a nan and my smallest child is a NaN, don't swap
+    // If I am not a nan and my smallest child is not a nan, swap if I am
+    // greater than my child.
+    if (isnan(q->priorities[q->heap[child]]) ||
+        q->priorities[q->heap[child]] > q->priorities[q->heap[position]]) {
       return;
     }
     swap(q, position, child);
