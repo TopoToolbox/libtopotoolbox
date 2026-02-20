@@ -1479,6 +1479,277 @@ void swath_longitudinal(
 }
 
 // ============================================================================
+// Longitudinal Swath — Windowed, All Pixels, Moving Histogram Percentiles
+// ============================================================================
+//
+// Same pixel assignment as swath_longitudinal Case 2 (Meijster EDT) so every
+// pixel within half_width is counted. Sliding-window mean/std/min/max use
+// running moments + Lemire deques. Percentiles use a moving histogram
+// (SLW_N_BINS bins) updated O(blk_count) per step.
+
+#define SLW_N_BINS 2048
+
+TOPOTOOLBOX_API
+void swath_longitudinal_windowed(
+    float *point_means, float *point_stddevs,
+    float *point_mins,  float *point_maxs,
+    ptrdiff_t *point_counts, float *point_medians,
+    float *point_q1, float *point_q3,
+    const int *percentile_list, ptrdiff_t n_percentiles,
+    float *point_percentiles,
+    const float *dem,
+    const float *track_i, const float *track_j,
+    ptrdiff_t n_track_points,
+    const float *distance_from_track,
+    ptrdiff_t dims[2], float cellsize,
+    float half_width, float binning_distance,
+    ptrdiff_t n_points_regression,
+    ptrdiff_t use_segment_seeds)
+{
+  if (n_track_points < 2) return;
+
+  ptrdiff_t total = dims[0] * dims[1];
+
+  int do_percentiles =
+      (point_medians != NULL || point_q1 != NULL || point_q3 != NULL ||
+       (percentile_list != NULL && n_percentiles > 0 && point_percentiles != NULL));
+
+  // ---- Pixel assignment (Meijster EDT, same as swath_longitudinal Case 2) ----
+  ptrdiff_t *assignment = compute_track_assignment(
+      track_i, track_j, n_track_points,
+      distance_from_track, dims, half_width, (int)use_segment_seeds);
+
+  // ---- Per-block stats ----
+  double    *blk_sum   = (double    *)calloc((size_t)n_track_points, sizeof(double));
+  double    *blk_sum2  = (double    *)calloc((size_t)n_track_points, sizeof(double));
+  ptrdiff_t *blk_count = (ptrdiff_t *)calloc((size_t)n_track_points, sizeof(ptrdiff_t));
+  float     *blk_min   = (float     *)malloc((size_t)n_track_points * sizeof(float));
+  float     *blk_max   = (float     *)malloc((size_t)n_track_points * sizeof(float));
+  for (ptrdiff_t k = 0; k < n_track_points; k++) {
+    blk_min[k] =  FLT_MAX;
+    blk_max[k] = -FLT_MAX;
+  }
+
+  // ---- Histogram setup ----
+  ptrdiff_t *blk_bin_offsets = NULL;
+  uint16_t  *blk_bin_data    = NULL;
+  ptrdiff_t *hist             = NULL;
+  float global_min = 0.0f, global_max = 0.0f, bin_width = 1.0f;
+  int hist_valid = 0;
+
+  if (do_percentiles) {
+    // Find global min/max in one pass
+    int found = 0;
+    for (ptrdiff_t idx = 0; idx < total; idx++) {
+      ptrdiff_t a = assignment[idx];
+      if (a < 0 || isnan(dem[idx])) continue;
+      float v = dem[idx];
+      if (!found) { global_min = global_max = v; found = 1; }
+      else { if (v < global_min) global_min = v; if (v > global_max) global_max = v; }
+    }
+    if (found && global_max > global_min) {
+      bin_width = (global_max - global_min) / (float)SLW_N_BINS;
+      hist_valid = 1;
+    }
+
+    // Build CSR of per-block bin values
+    ptrdiff_t *cnt = (ptrdiff_t *)calloc((size_t)n_track_points, sizeof(ptrdiff_t));
+    for (ptrdiff_t idx = 0; idx < total; idx++) {
+      ptrdiff_t a = assignment[idx];
+      if (a >= 0 && !isnan(dem[idx])) cnt[a]++;
+    }
+    blk_bin_offsets = (ptrdiff_t *)malloc((size_t)(n_track_points + 1) * sizeof(ptrdiff_t));
+    blk_bin_offsets[0] = 0;
+    for (ptrdiff_t k = 0; k < n_track_points; k++)
+      blk_bin_offsets[k + 1] = blk_bin_offsets[k] + cnt[k];
+    free(cnt);
+
+    blk_bin_data = (uint16_t *)malloc((size_t)blk_bin_offsets[n_track_points] * sizeof(uint16_t));
+    ptrdiff_t *fill = (ptrdiff_t *)calloc((size_t)n_track_points, sizeof(ptrdiff_t));
+    for (ptrdiff_t idx = 0; idx < total; idx++) {
+      ptrdiff_t a = assignment[idx];
+      if (a < 0 || isnan(dem[idx])) continue;
+      blk_sum[a]  += (double)dem[idx];
+      blk_sum2[a] += (double)dem[idx] * (double)dem[idx];
+      blk_count[a]++;
+      if (dem[idx] < blk_min[a]) blk_min[a] = dem[idx];
+      if (dem[idx] > blk_max[a]) blk_max[a] = dem[idx];
+      int b = hist_valid ? (int)((dem[idx] - global_min) / bin_width) : 0;
+      if (b < 0) b = 0;
+      if (b >= SLW_N_BINS) b = SLW_N_BINS - 1;
+      blk_bin_data[blk_bin_offsets[a] + fill[a]] = (uint16_t)b;
+      fill[a]++;
+    }
+    free(fill);
+    hist = (ptrdiff_t *)calloc(SLW_N_BINS, sizeof(ptrdiff_t));
+  } else {
+    // No percentiles: single pass for block stats
+    for (ptrdiff_t idx = 0; idx < total; idx++) {
+      ptrdiff_t a = assignment[idx];
+      if (a < 0 || isnan(dem[idx])) continue;
+      blk_sum[a]  += (double)dem[idx];
+      blk_sum2[a] += (double)dem[idx] * (double)dem[idx];
+      blk_count[a]++;
+      if (dem[idx] < blk_min[a]) blk_min[a] = dem[idx];
+      if (dem[idx] > blk_max[a]) blk_max[a] = dem[idx];
+    }
+  }
+  free(assignment);
+
+  // ---- Cumulative along-track distance ----
+  float *cum_dist = (float *)malloc((size_t)n_track_points * sizeof(float));
+  cum_dist[0] = 0.0f;
+  for (ptrdiff_t k = 0; k < n_track_points - 1; k++) {
+    float di = track_i[k + 1] - track_i[k];
+    float dj = track_j[k + 1] - track_j[k];
+    cum_dist[k + 1] = cum_dist[k] + sqrtf(di * di + dj * dj) * cellsize;
+  }
+
+  // ---- Sliding window ----
+  ptrdiff_t *min_dq = (ptrdiff_t *)malloc((size_t)n_track_points * sizeof(ptrdiff_t));
+  ptrdiff_t *max_dq = (ptrdiff_t *)malloc((size_t)n_track_points * sizeof(ptrdiff_t));
+  ptrdiff_t min_head = 0, min_tail = -1;
+  ptrdiff_t max_head = 0, max_tail = -1;
+  double win_sum = 0.0, win_sum2 = 0.0;
+  ptrdiff_t win_count = 0;
+  ptrdiff_t lo = 0, hi = -1;
+
+  for (ptrdiff_t pt = 0; pt < n_track_points; pt++) {
+    // Expand right
+    while (hi < n_track_points - 1 &&
+           cum_dist[hi + 1] - cum_dist[pt] <= binning_distance) {
+      hi++;
+      win_sum   += blk_sum[hi];
+      win_sum2  += blk_sum2[hi];
+      win_count += blk_count[hi];
+      if (blk_count[hi] > 0) {
+        while (min_head <= min_tail && blk_min[min_dq[min_tail]] >= blk_min[hi]) min_tail--;
+        min_dq[++min_tail] = hi;
+        while (max_head <= max_tail && blk_max[max_dq[max_tail]] <= blk_max[hi]) max_tail--;
+        max_dq[++max_tail] = hi;
+        if (do_percentiles && hist_valid)
+          for (ptrdiff_t q = blk_bin_offsets[hi]; q < blk_bin_offsets[hi + 1]; q++)
+            hist[blk_bin_data[q]]++;
+      }
+    }
+    // Shrink left
+    while (lo <= hi && cum_dist[pt] - cum_dist[lo] > binning_distance) {
+      win_sum   -= blk_sum[lo];
+      win_sum2  -= blk_sum2[lo];
+      win_count -= blk_count[lo];
+      if (min_head <= min_tail && min_dq[min_head] == lo) min_head++;
+      if (max_head <= max_tail && max_dq[max_head] == lo) max_head++;
+      if (do_percentiles && hist_valid && blk_count[lo] > 0)
+        for (ptrdiff_t q = blk_bin_offsets[lo]; q < blk_bin_offsets[lo + 1]; q++)
+          hist[blk_bin_data[q]]--;
+      lo++;
+    }
+
+    // Write scalar stats
+    if (win_count > 0) {
+      double mean = win_sum / (double)win_count;
+      double var  = win_sum2 / (double)win_count - mean * mean;
+      point_counts[pt]  = win_count;
+      point_means[pt]   = (float)mean;
+      point_stddevs[pt] = (float)sqrt(var > 0.0 ? var : 0.0);
+      point_mins[pt] = (min_head <= min_tail) ? blk_min[min_dq[min_head]] : NAN;
+      point_maxs[pt] = (max_head <= max_tail) ? blk_max[max_dq[max_head]] : NAN;
+    } else {
+      point_counts[pt]  = 0;
+      point_means[pt]   = NAN;
+      point_stddevs[pt] = NAN;
+      point_mins[pt]    = NAN;
+      point_maxs[pt]    = NAN;
+    }
+
+    // Percentile queries via histogram scan
+    if (do_percentiles) {
+      #define HPCT(pval, out) do {                                               \
+        if (win_count <= 0) { (out) = NAN; }                                    \
+        else if (!hist_valid) { (out) = global_min; }                           \
+        else {                                                                   \
+          ptrdiff_t _t = (ptrdiff_t)ceilf((pval)/100.0f*(float)win_count);      \
+          _t = (_t < 1) ? 1 : (_t > win_count ? win_count : _t);               \
+          ptrdiff_t _c = 0; (out) = global_max;                                 \
+          for (ptrdiff_t _b = 0; _b < SLW_N_BINS; _b++) {                      \
+            _c += hist[_b];                                                      \
+            if (_c >= _t) { (out)=global_min+((float)_b+0.5f)*bin_width; break; } \
+          }                                                                      \
+        }                                                                        \
+      } while(0)
+
+      if (point_medians) HPCT(50.0f, point_medians[pt]);
+      if (point_q1)      HPCT(25.0f, point_q1[pt]);
+      if (point_q3)      HPCT(75.0f, point_q3[pt]);
+      if (percentile_list && n_percentiles > 0 && point_percentiles)
+        for (ptrdiff_t p = 0; p < n_percentiles; p++)
+          HPCT((float)percentile_list[p], point_percentiles[pt * n_percentiles + p]);
+
+      #undef HPCT
+    }
+  }
+
+  free(cum_dist);
+  free(blk_sum); free(blk_sum2); free(blk_count);
+  free(blk_min); free(blk_max);
+  free(min_dq); free(max_dq);
+  if (do_percentiles) { free(blk_bin_offsets); free(blk_bin_data); free(hist); }
+}
+
+#undef SLW_N_BINS
+
+// Returns integer pixel coordinates of all pixels assigned to track points
+// in the sliding window centred on point_index. Mirrors swath_longitudinal_windowed.
+// Caller must pre-allocate pixels_i/pixels_j; safe upper bound is
+// dims[0]*dims[1] (total grid size).
+TOPOTOOLBOX_API
+ptrdiff_t swath_windowed_get_point_samples(
+    ptrdiff_t *pixels_i, ptrdiff_t *pixels_j,
+    const float *track_i, const float *track_j,
+    ptrdiff_t n_track_points, ptrdiff_t point_index,
+    const float *distance_from_track,
+    ptrdiff_t dims[2], float cellsize,
+    float half_width, float binning_distance,
+    ptrdiff_t use_segment_seeds)
+{
+  if (n_track_points < 2) return 0;
+  if (point_index < 0 || point_index >= n_track_points) return 0;
+
+  // Cumulative distance to determine window
+  float *cum_dist = (float *)malloc((size_t)n_track_points * sizeof(float));
+  cum_dist[0] = 0.0f;
+  for (ptrdiff_t k = 0; k < n_track_points - 1; k++) {
+    float di = track_i[k + 1] - track_i[k];
+    float dj = track_j[k + 1] - track_j[k];
+    cum_dist[k + 1] = cum_dist[k] + sqrtf(di * di + dj * dj) * cellsize;
+  }
+
+  ptrdiff_t pt_lo = point_index, pt_hi = point_index;
+  while (pt_lo > 0 &&
+         cum_dist[point_index] - cum_dist[pt_lo - 1] <= binning_distance) pt_lo--;
+  while (pt_hi < n_track_points - 1 &&
+         cum_dist[pt_hi + 1] - cum_dist[point_index] <= binning_distance) pt_hi++;
+  free(cum_dist);
+
+  ptrdiff_t *assignment = compute_track_assignment(
+      track_i, track_j, n_track_points,
+      distance_from_track, dims, half_width, (int)use_segment_seeds);
+
+  ptrdiff_t n_out = 0;
+  for (ptrdiff_t pj = 0; pj < dims[1]; pj++) {
+    for (ptrdiff_t pi = 0; pi < dims[0]; pi++) {
+      ptrdiff_t a = assignment[pj * dims[0] + pi];
+      if (a < pt_lo || a > pt_hi) continue;
+      pixels_i[n_out] = pi;
+      pixels_j[n_out] = pj;
+      n_out++;
+    }
+  }
+  free(assignment);
+  return n_out;
+}
+
+// ============================================================================
 // Per-Point Pixel Retrieval (Orthogonal Cross-Section)
 // ============================================================================
 //
@@ -1814,4 +2085,333 @@ ptrdiff_t sample_points_between_refs(
   }
 
   return total;
+}
+
+// ============================================================================
+// Line Simplification — Iterative End-Point Fit (IEF) engine
+// ============================================================================
+
+// Perpendicular distance from point p to infinite line through a->b.
+static float seg_perp_dist(float ax, float ay, float bx, float by,
+                            float px, float py) {
+  float dx = bx - ax, dy = by - ay;
+  float len2 = dx * dx + dy * dy;
+  if (len2 < 1e-12f)
+    return sqrtf((px - ax) * (px - ax) + (py - ay) * (py - ay));
+  float cross = (px - ax) * dy - (py - ay) * dx;
+  return fabsf(cross) / sqrtf(len2);
+}
+
+// Area of triangle (a, b, c).
+static float seg_tri_area(float ax, float ay, float bx, float by,
+                           float cx, float cy) {
+  return 0.5f * fabsf((bx - ax) * (cy - ay) - (by - ay) * (cx - ax));
+}
+
+// ---- IEF heap (max-deviation via min-heap on neg_dev) ----
+
+typedef struct {
+  float neg_dev;   // -max_perp_dist in segment (heap key)
+  float seg_rss;   // sum of squared perpendicular distances in segment
+  ptrdiff_t lo, hi, max_k;
+} ief_seg;
+
+typedef struct {
+  ief_seg *data;
+  ptrdiff_t size, cap;
+} ief_heap;
+
+static void ief_heap_push(ief_heap *h, ief_seg e) {
+  if (h->size >= h->cap) {
+    h->cap = h->cap ? h->cap * 2 : 64;
+    h->data = (ief_seg *)realloc(h->data, (size_t)h->cap * sizeof(ief_seg));
+  }
+  ptrdiff_t i = h->size++;
+  h->data[i] = e;
+  while (i > 0) {
+    ptrdiff_t p = (i - 1) / 2;
+    if (h->data[p].neg_dev <= h->data[i].neg_dev) break;
+    ief_seg tmp = h->data[p]; h->data[p] = h->data[i]; h->data[i] = tmp;
+    i = p;
+  }
+}
+
+static ief_seg ief_heap_pop(ief_heap *h) {
+  ief_seg top = h->data[0];
+  h->data[0] = h->data[--h->size];
+  ptrdiff_t i = 0;
+  for (;;) {
+    ptrdiff_t l = 2 * i + 1, r = 2 * i + 2, s = i;
+    if (l < h->size && h->data[l].neg_dev < h->data[s].neg_dev) s = l;
+    if (r < h->size && h->data[r].neg_dev < h->data[s].neg_dev) s = r;
+    if (s == i) break;
+    ief_seg tmp = h->data[s]; h->data[s] = h->data[i]; h->data[i] = tmp;
+    i = s;
+  }
+  return top;
+}
+
+// Scan interior of [lo, hi] for max perp-dist point and segment RSS.
+static ief_seg ief_make_seg(const float *in_i, const float *in_j,
+                             ptrdiff_t lo, ptrdiff_t hi) {
+  ief_seg s;
+  s.lo = lo; s.hi = hi; s.max_k = lo; s.seg_rss = 0.0f; s.neg_dev = 0.0f;
+  float max_d = -1.0f;
+  for (ptrdiff_t k = lo + 1; k < hi; k++) {
+    float d = seg_perp_dist(in_i[lo], in_j[lo], in_i[hi], in_j[hi],
+                             in_i[k], in_j[k]);
+    s.seg_rss += d * d;
+    if (d > max_d) { max_d = d; s.max_k = k; }
+  }
+  if (hi - lo > 1) s.neg_dev = -max_d;
+  return s;
+}
+
+// Build IEF insertion sequence.
+// seq[k]        = k-th inserted interior point index, k=0..n-3
+// rmse_curve[k] = RMSE with k+2 points (k=0..n-2):
+//   rmse_curve[0] = endpoints only; rmse_curve[k+1] = after inserting seq[k]
+// Returns n-2 (number of interior points).
+static ptrdiff_t ief_build(const float *in_i, const float *in_j, ptrdiff_t n,
+                            ptrdiff_t *seq, float *rmse_curve) {
+  if (n <= 2) return 0;
+
+  ief_heap heap = {NULL, 0, 0};
+  ief_seg init = ief_make_seg(in_i, in_j, 0, n - 1);
+  double total_rss = (double)init.seg_rss;
+  ief_heap_push(&heap, init);
+
+  rmse_curve[0] = (float)sqrt(total_rss / (double)n);
+
+  ptrdiff_t n_steps = n - 2;
+  for (ptrdiff_t t = 0; t < n_steps; t++) {
+    if (heap.size == 0) {
+      seq[t] = 0;
+      rmse_curve[t + 1] = 0.0f;
+      continue;
+    }
+    ief_seg top = ief_heap_pop(&heap);
+    seq[t] = top.max_k;
+    total_rss -= (double)top.seg_rss;
+
+    ief_seg left  = ief_make_seg(in_i, in_j, top.lo, top.max_k);
+    ief_seg right = ief_make_seg(in_i, in_j, top.max_k, top.hi);
+    total_rss += (double)left.seg_rss + (double)right.seg_rss;
+    if (total_rss < 0.0) total_rss = 0.0;
+
+    if (left.hi  - left.lo  > 1) ief_heap_push(&heap, left);
+    if (right.hi - right.lo > 1) ief_heap_push(&heap, right);
+
+    rmse_curve[t + 1] = (float)sqrt(total_rss / (double)n);
+  }
+  free(heap.data);
+  return n_steps;
+}
+
+// OLS residual sum of squares for y[from..to] vs index x=0..to-from.
+static float ols_residual(const float *y, ptrdiff_t from, ptrdiff_t to) {
+  ptrdiff_t m = to - from + 1;
+  if (m < 2) return 0.0f;
+  double sx = 0, sy = 0, sxy = 0, sxx = 0;
+  for (ptrdiff_t k = 0; k < m; k++) {
+    double x = (double)k;
+    double yi = (double)y[from + k];
+    sx += x; sy += yi; sxy += x * yi; sxx += x * x;
+  }
+  double denom = (double)m * sxx - sx * sx;
+  if (denom < 1e-15) return 0.0f;
+  double slope = ((double)m * sxy - sx * sy) / denom;
+  double intercept = (sy - slope * sx) / (double)m;
+  float res = 0.0f;
+  for (ptrdiff_t k = 0; k < m; k++) {
+    double pred = slope * (double)k + intercept;
+    double r = (double)y[from + k] - pred;
+    res += (float)(r * r);
+  }
+  return res;
+}
+
+TOPOTOOLBOX_API
+ptrdiff_t simplify_line(float *out_i, float *out_j,
+                        const float *track_i, const float *track_j,
+                        ptrdiff_t n_points, float tolerance, int method) {
+  if (n_points <= 2) {
+    for (ptrdiff_t k = 0; k < n_points; k++) {
+      out_i[k] = track_i[k]; out_j[k] = track_j[k];
+    }
+    return n_points;
+  }
+
+  ptrdiff_t n = n_points;
+
+  // ---- Method 5: VW-area IEF (separate code path) ----
+  if (method == 5) {
+    ptrdiff_t *prv_kept = (ptrdiff_t *)malloc((size_t)n * sizeof(ptrdiff_t));
+    ptrdiff_t *nxt_kept = (ptrdiff_t *)malloc((size_t)n * sizeof(ptrdiff_t));
+    float *eff_area     = (float     *)malloc((size_t)n * sizeof(float));
+    uint8_t *inserted   = (uint8_t   *)calloc((size_t)n, 1);
+
+    inserted[0] = 1; inserted[n - 1] = 1;
+    for (ptrdiff_t k = 1; k < n - 1; k++) {
+      prv_kept[k] = 0; nxt_kept[k] = n - 1;
+      eff_area[k] = seg_tri_area(track_i[0], track_j[0],
+                                 track_i[k], track_j[k],
+                                 track_i[n-1], track_j[n-1]);
+    }
+    min_heap heap;
+    heap_init(&heap, n);
+    for (ptrdiff_t k = 1; k < n - 1; k++)
+      heap_push(&heap, -eff_area[k], k);
+
+    while (heap.size > 0) {
+      heap_entry top = heap_pop(&heap);
+      ptrdiff_t k = top.idx;
+      if (inserted[k]) continue;
+      float area = -top.abs_dist;
+      if (area < tolerance) break;
+      if (top.abs_dist != -eff_area[k]) continue;  // stale
+
+      inserted[k] = 1;
+      ptrdiff_t p = prv_kept[k], nx = nxt_kept[k];
+
+      // Update nxt_kept for uninserted points in (p, k)
+      for (ptrdiff_t q = p + 1; q < k; q++) {
+        if (!inserted[q]) {
+          nxt_kept[q] = k;
+          float new_a = seg_tri_area(track_i[prv_kept[q]], track_j[prv_kept[q]],
+                                     track_i[q], track_j[q],
+                                     track_i[k], track_j[k]);
+          eff_area[q] = new_a;
+          heap_push(&heap, -new_a, q);
+        }
+      }
+      // Update prv_kept for uninserted points in (k, nx)
+      for (ptrdiff_t q = k + 1; q < nx; q++) {
+        if (!inserted[q]) {
+          prv_kept[q] = k;
+          float new_a = seg_tri_area(track_i[k], track_j[k],
+                                     track_i[q], track_j[q],
+                                     track_i[nxt_kept[q]], track_j[nxt_kept[q]]);
+          eff_area[q] = new_a;
+          heap_push(&heap, -new_a, q);
+        }
+      }
+    }
+    heap_free(&heap);
+
+    ptrdiff_t cnt = 0;
+    for (ptrdiff_t k = 0; k < n; k++)
+      if (inserted[k]) { out_i[cnt] = track_i[k]; out_j[cnt] = track_j[k]; cnt++; }
+    free(prv_kept); free(nxt_kept); free(eff_area); free(inserted);
+    return cnt;
+  }
+
+  // ---- Methods 0-4, 6: IEF engine + stopping criterion ----
+
+  // rmse_curve[k] = RMSE with k+2 points (k=0..n-2), size n-1
+  // seq[k] = k-th inserted interior point (k=0..n-3), size n-2
+  ptrdiff_t *seq        = (ptrdiff_t *)malloc((size_t)(n - 2) * sizeof(ptrdiff_t));
+  float     *rmse_curve = (float     *)malloc((size_t)(n - 1) * sizeof(float));
+  ief_build(track_i, track_j, n, seq, rmse_curve);
+
+  // n_target = number of points to keep (2..n)
+  ptrdiff_t n_target = 2;
+
+  if (method == 0) {
+    // Fixed N
+    n_target = (ptrdiff_t)tolerance;
+    if (n_target < 2) n_target = 2;
+    if (n_target > n) n_target = n;
+
+  } else if (method == 1) {
+    // Kneedle: minimize d[k] = y[k] + x[k] - 1 on normalised RMSE curve
+    float y0 = rmse_curve[0];
+    ptrdiff_t best_k = 0;
+    float best_d = FLT_MAX;
+    for (ptrdiff_t k = 0; k < n - 1; k++) {
+      float xk = (n > 2) ? (float)k / (float)(n - 2) : 0.0f;
+      float yk = (y0 > 1e-12f) ? rmse_curve[k] / y0 : 0.0f;
+      float d = yk + xk - 1.0f;
+      if (d < best_d) { best_d = d; best_k = k; }
+    }
+    n_target = best_k + 2;
+
+  } else if (method == 2) {
+    // AIC: 2*(k+2) + n*ln(RSS/n) where RSS = n * rmse^2
+    ptrdiff_t best_k = 0;
+    float best_aic = FLT_MAX;
+    for (ptrdiff_t k = 0; k < n - 1; k++) {
+      float rss = (float)n * rmse_curve[k] * rmse_curve[k];
+      float logterm = (rss > 0.0f) ? logf(rss / (float)n) : -30.0f;
+      float aic = 2.0f * (float)(k + 2) + (float)n * logterm;
+      if (aic < best_aic) { best_aic = aic; best_k = k; }
+    }
+    n_target = best_k + 2;
+
+  } else if (method == 3) {
+    // BIC: (k+2)*ln(n) + n*ln(RSS/n)
+    float logn = (n > 1) ? logf((float)n) : 0.0f;
+    ptrdiff_t best_k = 0;
+    float best_bic = FLT_MAX;
+    for (ptrdiff_t k = 0; k < n - 1; k++) {
+      float rss = (float)n * rmse_curve[k] * rmse_curve[k];
+      float logterm = (rss > 0.0f) ? logf(rss / (float)n) : -30.0f;
+      float bic = (float)(k + 2) * logn + (float)n * logterm;
+      if (bic < best_bic) { best_bic = bic; best_k = k; }
+    }
+    n_target = best_k + 2;
+
+  } else if (method == 4) {
+    // MDL: 2*(k+2)*log2(coord_range) + n*log2(rmse + eps)
+    float min_i = track_i[0], max_i = track_i[0];
+    float min_j = track_j[0], max_j = track_j[0];
+    for (ptrdiff_t k = 1; k < n; k++) {
+      if (track_i[k] < min_i) min_i = track_i[k];
+      if (track_i[k] > max_i) max_i = track_i[k];
+      if (track_j[k] < min_j) min_j = track_j[k];
+      if (track_j[k] > max_j) max_j = track_j[k];
+    }
+    float coord_range = (max_i - min_i > max_j - min_j)
+                        ? max_i - min_i : max_j - min_j;
+    if (coord_range < 1.0f) coord_range = 1.0f;
+    float log2_range = log2f(coord_range);
+    float log2e = 1.0f / logf(2.0f);
+
+    ptrdiff_t best_k = 0;
+    float best_mdl = FLT_MAX;
+    for (ptrdiff_t k = 0; k < n - 1; k++) {
+      float rmse_k = rmse_curve[k];
+      float mdl = 2.0f * (float)(k + 2) * log2_range
+                  + (float)n * log2e * logf(rmse_k + 1e-6f);
+      if (mdl < best_mdl) { best_mdl = mdl; best_k = k; }
+    }
+    n_target = best_k + 2;
+
+  } else {
+    // Method 6: L-method — find split m minimising combined OLS residuals
+    ptrdiff_t best_m = 0;
+    float best_score = FLT_MAX;
+    for (ptrdiff_t m = 1; m <= n - 3; m++) {
+      float score = ols_residual(rmse_curve, 0, m)
+                  + ols_residual(rmse_curve, m, n - 2);
+      if (score < best_score) { best_score = score; best_m = m; }
+    }
+    n_target = best_m + 2;
+  }
+
+  if (n_target < 2) n_target = 2;
+  if (n_target > n) n_target = n;
+
+  // Reconstruct: keep endpoints + seq[0..n_target-3]
+  uint8_t *keep = (uint8_t *)calloc((size_t)n, 1);
+  keep[0] = 1; keep[n - 1] = 1;
+  for (ptrdiff_t k = 0; k < n_target - 2; k++)
+    keep[seq[k]] = 1;
+
+  ptrdiff_t cnt = 0;
+  for (ptrdiff_t k = 0; k < n; k++)
+    if (keep[k]) { out_i[cnt] = track_i[k]; out_j[cnt] = track_j[k]; cnt++; }
+
+  free(seq); free(rmse_curve); free(keep);
+  return cnt;
 }

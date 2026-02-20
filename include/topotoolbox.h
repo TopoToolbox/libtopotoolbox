@@ -2534,6 +2534,100 @@ void swath_longitudinal(float *point_means, float *point_stddevs,
                          ptrdiff_t use_segment_seeds);
 
 /**
+   @brief Longitudinal swath profile via bilinear orthogonal sampling and
+   sliding-window statistics.
+
+   @details
+   Same pixel assignment as swath_longitudinal (Meijster EDT — every pixel
+   within half_width is counted, no pixels skipped). Statistics are computed
+   over a sliding window of track points within ±binning_distance metres.
+
+   Min/max use Lemire monotone deques (O(1) amortised). Mean/stddev use
+   running moments. Percentiles use a moving histogram with 2048 bins
+   (O(N_BINS) per query) instead of the O(W·pixels) sort used by
+   swath_longitudinal.
+
+   @param[out] point_means    Per-point window mean (size n_track_points)
+   @param[out] point_stddevs  Per-point window stddev
+   @param[out] point_mins     Per-point window minimum
+   @param[out] point_maxs     Per-point window maximum
+   @param[out] point_counts   Per-point valid sample count
+   @param[out] point_medians  Per-point median (NULL to skip)
+   @param[out] point_q1       Per-point 25th percentile (NULL to skip)
+   @param[out] point_q3       Per-point 75th percentile (NULL to skip)
+   @param[in]  percentile_list Integer percentile values 0–100 (NULL to skip)
+   @param[in]  n_percentiles   Length of percentile_list
+   @param[out] point_percentiles Output array [n_track_points * n_percentiles] (NULL to skip)
+   @param[in]  dem             DEM array [dims[0] * dims[1]]
+   @param[in]  track_i         Track coords fast dim (pixel space)
+   @param[in]  track_j         Track coords slow dim (pixel space)
+   @param[in]  n_track_points  Number of track vertices (>= 2)
+   @param[in]  distance_from_track  SIGNED distance map in metres (from
+               swath_compute_distance_map with compute_signed nonzero)
+   @param[in]  dims            Grid dimensions [fast, slow]
+   @param[in]  cellsize        Cell size in metres
+   @param[in]  half_width      Swath half-width in metres
+   @param[in]  binning_distance Along-track window radius in metres
+   @param[in]  n_points_regression Number of track points for PCA tangent
+               estimation (centred on query point; clamped to track bounds).
+   @param[in]  use_segment_seeds 0 = seed EDT from rounded track point
+               positions; nonzero = sub-pixel segment rasterization.
+*/
+TOPOTOOLBOX_API
+void swath_longitudinal_windowed(
+    float *point_means, float *point_stddevs,
+    float *point_mins,  float *point_maxs,
+    ptrdiff_t *point_counts, float *point_medians,
+    float *point_q1, float *point_q3,
+    const int *percentile_list, ptrdiff_t n_percentiles,
+    float *point_percentiles,
+    const float *dem,
+    const float *track_i, const float *track_j,
+    ptrdiff_t n_track_points,
+    const float *distance_from_track,
+    ptrdiff_t dims[2], float cellsize,
+    float half_width, float binning_distance,
+    ptrdiff_t n_points_regression,
+    ptrdiff_t use_segment_seeds);
+
+/**
+   @brief Get pixel coordinates for a single point's window in
+   swath_longitudinal_windowed.
+
+   @details
+   Returns integer (pi, pj) coordinates of every pixel assigned (via Meijster
+   EDT) to track points within binning_distance of point_index. Mirrors
+   exactly what swath_longitudinal_windowed counts for that window.
+
+   Safe upper bound for pre-allocation: dims[0] * dims[1].
+
+   @param[out] pixels_i  Fast-dim integer pixel coordinates
+   @param[out] pixels_j  Slow-dim integer pixel coordinates
+   @param[in]  track_i   Track coords fast dim (pixel space)
+   @param[in]  track_j   Track coords slow dim (pixel space)
+   @param[in]  n_track_points   Number of track vertices (>= 2)
+   @param[in]  point_index      Query track point index
+   @param[in]  distance_from_track  Signed distance map in metres (from
+               swath_compute_distance_map with compute_signed nonzero)
+   @param[in]  dims             Grid dimensions [fast, slow]
+   @param[in]  cellsize         Cell size in metres
+   @param[in]  half_width       Swath half-width in metres
+   @param[in]  binning_distance Along-track window radius in metres
+   @param[in]  use_segment_seeds See swath_longitudinal_windowed
+
+   @return Number of pixels written
+*/
+TOPOTOOLBOX_API
+ptrdiff_t swath_windowed_get_point_samples(
+    ptrdiff_t *pixels_i, ptrdiff_t *pixels_j,
+    const float *track_i, const float *track_j,
+    ptrdiff_t n_track_points, ptrdiff_t point_index,
+    const float *distance_from_track,
+    ptrdiff_t dims[2], float cellsize,
+    float half_width, float binning_distance,
+    ptrdiff_t use_segment_seeds);
+
+/**
    @brief Get pixel coordinates associated with a single track point
 
    @details
@@ -2599,5 +2693,61 @@ ptrdiff_t sample_points_between_refs(
     ptrdiff_t n_refs,
     int close_loop,
     int use_d4);
+
+/** @name simplify_line method constants */
+/** @{ */
+#define SIMPLIFY_FIXED_N  0  /**< tolerance = exact number of output points */
+#define SIMPLIFY_KNEEDLE  1  /**< tolerance unused; automatic knee detection */
+#define SIMPLIFY_AIC      2  /**< tolerance unused; Akaike information criterion */
+#define SIMPLIFY_BIC      3  /**< tolerance unused; Bayesian information criterion */
+#define SIMPLIFY_MDL      4  /**< tolerance unused; minimum description length */
+#define SIMPLIFY_VW_AREA  5  /**< tolerance = triangle area threshold (coord² units) */
+#define SIMPLIFY_L_METHOD 6  /**< tolerance unused; L-method elbow detection */
+/** @} */
+
+/**
+   @brief Simplify a polyline using the Iterative End-Point Fit (IEF) engine.
+
+   @details
+   Reduces vertices while preserving shape. First and last points are always
+   kept. Seven stopping criteria are supported:
+
+   method 0 (SIMPLIFY_FIXED_N): tolerance = exact number of output points
+     (clamped to [2, n_points]).
+
+   method 1 (SIMPLIFY_KNEEDLE): automatic knee detection on normalised RMSE
+     curve; tolerance is ignored.
+
+   method 2 (SIMPLIFY_AIC): Akaike information criterion minimisation;
+     tolerance ignored.
+
+   method 3 (SIMPLIFY_BIC): Bayesian information criterion minimisation;
+     tolerance ignored.
+
+   method 4 (SIMPLIFY_MDL): minimum description length minimisation;
+     tolerance ignored.
+
+   method 5 (SIMPLIFY_VW_AREA): Visvalingam-Whyatt area-based insertion.
+     tolerance = triangle area threshold (coordinate units squared). Points
+     are inserted in decreasing triangle-area order; stops when the next
+     point's effective area falls below tolerance.
+
+   method 6 (SIMPLIFY_L_METHOD): L-method elbow detection on RMSE curve;
+     tolerance ignored.
+
+   @param[out] out_i Simplified coords fast dim (pre-allocated, size n_points)
+   @param[out] out_j Simplified coords slow dim (pre-allocated, size n_points)
+   @param[in]  track_i Input coords fast dim
+   @param[in]  track_j Input coords slow dim
+   @param[in]  n_points Number of input vertices
+   @param[in]  tolerance Meaning depends on method (see above)
+   @param[in]  method    One of SIMPLIFY_* constants (0–6)
+
+   @return Number of vertices in the simplified line
+*/
+TOPOTOOLBOX_API
+ptrdiff_t simplify_line(float *out_i, float *out_j,
+                        const float *track_i, const float *track_j,
+                        ptrdiff_t n_points, float tolerance, int method);
 
 #endif  // TOPOTOOLBOX_H
