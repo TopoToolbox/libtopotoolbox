@@ -2517,64 +2517,71 @@ void swath_transverse(float *bin_distances, float *bin_means,
    @param[in] use_segment_seeds 0 = BFS assignment seeded from rounded track
    point positions; nonzero = Meijster exact EDT with sub-pixel segment
    rasterization (more accurate for coarsely sampled tracks, same O(n) cost).
+   @param[in]  skip             Process every skip-th track point (1 = all).
+               Only indices where index % skip == 0 produce output rows.
+   @param[out] result_track_i   Kept track-point fast coords [n_result], or NULL
+   @param[out] result_track_j   Kept track-point slow coords [n_result], or NULL
+
+   @return Number of output points written (= ceil(n_track_points / skip))
  */
 TOPOTOOLBOX_API
-void swath_longitudinal(float *point_means, float *point_stddevs,
-                         float *point_mins, float *point_maxs,
-                         ptrdiff_t *point_counts, float *point_medians,
-                         float *point_q1, float *point_q3,
-                         const int *percentile_list, ptrdiff_t n_percentiles,
-                         float *point_percentiles, const float *dem,
-                         const float *track_i, const float *track_j,
-                         ptrdiff_t n_track_points,
-                         const float *distance_from_track,
-                         ptrdiff_t dims[2], float cellsize, float half_width,
-                         float binning_distance,
-                         ptrdiff_t n_points_regression,
-                         ptrdiff_t use_segment_seeds);
+ptrdiff_t swath_longitudinal(float *point_means, float *point_stddevs,
+                              float *point_mins, float *point_maxs,
+                              ptrdiff_t *point_counts, float *point_medians,
+                              float *point_q1, float *point_q3,
+                              const int *percentile_list, ptrdiff_t n_percentiles,
+                              float *point_percentiles, const float *dem,
+                              const float *track_i, const float *track_j,
+                              ptrdiff_t n_track_points,
+                              const float *distance_from_track,
+                              ptrdiff_t dims[2], float cellsize, float half_width,
+                              float binning_distance,
+                              ptrdiff_t n_points_regression,
+                              ptrdiff_t use_segment_seeds,
+                              ptrdiff_t skip,
+                              float *result_track_i, float *result_track_j);
 
 /**
    @brief Longitudinal swath profile via bilinear orthogonal sampling and
    sliding-window statistics.
 
    @details
-   Same pixel assignment as swath_longitudinal (Meijster EDT — every pixel
-   within half_width is counted, no pixels skipped). Statistics are computed
-   over a sliding window of track points within ±binning_distance metres.
+   For each track point computes a local tangent via PCA, defines an oriented
+   rectangle of half-width half_width (orthogonal to track) and half-length
+   binning_distance (along track), then gathers every DEM pixel whose centre
+   falls inside that rectangle. No pre-computed distance map required.
 
-   Min/max use Lemire monotone deques (O(1) amortised). Mean/stddev use
-   running moments. Percentiles use a moving histogram with 2048 bins
-   (O(N_BINS) per query) instead of the O(W·pixels) sort used by
-   swath_longitudinal.
+   Percentiles use a per-point 2048-bin histogram (two passes over the window).
 
-   @param[out] point_means    Per-point window mean (size n_track_points)
-   @param[out] point_stddevs  Per-point window stddev
-   @param[out] point_mins     Per-point window minimum
-   @param[out] point_maxs     Per-point window maximum
-   @param[out] point_counts   Per-point valid sample count
+   @param[out] point_means    Per-point mean (size n_track_points)
+   @param[out] point_stddevs  Per-point stddev
+   @param[out] point_mins     Per-point minimum
+   @param[out] point_maxs     Per-point maximum
+   @param[out] point_counts   Per-point valid pixel count
    @param[out] point_medians  Per-point median (NULL to skip)
    @param[out] point_q1       Per-point 25th percentile (NULL to skip)
    @param[out] point_q3       Per-point 75th percentile (NULL to skip)
    @param[in]  percentile_list Integer percentile values 0–100 (NULL to skip)
    @param[in]  n_percentiles   Length of percentile_list
-   @param[out] point_percentiles Output array [n_track_points * n_percentiles] (NULL to skip)
+   @param[out] point_percentiles Output [n_track_points * n_percentiles] (NULL to skip)
    @param[in]  dem             DEM array [dims[0] * dims[1]]
    @param[in]  track_i         Track coords fast dim (pixel space)
    @param[in]  track_j         Track coords slow dim (pixel space)
    @param[in]  n_track_points  Number of track vertices (>= 2)
-   @param[in]  distance_from_track  SIGNED distance map in metres (from
-               swath_compute_distance_map with compute_signed nonzero)
    @param[in]  dims            Grid dimensions [fast, slow]
    @param[in]  cellsize        Cell size in metres
-   @param[in]  half_width      Swath half-width in metres
-   @param[in]  binning_distance Along-track window radius in metres
-   @param[in]  n_points_regression Number of track points for PCA tangent
-               estimation (centred on query point; clamped to track bounds).
-   @param[in]  use_segment_seeds 0 = seed EDT from rounded track point
-               positions; nonzero = sub-pixel segment rasterization.
+   @param[in]  half_width      Rectangle half-width (orthogonal) in metres
+   @param[in]  binning_distance Rectangle half-length (along track) in metres
+   @param[in]  n_points_regression Track points used for PCA tangent estimation
+   @param[in]  skip             Process every skip-th track point (1 = all).
+               Only indices where index % skip == 0 produce output rows.
+   @param[out] result_track_i   Kept track-point fast coords [n_result], or NULL
+   @param[out] result_track_j   Kept track-point slow coords [n_result], or NULL
+
+   @return Number of output points written (= ceil(n_track_points / skip))
 */
 TOPOTOOLBOX_API
-void swath_longitudinal_windowed(
+ptrdiff_t swath_longitudinal_windowed(
     float *point_means, float *point_stddevs,
     float *point_mins,  float *point_maxs,
     ptrdiff_t *point_counts, float *point_medians,
@@ -2584,36 +2591,35 @@ void swath_longitudinal_windowed(
     const float *dem,
     const float *track_i, const float *track_j,
     ptrdiff_t n_track_points,
-    const float *distance_from_track,
     ptrdiff_t dims[2], float cellsize,
     float half_width, float binning_distance,
     ptrdiff_t n_points_regression,
-    ptrdiff_t use_segment_seeds);
+    ptrdiff_t skip,
+    float *result_track_i, float *result_track_j);
 
 /**
-   @brief Get pixel coordinates for a single point's window in
-   swath_longitudinal_windowed.
+   @brief Get pixel coordinates for a single point's oriented-rectangle window.
 
    @details
-   Returns integer (pi, pj) coordinates of every pixel assigned (via Meijster
-   EDT) to track points within binning_distance of point_index. Mirrors
-   exactly what swath_longitudinal_windowed counts for that window.
+   Returns integer (pi, pj) coordinates of every pixel inside the oriented
+   rectangle centred on track_i[point_index], track_j[point_index].
+   The rectangle axes are computed via local PCA tangent over
+   n_points_regression neighbours.  Along-track half-length = binning_distance
+   / cellsize pixels; orthogonal half-width = half_width / cellsize pixels.
 
    Safe upper bound for pre-allocation: dims[0] * dims[1].
 
-   @param[out] pixels_i  Fast-dim integer pixel coordinates
-   @param[out] pixels_j  Slow-dim integer pixel coordinates
-   @param[in]  track_i   Track coords fast dim (pixel space)
-   @param[in]  track_j   Track coords slow dim (pixel space)
+   @param[out] pixels_i         Fast-dim integer pixel coordinates
+   @param[out] pixels_j         Slow-dim integer pixel coordinates
+   @param[in]  track_i          Track coords fast dim (pixel space)
+   @param[in]  track_j          Track coords slow dim (pixel space)
    @param[in]  n_track_points   Number of track vertices (>= 2)
    @param[in]  point_index      Query track point index
-   @param[in]  distance_from_track  Signed distance map in metres (from
-               swath_compute_distance_map with compute_signed nonzero)
    @param[in]  dims             Grid dimensions [fast, slow]
    @param[in]  cellsize         Cell size in metres
-   @param[in]  half_width       Swath half-width in metres
-   @param[in]  binning_distance Along-track window radius in metres
-   @param[in]  use_segment_seeds See swath_longitudinal_windowed
+   @param[in]  half_width       Orthogonal half-width in metres
+   @param[in]  binning_distance Along-track half-length in metres
+   @param[in]  n_points_regression  Neighbourhood size for PCA tangent
 
    @return Number of pixels written
 */
@@ -2622,10 +2628,9 @@ ptrdiff_t swath_windowed_get_point_samples(
     ptrdiff_t *pixels_i, ptrdiff_t *pixels_j,
     const float *track_i, const float *track_j,
     ptrdiff_t n_track_points, ptrdiff_t point_index,
-    const float *distance_from_track,
     ptrdiff_t dims[2], float cellsize,
     float half_width, float binning_distance,
-    ptrdiff_t use_segment_seeds);
+    ptrdiff_t n_points_regression);
 
 /**
    @brief Get pixel coordinates associated with a single track point
@@ -2718,14 +2723,17 @@ ptrdiff_t sample_points_between_refs(
    method 1 (SIMPLIFY_KNEEDLE): automatic knee detection on normalised RMSE
      curve; tolerance is ignored.
 
-   method 2 (SIMPLIFY_AIC): Akaike information criterion minimisation;
-     tolerance ignored.
+   method 2 (SIMPLIFY_AIC): Akaike information criterion minimisation.
+     tolerance = RMSE noise floor (same coordinate units as track).
+     The log-fit term stops improving once RMSE drops below tolerance,
+     preventing the criterion from trivially returning all points.
+     Larger tolerance → fewer output points.
 
-   method 3 (SIMPLIFY_BIC): Bayesian information criterion minimisation;
-     tolerance ignored.
+   method 3 (SIMPLIFY_BIC): Bayesian information criterion minimisation.
+     tolerance = RMSE noise floor (same semantics as AIC).
 
-   method 4 (SIMPLIFY_MDL): minimum description length minimisation;
-     tolerance ignored.
+   method 4 (SIMPLIFY_MDL): minimum description length minimisation.
+     tolerance = RMSE noise floor (same semantics as AIC).
 
    method 5 (SIMPLIFY_VW_AREA): Visvalingam-Whyatt area-based insertion.
      tolerance = triangle area threshold (coordinate units squared). Points
