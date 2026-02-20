@@ -2469,7 +2469,6 @@ void swath_compute_full_distance_map(
    @param[in] distance_from_track SIGNED distance map in meters (from
    swath_compute_distance_map)
    @param[in] dims Grid dimensions [fast, slow]
-   @param[in] cellsize Cell size in meters
    @param[in] half_width Swath half-width in meters
    @param[in] bin_resolution Bin spacing in meters
    @param[in] n_bins Number of bins (use swath_compute_nbins)
