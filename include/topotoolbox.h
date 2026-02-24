@@ -2445,6 +2445,36 @@ void swath_compute_full_distance_map(
     float cellsize, const float *dem, const int8_t *mask, int compute_signed);
 
 /**
+   @brief Compute distance map clipped to half_width, with optional DEM/mask
+   filtering
+
+   @details
+   Combines the half_width clipping of swath_compute_distance_map with the
+   DEM/mask filtering of swath_compute_full_distance_map.  Pixels beyond
+   half_width, outside the mask, or coinciding with NaN DEM values receive NAN.
+   All distance outputs are in meters.
+
+   @param[out] distance Distance per pixel (meters). NAN outside swath or mask.
+   @param[out] nearest_segment Nearest segment index, or NULL to skip
+   @param[in] track_i Track coords in fast dimension (pixel space)
+   @param[in] track_j Track coords in slow dimension (pixel space)
+   @param[in] n_track_points Number of track vertices (>= 2)
+   @param[in] dims Grid dimensions [fast, slow]
+   @param[in] cellsize Cell size in meters
+   @param[in] half_width Swath half-width in meters
+   @param[in] dem DEM for NaN detection, or NULL to skip NaN check
+   @param[in] mask Active mask (nonzero=active), or NULL for all active
+   @param[in] compute_signed If nonzero, output signed distance; otherwise
+   absolute
+*/
+TOPOTOOLBOX_API
+void swath_frontier_distance_map(
+    float *distance, ptrdiff_t *nearest_segment, const float *track_i,
+    const float *track_j, ptrdiff_t n_track_points, ptrdiff_t dims[2],
+    float cellsize, float half_width, const float *dem, const int8_t *mask,
+    int compute_signed);
+
+/**
    @brief Compute binned swath profile perpendicular to track
 
    @details

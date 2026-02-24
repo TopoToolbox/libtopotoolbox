@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "topotoolbox.h"
+#include "priority_queue.h"
 
 // 8-connected neighbor offsets (row, col) — shared by all D8 operations.
 static const int k_di8[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
@@ -259,25 +260,24 @@ static void boundary_dijkstra(float *restrict dist_out,
                               ptrdiff_t dims[2], float hw_px) {
   ptrdiff_t total = dims[0] * dims[1];
 
+  // dist_out serves as the PriorityQueue priorities array (indexed by pixel).
   for (ptrdiff_t i = 0; i < total; i++) dist_out[i] = FLT_MAX;
 
-  min_heap heap;
-  heap_init(&heap, n_seeds * 4);
+  ptrdiff_t *pq_heap = (ptrdiff_t *)malloc(total * sizeof(ptrdiff_t));
+  ptrdiff_t *pq_back = (ptrdiff_t *)malloc(total * sizeof(ptrdiff_t));
+  for (ptrdiff_t i = 0; i < total; i++) pq_back[i] = -1;
+  PriorityQueue q = pq_create(total, pq_heap, pq_back, dist_out, 0);
 
+  // Seed boundary pixels at distance 0; pq_insert sets dist_out[idx] = 0.
   for (ptrdiff_t s = 0; s < n_seeds; s++) {
-    ptrdiff_t idx = seeds[s];
-    dist_out[idx] = 0.0f;
-    heap_push(&heap, 0.0f, idx);
+    pq_insert(&q, seeds[s], 0.0f);
   }
 
   static const float dd8[8] = {1.41421356f, 1.0f, 1.41421356f, 1.0f, 1.0f,
                                1.41421356f, 1.0f, 1.41421356f};
 
-  while (heap.size > 0) {
-    heap_entry top = heap_pop(&heap);
-    ptrdiff_t idx = top.idx;
-
-    if (top.abs_dist > dist_out[idx]) continue;  // stale
+  while (!pq_isempty(&q)) {
+    ptrdiff_t idx = pq_deletemin(&q);
 
     ptrdiff_t ci = idx % dims[0];
     ptrdiff_t cj = idx / dims[0];
@@ -292,13 +292,17 @@ static void boundary_dijkstra(float *restrict dist_out,
 
       float new_dist = dist_out[idx] + dd8[n];
       if (new_dist < dist_out[nidx]) {
-        dist_out[nidx] = new_dist;
-        heap_push(&heap, new_dist, nidx);
+        // pq_decrease_key / pq_insert both update dist_out[nidx] via priorities.
+        if (q.back[nidx] >= 0)
+          pq_decrease_key(&q, nidx, new_dist);
+        else
+          pq_insert(&q, nidx, new_dist);
       }
     }
   }
 
-  heap_free(&heap);
+  free(pq_heap);
+  free(pq_back);
 }
 
 // ============================================================================
@@ -307,7 +311,7 @@ static void boundary_dijkstra(float *restrict dist_out,
 //
 // Seeds: track segments rasterized at ~0.5 px spacing.
 // Expansion: 8-connected, ordered by absolute perpendicular distance.
-// Each pixel is settled once; stale heap entries are skipped.
+// Each pixel is settled once via PriorityQueue with decrease_key.
 //
 // Outputs (caller-allocated, size dims[0]*dims[1]; NULL to skip):
 //   best_abs    — absolute perpendicular distance in pixels (FLT_MAX =
@@ -339,10 +343,17 @@ static void frontier_distance_map(
     for (ptrdiff_t i = 0; i < total; i++) nearest_seg[i] = -1;
   }
 
-  min_heap heap;
-  heap_init(&heap, n_track_points * 8);
+  // best_abs serves as the PriorityQueue priorities array (indexed by pixel).
+  ptrdiff_t *pq_heap = (ptrdiff_t *)malloc(total * sizeof(ptrdiff_t));
+  ptrdiff_t *pq_back = (ptrdiff_t *)malloc(total * sizeof(ptrdiff_t));
+  for (ptrdiff_t i = 0; i < total; i++) pq_back[i] = -1;
+  PriorityQueue q = pq_create(total, pq_heap, pq_back, best_abs, 0);
 
-// Helper: test a pixel against candidate segments, update if better
+// Helper: test a pixel against candidate segments, update if better.
+// pq_back[idx] >= 0  → pixel is in queue   → pq_decrease_key
+// pq_back[idx] <  0  → never inserted       → pq_insert  (best_abs == FLT_MAX)
+// pq_back[idx] <  0  → already settled      → skip       (best_abs < FLT_MAX)
+// pq_insert / pq_decrease_key both write best_abs[idx] via the priorities ptr.
 // clang-format off
 #define TRY_PIXEL(pi, pj, seg_lo, seg_hi)                             \
   do {                                                                \
@@ -366,10 +377,15 @@ static void frontier_distance_map(
         }                                                             \
       }                                                               \
       if (_best_ad < best_abs[_idx] && _best_ad <= max_dist_px) {     \
-        best_abs[_idx] = _best_ad;                                    \
-        if (signed_dist) signed_dist[_idx] = _best_sd;                \
-        if (nearest_seg) nearest_seg[_idx] = _best_seg;               \
-        heap_push(&heap, _best_ad, _idx);                             \
+        if (q.back[_idx] >= 0) {                                      \
+          if (signed_dist) signed_dist[_idx] = _best_sd;              \
+          if (nearest_seg) nearest_seg[_idx] = _best_seg;             \
+          pq_decrease_key(&q, _idx, _best_ad);                        \
+        } else if (best_abs[_idx] >= FLT_MAX) {                       \
+          if (signed_dist) signed_dist[_idx] = _best_sd;              \
+          if (nearest_seg) nearest_seg[_idx] = _best_seg;             \
+          pq_insert(&q, _idx, _best_ad);                              \
+        }                                                             \
       }                                                               \
     }                                                                 \
   } while (0)
@@ -393,12 +409,8 @@ static void frontier_distance_map(
   }
 
   // Dijkstra expansion
-  while (heap.size > 0) {
-    heap_entry top = heap_pop(&heap);
-    ptrdiff_t idx = top.idx;
-
-    // Skip stale entries
-    if (top.abs_dist > best_abs[idx]) continue;
+  while (!pq_isempty(&q)) {
+    ptrdiff_t idx = pq_deletemin(&q);
 
     ptrdiff_t ci = idx % dims[0];
     ptrdiff_t cj = idx / dims[0];
@@ -418,7 +430,8 @@ static void frontier_distance_map(
 
 #undef TRY_PIXEL
 
-  heap_free(&heap);
+  free(pq_heap);
+  free(pq_back);
   if (free_best) free(best_abs);
 }
 // clang-format on
@@ -789,6 +802,57 @@ void swath_compute_full_distance_map(
 
   for (ptrdiff_t i = 0; i < total; i++) {
     if (best_abs[i] == FLT_MAX) {
+      distance[i] = NAN;
+    } else if (compute_signed && signed_dist_px) {
+      distance[i] = signed_dist_px[i] * cellsize;
+    } else {
+      distance[i] = best_abs[i] * cellsize;
+    }
+  }
+
+  free(best_abs);
+  if (signed_dist_px) free(signed_dist_px);
+  if (free_nseg) free(nseg);
+}
+
+// ============================================================================
+// Bounded distance map — frontier expansion clipped to half_width, with
+// optional dem/mask filtering.
+// ============================================================================
+// Combines the half_width clipping of swath_compute_distance_map with the
+// dem/mask filtering of swath_compute_full_distance_map.
+
+TOPOTOOLBOX_API
+void swath_frontier_distance_map(
+    float *restrict distance, ptrdiff_t *restrict nearest_segment,
+    const float *restrict track_i, const float *restrict track_j,
+    ptrdiff_t n_track_points, ptrdiff_t dims[2], float cellsize,
+    float half_width, const float *dem, const int8_t *mask, int compute_signed) {
+  if (n_track_points < 2) return;
+
+  ptrdiff_t total = dims[0] * dims[1];
+  float hw_px = half_width / cellsize;
+
+  ptrdiff_t *nseg = NULL;
+  int free_nseg = 0;
+  if (nearest_segment != NULL) {
+    nseg = nearest_segment;
+  } else {
+    nseg = (ptrdiff_t *)malloc(total * sizeof(ptrdiff_t));
+    free_nseg = 1;
+  }
+
+  float *best_abs = (float *)malloc(total * sizeof(float));
+  float *signed_dist_px = NULL;
+  if (compute_signed) {
+    signed_dist_px = (float *)malloc(total * sizeof(float));
+  }
+
+  frontier_distance_map(best_abs, signed_dist_px, nseg, track_i, track_j,
+                        n_track_points, dims, hw_px, dem, mask);
+
+  for (ptrdiff_t i = 0; i < total; i++) {
+    if (best_abs[i] == FLT_MAX || best_abs[i] > hw_px) {
       distance[i] = NAN;
     } else if (compute_signed && signed_dist_px) {
       distance[i] = signed_dist_px[i] * cellsize;
