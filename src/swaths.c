@@ -9,6 +9,7 @@
 
 #include "topotoolbox.h"
 #include "priority_queue.h"
+#include "stat_helper.h"
 
 // 8-connected neighbor offsets (row, col) — shared by all D8 operations.
 static const int k_di8[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
@@ -38,105 +39,6 @@ static const int k_dj8[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
 
   Line simplification — swath_simplify_line (IEF engine, 7 stopping criteria).
 */
-
-// ============================================================================
-// Statistics accumulator — running mean, variance, min, max (online, O(1))
-// ============================================================================
-
-typedef struct {
-  ptrdiff_t count;
-  double sum;
-  double sum_sq;
-  float min_val;
-  float max_val;
-} swath_stats_accumulator;
-
-// ============================================================================
-// Percentile accumulator — collects values, sorts on demand, queries by rank
-// ============================================================================
-
-typedef struct {
-  ptrdiff_t capacity;
-  ptrdiff_t count;
-  float *values;
-} percentile_accumulator;
-
-static inline void percentile_accumulator_init(percentile_accumulator *acc,
-                                               ptrdiff_t initial_capacity) {
-  acc->capacity = initial_capacity > 0 ? initial_capacity : 16;
-  acc->count = 0;
-  acc->values = (float *)malloc(acc->capacity * sizeof(float));
-}
-
-static inline void percentile_accumulator_add(percentile_accumulator *acc,
-                                              float value) {
-  if (isnan(value)) return;
-  if (acc->count >= acc->capacity) {
-    acc->capacity *= 2;
-    acc->values = (float *)realloc(acc->values, acc->capacity * sizeof(float));
-  }
-  acc->values[acc->count++] = value;
-}
-
-static int compare_floats(const void *a, const void *b) {
-  float fa = *(const float *)a;
-  float fb = *(const float *)b;
-  return (fa > fb) - (fa < fb);
-}
-
-static inline void percentile_accumulator_sort(percentile_accumulator *acc) {
-  if (acc->count > 0) {
-    qsort(acc->values, acc->count, sizeof(float), compare_floats);
-  }
-}
-
-static inline float percentile_accumulator_get(
-    const percentile_accumulator *acc, float p) {
-  if (acc->count == 0) return NAN;
-  if (p < 0.0f) p = 0.0f;
-  if (p > 100.0f) p = 100.0f;
-  float index = p / 100.0f * (acc->count - 1);
-  ptrdiff_t lower = (ptrdiff_t)index;
-  ptrdiff_t upper = lower + 1;
-  if (upper >= acc->count) return acc->values[acc->count - 1];
-  float fraction = index - lower;
-  return acc->values[lower] * (1.0f - fraction) + acc->values[upper] * fraction;
-}
-
-static inline void percentile_accumulator_free(percentile_accumulator *acc) {
-  free(acc->values);
-  acc->values = NULL;
-  acc->count = 0;
-  acc->capacity = 0;
-}
-
-static inline void accumulator_init(swath_stats_accumulator *acc) {
-  acc->count = 0;
-  acc->sum = 0.0;
-  acc->sum_sq = 0.0;
-  acc->min_val = FLT_MAX;
-  acc->max_val = -FLT_MAX;
-}
-
-static inline void accumulator_add(swath_stats_accumulator *acc, float value) {
-  if (isnan(value)) return;
-  acc->count++;
-  acc->sum += value;
-  acc->sum_sq += value * value;
-  if (value < acc->min_val) acc->min_val = value;
-  if (value > acc->max_val) acc->max_val = value;
-}
-
-static inline float accumulator_mean(const swath_stats_accumulator *acc) {
-  return acc->count > 0 ? (float)(acc->sum / acc->count) : NAN;
-}
-
-static inline float accumulator_stddev(const swath_stats_accumulator *acc) {
-  if (acc->count <= 1) return 0.0f;
-  double variance =
-      (acc->sum_sq - acc->sum * acc->sum / acc->count) / (acc->count - 1);
-  return variance > 0.0 ? (float)sqrt(variance) : 0.0f;
-}
 
 // ============================================================================
 // Min-heap — used by frontier Dijkstra and the IEF simplification engine
@@ -894,8 +796,8 @@ void swath_transverse(float *restrict bin_distances, float *restrict bin_means,
         bin_percentiles != NULL));
 
   // Allocate accumulators
-  swath_stats_accumulator *accumulators = (swath_stats_accumulator *)calloc(
-      n_bins, sizeof(swath_stats_accumulator));
+  stats_accumulator *accumulators = (stats_accumulator *)calloc(
+      n_bins, sizeof(stats_accumulator));
   for (ptrdiff_t b = 0; b < n_bins; b++) accumulator_init(&accumulators[b]);
 
   percentile_accumulator *p_accumulators = NULL;
@@ -909,7 +811,7 @@ void swath_transverse(float *restrict bin_distances, float *restrict bin_means,
   // Normalization: mean elevation near track center
   float reference_elevation = 0.0f;
   if (normalize) {
-    swath_stats_accumulator track_acc;
+    stats_accumulator track_acc;
     accumulator_init(&track_acc);
     for (ptrdiff_t idx = 0; idx < total_pixels; idx++) {
       if (isnan(distance_from_track[idx])) continue;
@@ -1496,10 +1398,10 @@ ptrdiff_t swath_longitudinal(
   }
 
   // Per-point accumulators — only needed for Case 1 (Bresenham cross-sections)
-  swath_stats_accumulator *accumulators = NULL;
+  stats_accumulator *accumulators = NULL;
   if (binning_distance <= 0.0f) {
-    accumulators = (swath_stats_accumulator *)calloc(
-        n_track_points, sizeof(swath_stats_accumulator));
+    accumulators = (stats_accumulator *)calloc(
+        n_track_points, sizeof(stats_accumulator));
     for (ptrdiff_t k = 0; k < n_track_points; k++)
       accumulator_init(&accumulators[k]);
   }

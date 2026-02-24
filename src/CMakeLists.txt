@@ -10,6 +10,7 @@ add_library(topotoolbox
   gradient8.c
   reconstruct.c
   priority_queue.c
+  stat_helper.c
   excesstopography.c
   graphflood/gf_utils.c
   graphflood/sfgraph.c
