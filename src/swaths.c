@@ -9,6 +9,10 @@
 
 #include "topotoolbox.h"
 
+// 8-connected neighbor offsets (row, col) — shared by all D8 operations.
+static const int k_di8[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
+static const int k_dj8[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
+
 /*
   Swath profile analysis — libtopotoolbox
   ========================================
@@ -205,7 +209,7 @@ static void heap_free(min_heap *h) {
 // ============================================================================
 // Signed perpendicular distance from a point to a segment (pixel space)
 // ============================================================================
-// Returns negative if the point is left of a→b, positive if right.
+// Returns positive if the point is left of a→b, negative if right.
 // proj_x/proj_y: closest point on segment; lambda: clamped parameter in [0,1].
 static float point_to_segment_distance(float px, float py, float ax, float ay,
                                        float bx, float by, float *proj_x,
@@ -241,12 +245,61 @@ static float point_to_segment_distance(float px, float py, float ax, float ay,
   return cross >= 0.0f ? dist : -dist;
 }
 
-// Forward declaration — defined after swath_get_point_pixels (file order
-// constraint: used by swath_compute_distance_map which comes earlier).
+// ============================================================================
+// Boundary Dijkstra — inward D8 wavefront from swath-edge pixels
+// ============================================================================
+//
+// Used internally by swath_compute_distance_map to build the distance-from-
+// boundary field needed for centre-line extraction.  Seeds are the boundary
+// pixels on one side of the swath (positive or negative); expansion is
+// restricted to pixels within the swath mask (best_abs <= hw_px).
 static void boundary_dijkstra(float *restrict dist_out,
                               const float *restrict best_abs,
                               const ptrdiff_t *seeds, ptrdiff_t n_seeds,
-                              ptrdiff_t dims[2], float hw_px);
+                              ptrdiff_t dims[2], float hw_px) {
+  ptrdiff_t total = dims[0] * dims[1];
+
+  for (ptrdiff_t i = 0; i < total; i++) dist_out[i] = FLT_MAX;
+
+  min_heap heap;
+  heap_init(&heap, n_seeds * 4);
+
+  for (ptrdiff_t s = 0; s < n_seeds; s++) {
+    ptrdiff_t idx = seeds[s];
+    dist_out[idx] = 0.0f;
+    heap_push(&heap, 0.0f, idx);
+  }
+
+  static const float dd8[8] = {1.41421356f, 1.0f, 1.41421356f, 1.0f, 1.0f,
+                               1.41421356f, 1.0f, 1.41421356f};
+
+  while (heap.size > 0) {
+    heap_entry top = heap_pop(&heap);
+    ptrdiff_t idx = top.idx;
+
+    if (top.abs_dist > dist_out[idx]) continue;  // stale
+
+    ptrdiff_t ci = idx % dims[0];
+    ptrdiff_t cj = idx / dims[0];
+
+    for (int n = 0; n < 8; n++) {
+      ptrdiff_t ni = ci + k_di8[n];
+      ptrdiff_t nj = cj + k_dj8[n];
+      if (ni < 0 || ni >= dims[0] || nj < 0 || nj >= dims[1]) continue;
+
+      ptrdiff_t nidx = nj * dims[0] + ni;
+      if (best_abs[nidx] == FLT_MAX || best_abs[nidx] > hw_px) continue;
+
+      float new_dist = dist_out[idx] + dd8[n];
+      if (new_dist < dist_out[nidx]) {
+        dist_out[nidx] = new_dist;
+        heap_push(&heap, new_dist, nidx);
+      }
+    }
+  }
+
+  heap_free(&heap);
+}
 
 // ============================================================================
 // Frontier distance map — Dijkstra outward from track, bounded at max_dist_px
@@ -339,10 +392,6 @@ static void frontier_distance_map(
     }
   }
 
-  // 8-connected neighbor offsets
-  static const int di8[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
-  static const int dj8[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
-
   // Dijkstra expansion
   while (heap.size > 0) {
     heap_entry top = heap_pop(&heap);
@@ -361,8 +410,8 @@ static void frontier_distance_map(
         seg + 2 < n_track_points - 1 ? seg + 2 : n_track_points - 2;
 
     for (int n = 0; n < 8; n++) {
-      ptrdiff_t ni = ci + di8[n];
-      ptrdiff_t nj = cj + dj8[n];
+      ptrdiff_t ni = ci + k_di8[n];
+      ptrdiff_t nj = cj + k_dj8[n];
       TRY_PIXEL(ni, nj, seg_lo, seg_hi);
     }
   }
@@ -528,9 +577,6 @@ ptrdiff_t swath_compute_distance_map(
     // [0,1] on the first or last segment are beyond the track endpoints
     // (inside the semicircular cap) and are excluded.
     if (want_centre) {
-      static const int cdi8[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
-      static const int cdj8[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
-
       for (ptrdiff_t idx = 0; idx < total; idx++) {
         if (best_abs[idx] == FLT_MAX || best_abs[idx] > hw_px) continue;
         float dp = dist_pos[idx], dn = dist_neg[idx];
@@ -549,8 +595,8 @@ ptrdiff_t swath_compute_distance_map(
         int on_cl = (my_sign == 0);
         if (!on_cl) {
           for (int n = 0; n < 8; n++) {
-            ptrdiff_t ni = ci + cdi8[n];
-            ptrdiff_t nj = cj + cdj8[n];
+            ptrdiff_t ni = ci + k_di8[n];
+            ptrdiff_t nj = cj + k_dj8[n];
             if (ni < 0 || ni >= dims[0] || nj < 0 || nj >= dims[1]) continue;
             ptrdiff_t nidx = nj * dims[0] + ni;
             if (best_abs[nidx] == FLT_MAX || best_abs[nidx] > hw_px) continue;
@@ -594,8 +640,15 @@ ptrdiff_t swath_compute_distance_map(
     // After removing path[i], skip path[i+1] to prevent adjacent removals
     // (which would disconnect the path).  Repeat until stable.
     if (want_centre && n_centre > 2) {
-      static const int pp_di[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
-      static const int pp_dj[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
+      // Cardinal and diagonal traversal offsets for ordered path extraction.
+      // MUST check cardinal neighbours before diagonal: at a D4 corner the
+      // diagonal next-next pixel is geometrically adjacent to the corner
+      // pixel, so a diagonal-first ordering would skip the cardinal next
+      // pixel and produce a wrong traversal sequence.
+      static const int c_di[4] = {-1, 0, 0, 1};
+      static const int c_dj[4] = {0, -1, 1, 0};
+      static const int d_di[4] = {-1, -1, 1, 1};
+      static const int d_dj[4] = {-1, 1, -1, 1};
 
       uint8_t *on_cl = (uint8_t *)calloc(total, 1);
       uint8_t *vis = (uint8_t *)calloc(total, 1);
@@ -618,7 +671,7 @@ ptrdiff_t swath_compute_distance_map(
             if (!on_cl[cj * dims[0] + ci]) continue;
             int nc = 0;
             for (int n = 0; n < 8; n++) {
-              ptrdiff_t ni = ci + pp_di[n], nj = cj + pp_dj[n];
+              ptrdiff_t ni = ci + k_di8[n], nj = cj + k_dj8[n];
               if (ni < 0 || ni >= dims[0] || nj < 0 || nj >= dims[1]) continue;
               if (on_cl[nj * dims[0] + ni]) nc++;
             }
@@ -629,15 +682,6 @@ ptrdiff_t swath_compute_distance_map(
                     (ptrdiff_t)centre_line_i[0];
 
           // Traverse path in order.
-          // MUST check cardinal neighbours before diagonal: at a D4 corner the
-          // diagonal next-next pixel is geometrically adjacent to the corner
-          // pixel, so a diagonal-first ordering would skip the cardinal next
-          // pixel and produce a wrong traversal sequence.
-          static const int c_di[4] = {-1, 0, 0, 1};
-          static const int c_dj[4] = {0, -1, 1, 0};
-          static const int d_di[4] = {-1, -1, 1, 1};
-          static const int d_dj[4] = {-1, 1, -1, 1};
-
           memset(vis, 0, (size_t)total);
           ptrdiff_t n_path = 0;
           ptrdiff_t cur = start;
@@ -1048,10 +1092,129 @@ static void compute_local_tangent(const float *track_i, const float *track_j,
 //   ±binning_distance metres along the cumulative track distance, using
 //   Lemire monotonic deques for O(1) amortised min/max per output point.
 
-// Forward declaration for Bresenham (defined later in file)
+// ============================================================================
+// Bresenham rasterization — D8 (diagonal allowed) and D4 (cardinal only)
+// ============================================================================
+//
+// Both variants produce pixel sequences from (i0,j0) to (i1,j1).
+// D4 splits diagonal steps into two cardinal steps, used by
+// sample_points_between_refs when strict 4-connectivity is needed.
+
+// D8: each step moves exactly 1 pixel (cardinal or diagonal).
 static ptrdiff_t bresenham_d8(ptrdiff_t *out_i, ptrdiff_t *out_j, ptrdiff_t i0,
                               ptrdiff_t j0, ptrdiff_t i1, ptrdiff_t j1,
-                              int skip_first);
+                              int skip_first) {
+  ptrdiff_t di = i1 - i0;
+  ptrdiff_t dj = j1 - j0;
+  ptrdiff_t si = di > 0 ? 1 : (di < 0 ? -1 : 0);
+  ptrdiff_t sj = dj > 0 ? 1 : (dj < 0 ? -1 : 0);
+  ptrdiff_t adi = di < 0 ? -di : di;
+  ptrdiff_t adj = dj < 0 ? -dj : dj;
+
+  ptrdiff_t count = 0;
+  ptrdiff_t ci = i0, cj = j0;
+
+  if (!skip_first) {
+    out_i[count] = ci;
+    out_j[count] = cj;
+    count++;
+  }
+
+  if (adi >= adj) {
+    // i is the driving axis
+    ptrdiff_t err = adi / 2;
+    for (ptrdiff_t step = 0; step < adi; step++) {
+      err -= adj;
+      if (err < 0) {
+        cj += sj;
+        err += adi;
+      }
+      ci += si;
+      out_i[count] = ci;
+      out_j[count] = cj;
+      count++;
+    }
+  } else {
+    // j is the driving axis
+    ptrdiff_t err = adj / 2;
+    for (ptrdiff_t step = 0; step < adj; step++) {
+      err -= adi;
+      if (err < 0) {
+        ci += si;
+        err += adj;
+      }
+      cj += sj;
+      out_i[count] = ci;
+      out_j[count] = cj;
+      count++;
+    }
+  }
+
+  return count;
+}
+
+// D4 Bresenham: only cardinal moves. When the standard algorithm would step
+// diagonally, two cardinal steps are emitted instead.
+static ptrdiff_t bresenham_d4(ptrdiff_t *out_i, ptrdiff_t *out_j, ptrdiff_t i0,
+                              ptrdiff_t j0, ptrdiff_t i1, ptrdiff_t j1,
+                              int skip_first) {
+  ptrdiff_t di = i1 - i0;
+  ptrdiff_t dj = j1 - j0;
+  ptrdiff_t si = di > 0 ? 1 : (di < 0 ? -1 : 0);
+  ptrdiff_t sj = dj > 0 ? 1 : (dj < 0 ? -1 : 0);
+  ptrdiff_t adi = di < 0 ? -di : di;
+  ptrdiff_t adj = dj < 0 ? -dj : dj;
+
+  ptrdiff_t count = 0;
+  ptrdiff_t ci = i0, cj = j0;
+
+  if (!skip_first) {
+    out_i[count] = ci;
+    out_j[count] = cj;
+    count++;
+  }
+
+  if (adi >= adj) {
+    // i is the driving axis
+    ptrdiff_t err = adi / 2;
+    for (ptrdiff_t step = 0; step < adi; step++) {
+      err -= adj;
+      if (err < 0) {
+        // Would be diagonal: emit two cardinal steps
+        // Order based on error: step in j first if error is more negative
+        cj += sj;
+        out_i[count] = ci;
+        out_j[count] = cj;
+        count++;
+        err += adi;
+      }
+      ci += si;
+      out_i[count] = ci;
+      out_j[count] = cj;
+      count++;
+    }
+  } else {
+    // j is the driving axis
+    ptrdiff_t err = adj / 2;
+    for (ptrdiff_t step = 0; step < adj; step++) {
+      err -= adi;
+      if (err < 0) {
+        // Would be diagonal: emit two cardinal steps
+        ci += si;
+        out_i[count] = ci;
+        out_j[count] = cj;
+        count++;
+        err += adj;
+      }
+      cj += sj;
+      out_i[count] = ci;
+      out_j[count] = cj;
+      count++;
+    }
+  }
+
+  return count;
+}
 
 // ============================================================================
 // Meijster EDT nearest-track-point labeling (internal, Case 2 only)
@@ -1255,7 +1418,6 @@ ptrdiff_t swath_longitudinal(
       (point_medians != NULL || point_q1 != NULL || point_q3 != NULL ||
        (percentile_list != NULL && n_percentiles > 0 &&
         point_percentiles != NULL));
-  int case2_done = 0;
 
   // Cumulative along-track distance (meters) — needed for binning_distance > 0
   float *cum_dist = NULL;
@@ -1446,17 +1608,10 @@ ptrdiff_t swath_longitudinal(
           point_maxs[out] = NAN;
         }
       }
-      // Percentile accumulation for this window (still O(W*pix) per pt)
+      // Percentile accumulation for this window
       if (compute_percentiles &&
           (effective_skip <= 1 || pt % effective_skip == 0)) {
-        ptrdiff_t pt_lo = pt, pt_hi = pt;
-        while (pt_lo > 0 &&
-               cum_dist[pt] - cum_dist[pt_lo - 1] <= binning_distance)
-          pt_lo--;
-        while (pt_hi < n_track_points - 1 &&
-               cum_dist[pt_hi + 1] - cum_dist[pt] <= binning_distance)
-          pt_hi++;
-        for (ptrdiff_t k = pt_lo; k <= pt_hi; k++)
+        for (ptrdiff_t k = lo; k <= hi; k++)
           for (ptrdiff_t q = pt_offset[k]; q < pt_offset[k + 1]; q++)
             percentile_accumulator_add(&p_accumulators[pt], dem[pt_pixels[q]]);
       }
@@ -1474,7 +1629,6 @@ ptrdiff_t swath_longitudinal(
       free(pt_pixels);
       free(pt_fill_arr);
     }
-    case2_done = 1;
   }
 
   // Finalize statistics
@@ -1484,7 +1638,7 @@ ptrdiff_t swath_longitudinal(
     ptrdiff_t out = k / effective_skip;
     n_result = out + 1;
 
-    if (!case2_done) {
+    if (binning_distance <= 0.0f) {
       point_means[out] = accumulator_mean(&accumulators[k]);
       point_stddevs[out] = accumulator_stddev(&accumulators[k]);
       point_mins[out] =
@@ -1545,8 +1699,6 @@ ptrdiff_t swath_longitudinal(
 //
 // No pre-computed distance map required.  Independent of swath_longitudinal.
 
-#define SLW_N_BINS 2048
-
 TOPOTOOLBOX_API
 ptrdiff_t swath_longitudinal_windowed(
     float *point_means, float *point_stddevs, float *point_mins,
@@ -1563,14 +1715,15 @@ ptrdiff_t swath_longitudinal_windowed(
   ptrdiff_t nrows = dims[0], ncols = dims[1];
   float hw_px = half_width / cellsize;
   float bd_px = binning_distance / cellsize;
+  static const int slw_n_bins = 2048;
 
-  int do_percentiles =
+  int compute_percentiles =
       (point_medians != NULL || point_q1 != NULL || point_q3 != NULL ||
        (percentile_list != NULL && n_percentiles > 0 &&
         point_percentiles != NULL));
 
-  ptrdiff_t *hist = do_percentiles
-                        ? (ptrdiff_t *)calloc(SLW_N_BINS, sizeof(ptrdiff_t))
+  ptrdiff_t *hist = compute_percentiles
+                        ? (ptrdiff_t *)calloc(slw_n_bins, sizeof(ptrdiff_t))
                         : NULL;
 
   ptrdiff_t n_result = 0;
@@ -1631,7 +1784,7 @@ ptrdiff_t swath_longitudinal_windowed(
     }
 
     // Pass 2 (percentiles): histogram over window pixels
-    if (do_percentiles) {
+    if (compute_percentiles) {
       if (count <= 0) {
         if (point_medians) point_medians[out] = NAN;
         if (point_q1) point_q1[out] = NAN;
@@ -1647,9 +1800,9 @@ ptrdiff_t swath_longitudinal_windowed(
           for (ptrdiff_t p = 0; p < n_percentiles; p++)
             point_percentiles[out * n_percentiles + p] = vmin;
       } else {
-        float bw = (vmax - vmin) / (float)SLW_N_BINS;
+        float bw = (vmax - vmin) / (float)slw_n_bins;
 
-        memset(hist, 0, SLW_N_BINS * sizeof(ptrdiff_t));
+        memset(hist, 0, slw_n_bins * sizeof(ptrdiff_t));
 
         for (ptrdiff_t pj = pj_lo; pj <= pj_hi; pj++) {
           for (ptrdiff_t pi = pi_lo; pi <= pi_hi; pi++) {
@@ -1660,7 +1813,7 @@ ptrdiff_t swath_longitudinal_windowed(
             if (isnan(v)) continue;
             int b = (int)((v - vmin) / bw);
             if (b < 0) b = 0;
-            if (b >= SLW_N_BINS) b = SLW_N_BINS - 1;
+            if (b >= slw_n_bins) b = slw_n_bins - 1;
             hist[b]++;
           }
         }
@@ -1671,7 +1824,7 @@ ptrdiff_t swath_longitudinal_windowed(
     _t = (_t < 1) ? 1 : (_t > count ? count : _t);                   \
     ptrdiff_t _c = 0;                                                \
     (dst) = vmax;                                                    \
-    for (ptrdiff_t _b = 0; _b < SLW_N_BINS; _b++) {                  \
+    for (ptrdiff_t _b = 0; _b < slw_n_bins; _b++) {                  \
       _c += hist[_b];                                                \
       if (_c >= _t) {                                                \
         (dst) = vmin + ((float)_b + 0.5f) * bw;                      \
@@ -1700,8 +1853,6 @@ ptrdiff_t swath_longitudinal_windowed(
   if (hist) free(hist);
   return n_result;
 }
-
-#undef SLW_N_BINS
 
 // Returns integer pixel coordinates of all pixels inside the oriented rectangle
 // for a single track point.  Mirrors swath_longitudinal_windowed exactly.
@@ -1848,191 +1999,6 @@ ptrdiff_t swath_get_point_pixels(
   }
 
   return n_pixels;
-}
-
-// ============================================================================
-// Boundary Dijkstra — inward D8 wavefront from swath-edge pixels
-// ============================================================================
-//
-// Used internally by swath_compute_distance_map to build the distance-from-
-// boundary field needed for centre-line extraction.  Seeds are the boundary
-// pixels on one side of the swath (positive or negative); expansion is
-// restricted to pixels within the swath mask (best_abs <= hw_px).
-static void boundary_dijkstra(float *restrict dist_out,
-                              const float *restrict best_abs,
-                              const ptrdiff_t *seeds, ptrdiff_t n_seeds,
-                              ptrdiff_t dims[2], float hw_px) {
-  ptrdiff_t total = dims[0] * dims[1];
-
-  for (ptrdiff_t i = 0; i < total; i++) dist_out[i] = FLT_MAX;
-
-  min_heap heap;
-  heap_init(&heap, n_seeds * 4);
-
-  // Seed boundary pixels with distance 0
-  for (ptrdiff_t s = 0; s < n_seeds; s++) {
-    ptrdiff_t idx = seeds[s];
-    dist_out[idx] = 0.0f;
-    heap_push(&heap, 0.0f, idx);
-  }
-
-  // D8 neighbor offsets and distances
-  static const int di8[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
-  static const int dj8[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
-  static const float dd8[8] = {1.41421356f, 1.0f, 1.41421356f, 1.0f, 1.0f,
-                               1.41421356f, 1.0f, 1.41421356f};
-
-  while (heap.size > 0) {
-    heap_entry top = heap_pop(&heap);
-    ptrdiff_t idx = top.idx;
-
-    if (top.abs_dist > dist_out[idx]) continue;  // stale
-
-    ptrdiff_t ci = idx % dims[0];
-    ptrdiff_t cj = idx / dims[0];
-
-    for (int n = 0; n < 8; n++) {
-      ptrdiff_t ni = ci + di8[n];
-      ptrdiff_t nj = cj + dj8[n];
-      if (ni < 0 || ni >= dims[0] || nj < 0 || nj >= dims[1]) continue;
-
-      ptrdiff_t nidx = nj * dims[0] + ni;
-      // Only expand within the swath mask
-      if (best_abs[nidx] == FLT_MAX || best_abs[nidx] > hw_px) continue;
-
-      float new_dist = dist_out[idx] + dd8[n];
-      if (new_dist < dist_out[nidx]) {
-        dist_out[nidx] = new_dist;
-        heap_push(&heap, new_dist, nidx);
-      }
-    }
-  }
-
-  heap_free(&heap);
-}
-
-// ============================================================================
-// Bresenham rasterization — D8 (diagonal allowed) and D4 (cardinal only)
-// ============================================================================
-//
-// Both variants produce pixel sequences from (i0,j0) to (i1,j1).
-// D4 splits diagonal steps into two cardinal steps, used by
-// sample_points_between_refs when strict 4-connectivity is needed.
-
-// D8: each step moves exactly 1 pixel (cardinal or diagonal).
-static ptrdiff_t bresenham_d8(ptrdiff_t *out_i, ptrdiff_t *out_j, ptrdiff_t i0,
-                              ptrdiff_t j0, ptrdiff_t i1, ptrdiff_t j1,
-                              int skip_first) {
-  ptrdiff_t di = i1 - i0;
-  ptrdiff_t dj = j1 - j0;
-  ptrdiff_t si = di > 0 ? 1 : (di < 0 ? -1 : 0);
-  ptrdiff_t sj = dj > 0 ? 1 : (dj < 0 ? -1 : 0);
-  ptrdiff_t adi = di < 0 ? -di : di;
-  ptrdiff_t adj = dj < 0 ? -dj : dj;
-
-  ptrdiff_t count = 0;
-  ptrdiff_t ci = i0, cj = j0;
-
-  if (!skip_first) {
-    out_i[count] = ci;
-    out_j[count] = cj;
-    count++;
-  }
-
-  if (adi >= adj) {
-    // i is the driving axis
-    ptrdiff_t err = adi / 2;
-    for (ptrdiff_t step = 0; step < adi; step++) {
-      err -= adj;
-      if (err < 0) {
-        cj += sj;
-        err += adi;
-      }
-      ci += si;
-      out_i[count] = ci;
-      out_j[count] = cj;
-      count++;
-    }
-  } else {
-    // j is the driving axis
-    ptrdiff_t err = adj / 2;
-    for (ptrdiff_t step = 0; step < adj; step++) {
-      err -= adi;
-      if (err < 0) {
-        ci += si;
-        err += adj;
-      }
-      cj += sj;
-      out_i[count] = ci;
-      out_j[count] = cj;
-      count++;
-    }
-  }
-
-  return count;
-}
-
-// D4 Bresenham: only cardinal moves. When the standard algorithm would step
-// diagonally, two cardinal steps are emitted instead.
-static ptrdiff_t bresenham_d4(ptrdiff_t *out_i, ptrdiff_t *out_j, ptrdiff_t i0,
-                              ptrdiff_t j0, ptrdiff_t i1, ptrdiff_t j1,
-                              int skip_first) {
-  ptrdiff_t di = i1 - i0;
-  ptrdiff_t dj = j1 - j0;
-  ptrdiff_t si = di > 0 ? 1 : (di < 0 ? -1 : 0);
-  ptrdiff_t sj = dj > 0 ? 1 : (dj < 0 ? -1 : 0);
-  ptrdiff_t adi = di < 0 ? -di : di;
-  ptrdiff_t adj = dj < 0 ? -dj : dj;
-
-  ptrdiff_t count = 0;
-  ptrdiff_t ci = i0, cj = j0;
-
-  if (!skip_first) {
-    out_i[count] = ci;
-    out_j[count] = cj;
-    count++;
-  }
-
-  if (adi >= adj) {
-    // i is the driving axis
-    ptrdiff_t err = adi / 2;
-    for (ptrdiff_t step = 0; step < adi; step++) {
-      err -= adj;
-      if (err < 0) {
-        // Would be diagonal: emit two cardinal steps
-        // Order based on error: step in j first if error is more negative
-        cj += sj;
-        out_i[count] = ci;
-        out_j[count] = cj;
-        count++;
-        err += adi;
-      }
-      ci += si;
-      out_i[count] = ci;
-      out_j[count] = cj;
-      count++;
-    }
-  } else {
-    // j is the driving axis
-    ptrdiff_t err = adj / 2;
-    for (ptrdiff_t step = 0; step < adj; step++) {
-      err -= adi;
-      if (err < 0) {
-        // Would be diagonal: emit two cardinal steps
-        ci += si;
-        out_i[count] = ci;
-        out_j[count] = cj;
-        count++;
-        err += adj;
-      }
-      cj += sj;
-      out_i[count] = ci;
-      out_j[count] = cj;
-      count++;
-    }
-  }
-
-  return count;
 }
 
 // Rasterizes a polyline through ref_i/ref_j reference pixels.
@@ -2259,7 +2225,7 @@ ptrdiff_t simplify_line(float *out_i, float *out_j, const float *track_i,
     ptrdiff_t *prv_kept = (ptrdiff_t *)malloc((size_t)n * sizeof(ptrdiff_t));
     ptrdiff_t *nxt_kept = (ptrdiff_t *)malloc((size_t)n * sizeof(ptrdiff_t));
     float *eff_area = (float *)malloc((size_t)n * sizeof(float));
-    uint8_t *inserted = (uint8_t *)calloc((size_t)n, 1);
+    uint8_t *inserted = (uint8_t *)calloc((size_t)n, sizeof(uint8_t));
 
     inserted[0] = 1;
     inserted[n - 1] = 1;
