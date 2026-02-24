@@ -7,9 +7,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "topotoolbox.h"
 #include "priority_queue.h"
 #include "stat_helper.h"
+#include "topotoolbox.h"
 
 // 8-connected neighbor offsets (row, col) — shared by all D8 operations.
 static const int k_di8[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
@@ -194,7 +194,8 @@ static void boundary_dijkstra(float *restrict dist_out,
 
       float new_dist = dist_out[idx] + dd8[n];
       if (new_dist < dist_out[nidx]) {
-        // pq_decrease_key / pq_insert both update dist_out[nidx] via priorities.
+        // pq_decrease_key / pq_insert both update dist_out[nidx] via
+        // priorities.
         if (q.back[nidx] >= 0)
           pq_decrease_key(&q, nidx, new_dist);
         else
@@ -725,11 +726,14 @@ void swath_compute_full_distance_map(
 // dem/mask filtering of swath_compute_full_distance_map.
 
 TOPOTOOLBOX_API
-void swath_frontier_distance_map(
-    float *restrict distance, ptrdiff_t *restrict nearest_segment,
-    const float *restrict track_i, const float *restrict track_j,
-    ptrdiff_t n_track_points, ptrdiff_t dims[2], float cellsize,
-    float half_width, const float *dem, const int8_t *mask, int compute_signed) {
+void swath_frontier_distance_map(float *restrict distance,
+                                 ptrdiff_t *restrict nearest_segment,
+                                 const float *restrict track_i,
+                                 const float *restrict track_j,
+                                 ptrdiff_t n_track_points, ptrdiff_t dims[2],
+                                 float cellsize, float half_width,
+                                 const float *dem, const int8_t *mask,
+                                 int compute_signed) {
   if (n_track_points < 2) return;
 
   ptrdiff_t total = dims[0] * dims[1];
@@ -796,8 +800,8 @@ void swath_transverse(float *restrict bin_distances, float *restrict bin_means,
         bin_percentiles != NULL));
 
   // Allocate accumulators
-  stats_accumulator *accumulators = (stats_accumulator *)calloc(
-      n_bins, sizeof(stats_accumulator));
+  stats_accumulator *accumulators =
+      (stats_accumulator *)calloc(n_bins, sizeof(stats_accumulator));
   for (ptrdiff_t b = 0; b < n_bins; b++) accumulator_init(&accumulators[b]);
 
   percentile_accumulator *p_accumulators = NULL;
@@ -1400,8 +1404,8 @@ ptrdiff_t swath_longitudinal(
   // Per-point accumulators — only needed for Case 1 (Bresenham cross-sections)
   stats_accumulator *accumulators = NULL;
   if (binning_distance <= 0.0f) {
-    accumulators = (stats_accumulator *)calloc(
-        n_track_points, sizeof(stats_accumulator));
+    accumulators =
+        (stats_accumulator *)calloc(n_track_points, sizeof(stats_accumulator));
     for (ptrdiff_t k = 0; k < n_track_points; k++)
       accumulator_init(&accumulators[k]);
   }
