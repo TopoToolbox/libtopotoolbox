@@ -33,9 +33,7 @@ static const int k_dj8[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
     oriented rectangle (PCA tangent, ±half_width × ±binning_distance).
     No pre-computed distance map required.
 
-  Distance maps — two public variants:
-    swath_compute_distance_map  : clipped to half_width, optional centre-line.
-    swath_compute_full_distance_map : unbounded, optional mask/dem filter.
+  Distance maps — swath_frontier_distance_map (raw pixel-unit Dijkstra outputs).
 
   Line simplification — swath_simplify_line (IEF engine, 7 stopping criteria).
 */
@@ -82,27 +80,16 @@ static float point_to_segment_distance(float px, float py, float ax, float ay,
 // ============================================================================
 // Boundary Dijkstra — inward D8 wavefront from swath-edge pixels
 // ============================================================================
-//
-// Used internally by swath_compute_distance_map to build the distance-from-
-// boundary field needed for centre-line extraction.  Seeds are the boundary
-// pixels on one side of the swath (positive or negative); expansion is
-// restricted to pixels within the swath mask (best_abs <= hw_px).
-static void boundary_dijkstra(float *restrict dist_out,
-                              const float *restrict best_abs,
-                              const ptrdiff_t *seeds, ptrdiff_t n_seeds,
-                              ptrdiff_t dims[2], float hw_px) {
-  ptrdiff_t total = dims[0] * dims[1];
-  int8_t *mask = (int8_t *)malloc(total * sizeof(int8_t));
-  for (ptrdiff_t i = 0; i < total; i++)
-    mask[i] = (best_abs[i] != FLT_MAX && best_abs[i] <= hw_px) ? 1 : 0;
-
+TOPOTOOLBOX_API
+void swath_boundary_dijkstra(float *dist_out, const int8_t *swath_mask,
+                             const ptrdiff_t *seeds, ptrdiff_t n_seeds,
+                             ptrdiff_t dims[2]) {
   GridDijkstra gd;
   grid_dijkstra_init(&gd, dist_out, dims);
   for (ptrdiff_t s = 0; s < n_seeds; s++)
     grid_dijkstra_seed(&gd, seeds[s], 0.0f, NULL, NULL);
-  grid_dijkstra_run(&gd, mask, dijkstra_cost_d8, NULL, NULL);
+  grid_dijkstra_run(&gd, swath_mask, dijkstra_cost_d8, NULL, NULL);
   grid_dijkstra_free(&gd);
-  free(mask);
 }
 
 // ============================================================================
@@ -165,11 +152,8 @@ static void frontier_on_update(ptrdiff_t idx, float new_dist, void *ctx_ptr) {
   if (ctx->signed_dist) ctx->signed_dist[idx] = ctx->_last_signed;
 }
 
-// Outputs (caller-allocated, size dims[0]*dims[1]; NULL to skip):
-//   best_abs    — absolute perpendicular distance in pixels (FLT_MAX =
-//   unvisited) signed_dist — signed perpendicular distance in pixels
-//   nearest_seg — index of nearest track segment (-1 = unvisited)
-static void frontier_distance_map(
+TOPOTOOLBOX_API
+void swath_frontier_distance_map(
     float *restrict best_abs, float *restrict signed_dist,
     ptrdiff_t *restrict nearest_seg, const float *restrict track_i,
     const float *restrict track_j, ptrdiff_t n_track_points, ptrdiff_t dims[2],
@@ -269,430 +253,184 @@ ptrdiff_t swath_compute_nbins(float half_width, float bin_resolution) {
 }
 
 // ============================================================================
-// Clipped distance map — signed/unsigned, optional centre-line extraction
+// Voronoi ridge — centre-line pixel extraction from two boundary DT fields
 // ============================================================================
 //
-// Computes a perpendicular distance map clipped to half_width metres.
-// Pixels beyond half_width receive NaN.
+// A pixel is on the ridge if dist_pos <= dist_neg (it is equidistant or
+// closer to the positive boundary) AND at least one 8-neighbour has
+// dist_pos > dist_neg (is on the negative side).  End-cap pixels whose
+// nearest-segment projection falls outside the track endpoints are excluded.
 //
-// If centre_line_i/j/width are non-NULL, also extracts the Voronoi ridge
-// between the positive-side and negative-side swath boundaries (the
-// geometric centre line) and the local swath width at each centre pixel.
-// The ridge is thinned to 1-pixel width via elbow removal on the ordered path.
-//
-// Returns the number of centre-line pixels found (0 if not requested).
-
+// centre_line_i/j/width must be caller-allocated (size dims[0]*dims[1]).
+// Returns the number of ridge pixels written.
 TOPOTOOLBOX_API
-ptrdiff_t swath_compute_distance_map(
-    float *restrict distance_from_track, ptrdiff_t *restrict nearest_segment,
-    float *restrict dist_from_boundary, float *restrict centre_line_i,
-    float *restrict centre_line_j, float *restrict centre_width,
-    const float *restrict track_i, const float *restrict track_j,
-    ptrdiff_t n_track_points, ptrdiff_t dims[2], float cellsize,
-    float half_width, int compute_signed) {
-  if (n_track_points < 2) return 0;
-
-  ptrdiff_t total = dims[0] * dims[1];
-  float hw_px = half_width / cellsize;
-
-  // Allocate internal pixel-unit arrays
-  float *best_abs = (float *)malloc(total * sizeof(float));
-  float *signed_dist_px = (float *)malloc(total * sizeof(float));
-
-  // Need nearest_seg for Dijkstra; share with caller if requested
-  ptrdiff_t *nseg = NULL;
-  int free_nseg = 0;
-  if (nearest_segment != NULL) {
-    nseg = nearest_segment;
-  } else {
-    nseg = (ptrdiff_t *)malloc(total * sizeof(ptrdiff_t));
-    free_nseg = 1;
-  }
-
-  frontier_distance_map(best_abs, signed_dist_px, nseg, track_i, track_j,
-                        n_track_points, dims, hw_px, NULL, NULL);
-
-  // Fill distance_from_track output (meters)
-  for (ptrdiff_t i = 0; i < total; i++) {
-    if (best_abs[i] == FLT_MAX || best_abs[i] > hw_px) {
-      distance_from_track[i] = NAN;
-    } else if (compute_signed) {
-      distance_from_track[i] = signed_dist_px[i] * cellsize;
-    } else {
-      distance_from_track[i] = best_abs[i] * cellsize;
-    }
-  }
-
-  // Optional centre-line inversion
+ptrdiff_t voronoi_ridge_to_centreline(
+    float *centre_line_i, float *centre_line_j, float *centre_width,
+    const float *dist_pos, const float *dist_neg, const float *best_abs,
+    float hw_px, const ptrdiff_t *nearest_seg, const float *track_i,
+    const float *track_j, ptrdiff_t n_track_points, ptrdiff_t dims[2],
+    float cellsize) {
   ptrdiff_t n_centre = 0;
-  int want_centre =
-      (centre_line_i != NULL && centre_line_j != NULL && centre_width != NULL);
-  int want_dfb = (dist_from_boundary != NULL);
+  ptrdiff_t total = dims[0] * dims[1];
+  for (ptrdiff_t idx = 0; idx < total; idx++) {
+    if (best_abs[idx] == FLT_MAX || best_abs[idx] > hw_px) continue;
+    float dp = dist_pos[idx], dn = dist_neg[idx];
+    if (dp == FLT_MAX || dn == FLT_MAX) continue;
 
-  if (want_centre || want_dfb) {
-    // Find boundary pixels, split by side
-    static const int dn_i[4] = {-1, 1, 0, 0};
-    static const int dn_j[4] = {0, 0, -1, 1};
+    int my_sign = (dp < dn) ? 1 : (dp > dn) ? -1 : 0;
+    if (my_sign < 0) continue;
 
-    ptrdiff_t pos_cap = 4096, neg_cap = 4096;
-    ptrdiff_t n_pos = 0, n_neg = 0;
-    ptrdiff_t *pos_seeds = (ptrdiff_t *)calloc(pos_cap, sizeof(ptrdiff_t));
-    ptrdiff_t *neg_seeds = (ptrdiff_t *)calloc(neg_cap, sizeof(ptrdiff_t));
+    ptrdiff_t ci = idx % dims[0];
+    ptrdiff_t cj = idx / dims[0];
 
-    for (ptrdiff_t idx = 0; idx < total; idx++) {
-      if (best_abs[idx] == FLT_MAX || best_abs[idx] > hw_px) continue;
-
-      ptrdiff_t ci = idx % dims[0];
-      ptrdiff_t cj = idx / dims[0];
-      int is_boundary = 0;
-
-      for (int n = 0; n < 4; n++) {
-        ptrdiff_t ni = ci + dn_i[n];
-        ptrdiff_t nj = cj + dn_j[n];
-        if (ni < 0 || ni >= dims[0] || nj < 0 || nj >= dims[1]) {
-          is_boundary = 1;
-          break;
-        }
+    int on_cl = (my_sign == 0);
+    if (!on_cl) {
+      for (int n = 0; n < 8; n++) {
+        ptrdiff_t ni = ci + k_di8[n];
+        ptrdiff_t nj = cj + k_dj8[n];
+        if (ni < 0 || ni >= dims[0] || nj < 0 || nj >= dims[1]) continue;
         ptrdiff_t nidx = nj * dims[0] + ni;
-        if (best_abs[nidx] == FLT_MAX || best_abs[nidx] > hw_px) {
-          is_boundary = 1;
+        if (best_abs[nidx] == FLT_MAX || best_abs[nidx] > hw_px) continue;
+        float ndp = dist_pos[nidx], ndn = dist_neg[nidx];
+        if (ndp == FLT_MAX || ndn == FLT_MAX) continue;
+        if (ndp > ndn) {
+          on_cl = 1;
           break;
         }
       }
-      if (!is_boundary) continue;
+    }
+    if (!on_cl) continue;
 
-      if (signed_dist_px[idx] >= 0.0f) {
-        if (n_pos >= pos_cap) {
-          pos_cap *= 2;
-          pos_seeds =
-              (ptrdiff_t *)realloc(pos_seeds, pos_cap * sizeof(ptrdiff_t));
-        }
-        pos_seeds[n_pos++] = idx;
-      }
-      if (signed_dist_px[idx] <= 0.0f) {
-        if (n_neg >= neg_cap) {
-          neg_cap *= 2;
-          neg_seeds =
-              (ptrdiff_t *)realloc(neg_seeds, neg_cap * sizeof(ptrdiff_t));
-        }
-        neg_seeds[n_neg++] = idx;
-      }
+    // End-cap clipping: recompute unclamped projection t
+    ptrdiff_t seg = nearest_seg[idx];
+    float si = track_i[seg + 1] - track_i[seg];
+    float sj = track_j[seg + 1] - track_j[seg];
+    float len2 = si * si + sj * sj;
+    if (len2 > 0.0f) {
+      float t = ((ci - track_i[seg]) * si + (cj - track_j[seg]) * sj) / len2;
+      if (seg == 0 && t < 0.0f) continue;
+      if (seg == n_track_points - 2 && t > 1.0f) continue;
     }
 
-    float *dist_pos = (float *)malloc(total * sizeof(float));
-    float *dist_neg = (float *)malloc(total * sizeof(float));
-    boundary_dijkstra(dist_pos, best_abs, pos_seeds, n_pos, dims, hw_px);
-    boundary_dijkstra(dist_neg, best_abs, neg_seeds, n_neg, dims, hw_px);
-    free(pos_seeds);
-    free(neg_seeds);
-
-    // Compute dfb = min(dist_pos, dist_neg)
-    float *dfb = dist_from_boundary;
-    int free_dfb = 0;
-    if (dfb == NULL) {
-      dfb = (float *)malloc(total * sizeof(float));
-      free_dfb = 1;
-    }
-    for (ptrdiff_t i = 0; i < total; i++) {
-      float dp = dist_pos[i], dn = dist_neg[i];
-      float mn = dp < dn ? dp : dn;
-      dfb[i] = (mn == FLT_MAX) ? NAN : mn * cellsize;
-    }
-
-    // Centre line: Voronoi boundary between positive-side and negative-side
-    // boundary wavefronts, 1 pixel wide.
-    //
-    // Only keep pixels with my_sign >= 0 (equidistant or closer to positive
-    // boundary) that have a -1 neighbour — this gives exactly one side of
-    // the boundary so the line is 1 pixel wide.
-    //
-    // End-cap clipping: pixels whose nearest-segment projection falls outside
-    // [0,1] on the first or last segment are beyond the track endpoints
-    // (inside the semicircular cap) and are excluded.
-    if (want_centre) {
-      for (ptrdiff_t idx = 0; idx < total; idx++) {
-        if (best_abs[idx] == FLT_MAX || best_abs[idx] > hw_px) continue;
-        float dp = dist_pos[idx], dn = dist_neg[idx];
-        if (dp == FLT_MAX || dn == FLT_MAX) continue;
-
-        int my_sign = (dp < dn) ? 1 : (dp > dn) ? -1 : 0;
-
-        // Keep only one side of the boundary (my_sign >= 0) → 1 pixel wide
-        if (my_sign < 0) continue;
-
-        ptrdiff_t ci = idx % dims[0];
-        ptrdiff_t cj = idx / dims[0];
-
-        // Equidistant pixels are always on centreline; my_sign==1 needs a -1
-        // neighbour
-        int on_cl = (my_sign == 0);
-        if (!on_cl) {
-          for (int n = 0; n < 8; n++) {
-            ptrdiff_t ni = ci + k_di8[n];
-            ptrdiff_t nj = cj + k_dj8[n];
-            if (ni < 0 || ni >= dims[0] || nj < 0 || nj >= dims[1]) continue;
-            ptrdiff_t nidx = nj * dims[0] + ni;
-            if (best_abs[nidx] == FLT_MAX || best_abs[nidx] > hw_px) continue;
-            float ndp = dist_pos[nidx], ndn = dist_neg[nidx];
-            if (ndp == FLT_MAX || ndn == FLT_MAX) continue;
-            if (ndp > ndn) {
-              on_cl = 1;
-              break;
-            }  // nb_sign == -1
-          }
-        }
-        if (!on_cl) continue;
-
-        // End-cap clipping: recompute unclamped projection t onto nearest
-        // segment
-        ptrdiff_t seg = nseg[idx];
-        float si = track_i[seg + 1] - track_i[seg];
-        float sj = track_j[seg + 1] - track_j[seg];
-        float len2 = si * si + sj * sj;
-        if (len2 > 0.0f) {
-          float t =
-              ((ci - track_i[seg]) * si + (cj - track_j[seg]) * sj) / len2;
-          if (seg == 0 && t < 0.0f) continue;
-          if (seg == n_track_points - 2 && t > 1.0f) continue;
-        }
-
-        centre_line_i[n_centre] = (float)ci;
-        centre_line_j[n_centre] = (float)cj;
-        centre_width[n_centre] = (dp + dn) * cellsize;
-        n_centre++;
-      }
-    }
-
-    // Post-process: remove staircase elbows by working on the ORDERED path.
-    // Previous approach checked D8-neighbour count in the pixel grid — this
-    // fails when the Voronoi boundary has nc>2 at corners (other on_cl pixels
-    // happen to be geometrically adjacent but are not path-neighbours).
-    //
-    // Instead: traverse the path in order, then in the ordered sequence a
-    // pixel path[i] is an elbow iff path[i-1] and path[i+1] are D8-adjacent.
-    // After removing path[i], skip path[i+1] to prevent adjacent removals
-    // (which would disconnect the path).  Repeat until stable.
-    if (want_centre && n_centre > 2) {
-      // Cardinal and diagonal traversal offsets for ordered path extraction.
-      // MUST check cardinal neighbours before diagonal: at a D4 corner the
-      // diagonal next-next pixel is geometrically adjacent to the corner
-      // pixel, so a diagonal-first ordering would skip the cardinal next
-      // pixel and produce a wrong traversal sequence.
-      static const int c_di[4] = {-1, 0, 0, 1};
-      static const int c_dj[4] = {0, -1, 1, 0};
-      static const int d_di[4] = {-1, -1, 1, 1};
-      static const int d_dj[4] = {-1, 1, -1, 1};
-
-      uint8_t *on_cl = (uint8_t *)calloc(total, 1);
-      uint8_t *vis = (uint8_t *)calloc(total, 1);
-      ptrdiff_t *path = (ptrdiff_t *)malloc(n_centre * sizeof(ptrdiff_t));
-
-      if (on_cl && vis && path) {
-        for (ptrdiff_t k = 0; k < n_centre; k++)
-          on_cl[(ptrdiff_t)centre_line_j[k] * dims[0] +
-                (ptrdiff_t)centre_line_i[k]] = 1;
-
-        int changed = 1;
-        while (changed) {
-          changed = 0;
-
-          // Find an endpoint (nc==1); fall back to first on_cl pixel
-          ptrdiff_t start = -1;
-          for (ptrdiff_t k = 0; k < n_centre && start < 0; k++) {
-            ptrdiff_t ci = (ptrdiff_t)centre_line_i[k];
-            ptrdiff_t cj = (ptrdiff_t)centre_line_j[k];
-            if (!on_cl[cj * dims[0] + ci]) continue;
-            int nc = 0;
-            for (int n = 0; n < 8; n++) {
-              ptrdiff_t ni = ci + k_di8[n], nj = cj + k_dj8[n];
-              if (ni < 0 || ni >= dims[0] || nj < 0 || nj >= dims[1]) continue;
-              if (on_cl[nj * dims[0] + ni]) nc++;
-            }
-            if (nc == 1) start = cj * dims[0] + ci;
-          }
-          if (start < 0)
-            start = (ptrdiff_t)centre_line_j[0] * dims[0] +
-                    (ptrdiff_t)centre_line_i[0];
-
-          // Traverse path in order.
-          memset(vis, 0, (size_t)total);
-          ptrdiff_t n_path = 0;
-          ptrdiff_t cur = start;
-          while (cur >= 0 && n_path < n_centre) {
-            path[n_path++] = cur;
-            vis[cur] = 1;
-            ptrdiff_t ci = cur % dims[0], cj = cur / dims[0];
-            ptrdiff_t nxt = -1;
-            for (int n = 0; n < 4 && nxt < 0; n++) {
-              ptrdiff_t ni = ci + c_di[n], nj = cj + c_dj[n];
-              if (ni < 0 || ni >= dims[0] || nj < 0 || nj >= dims[1]) continue;
-              ptrdiff_t nidx = nj * dims[0] + ni;
-              if (on_cl[nidx] && !vis[nidx]) nxt = nidx;
-            }
-            for (int n = 0; n < 4 && nxt < 0; n++) {
-              ptrdiff_t ni = ci + d_di[n], nj = cj + d_dj[n];
-              if (ni < 0 || ni >= dims[0] || nj < 0 || nj >= dims[1]) continue;
-              ptrdiff_t nidx = nj * dims[0] + ni;
-              if (on_cl[nidx] && !vis[nidx]) nxt = nidx;
-            }
-            cur = nxt;
-          }
-
-          // Remove elbows in the ordered sequence.
-          // path[i] is an elbow if its ordered predecessor path[i-1] and
-          // successor path[i+1] are D8-adjacent.  Skip path[i+1] after
-          // removing path[i] to prevent removing two adjacent pixels.
-          for (ptrdiff_t i = 1; i < n_path - 1; i++) {
-            ptrdiff_t ai = path[i - 1] % dims[0], aj = path[i - 1] / dims[0];
-            ptrdiff_t bi = path[i + 1] % dims[0], bj = path[i + 1] / dims[0];
-            ptrdiff_t di = ai - bi, dj = aj - bj;
-            if (di >= -1 && di <= 1 && dj >= -1 && dj <= 1) {
-              on_cl[path[i]] = 0;
-              changed = 1;
-              i++;  // skip successor — it now has a different predecessor
-            }
-          }
-        }
-      }
-
-      free(vis);
-      free(path);
-
-      if (on_cl) {
-        ptrdiff_t new_n = 0;
-        for (ptrdiff_t k = 0; k < n_centre; k++) {
-          ptrdiff_t ci = (ptrdiff_t)centre_line_i[k];
-          ptrdiff_t cj = (ptrdiff_t)centre_line_j[k];
-          if (on_cl[cj * dims[0] + ci]) {
-            centre_line_i[new_n] = centre_line_i[k];
-            centre_line_j[new_n] = centre_line_j[k];
-            centre_width[new_n] = centre_width[k];
-            new_n++;
-          }
-        }
-        n_centre = new_n;
-        free(on_cl);
-      }
-    }
-
-    free(dist_pos);
-    free(dist_neg);
-    if (free_dfb) free(dfb);
+    centre_line_i[n_centre] = (float)ci;
+    centre_line_j[n_centre] = (float)cj;
+    centre_width[n_centre] = (dp + dn) * cellsize;
+    n_centre++;
   }
-
-  free(best_abs);
-  free(signed_dist_px);
-  if (free_nseg) free(nseg);
-
   return n_centre;
 }
 
 // ============================================================================
-// Full (unbounded) distance map — expands to all reachable pixels
+// Elbow removal — thin a rasterised polyline to 1-pixel D8 width
 // ============================================================================
-// Optional dem/mask restrict expansion to non-NaN / non-zero pixels.
-
+//
+// Traverses the pixel list as an ordered path and removes pixels whose
+// predecessor and successor are D8-adjacent (diagonal shortcuts).
+// Operates in-place; returns the new pixel count.
 TOPOTOOLBOX_API
-void swath_compute_full_distance_map(
-    float *restrict distance, ptrdiff_t *restrict nearest_segment,
-    const float *restrict track_i, const float *restrict track_j,
-    ptrdiff_t n_track_points, ptrdiff_t dims[2], float cellsize,
-    const float *dem, const int8_t *mask, int compute_signed) {
-  if (n_track_points < 2) return;
+ptrdiff_t thin_rasterised_line_to_D8(float *centre_line_i,
+                                     float *centre_line_j,
+                                     float *centre_width, ptrdiff_t n_centre,
+                                     ptrdiff_t dims[2]) {
+  if (n_centre <= 2) return n_centre;
+
+  static const int c_di[4] = {-1, 0, 0, 1};
+  static const int c_dj[4] = {0, -1, 1, 0};
+  static const int d_di[4] = {-1, -1, 1, 1};
+  static const int d_dj[4] = {-1, 1, -1, 1};
 
   ptrdiff_t total = dims[0] * dims[1];
-
-  ptrdiff_t *nseg = NULL;
-  int free_nseg = 0;
-  if (nearest_segment != NULL) {
-    nseg = nearest_segment;
-  } else {
-    nseg = (ptrdiff_t *)malloc(total * sizeof(ptrdiff_t));
-    free_nseg = 1;
+  uint8_t *on_cl = (uint8_t *)calloc(total, 1);
+  uint8_t *vis = (uint8_t *)calloc(total, 1);
+  ptrdiff_t *path = (ptrdiff_t *)malloc(n_centre * sizeof(ptrdiff_t));
+  if (!on_cl || !vis || !path) {
+    free(on_cl);
+    free(vis);
+    free(path);
+    return n_centre;
   }
 
-  float *best_abs = (float *)malloc(total * sizeof(float));
-  float *signed_dist_px = NULL;
-  if (compute_signed) {
-    signed_dist_px = (float *)malloc(total * sizeof(float));
-  }
+  for (ptrdiff_t k = 0; k < n_centre; k++)
+    on_cl[(ptrdiff_t)centre_line_j[k] * dims[0] +
+          (ptrdiff_t)centre_line_i[k]] = 1;
 
-  frontier_distance_map(best_abs, signed_dist_px, nseg, track_i, track_j,
-                        n_track_points, dims, FLT_MAX, dem, mask);
+  int changed = 1;
+  while (changed) {
+    changed = 0;
 
-  for (ptrdiff_t i = 0; i < total; i++) {
-    if (best_abs[i] == FLT_MAX) {
-      distance[i] = NAN;
-    } else if (compute_signed && signed_dist_px) {
-      distance[i] = signed_dist_px[i] * cellsize;
-    } else {
-      distance[i] = best_abs[i] * cellsize;
+    ptrdiff_t start = -1;
+    for (ptrdiff_t k = 0; k < n_centre && start < 0; k++) {
+      ptrdiff_t ci = (ptrdiff_t)centre_line_i[k];
+      ptrdiff_t cj = (ptrdiff_t)centre_line_j[k];
+      if (!on_cl[cj * dims[0] + ci]) continue;
+      int nc = 0;
+      for (int n = 0; n < 8; n++) {
+        ptrdiff_t ni = ci + k_di8[n], nj = cj + k_dj8[n];
+        if (ni < 0 || ni >= dims[0] || nj < 0 || nj >= dims[1]) continue;
+        if (on_cl[nj * dims[0] + ni]) nc++;
+      }
+      if (nc == 1) start = cj * dims[0] + ci;
+    }
+    if (start < 0)
+      start = (ptrdiff_t)centre_line_j[0] * dims[0] +
+              (ptrdiff_t)centre_line_i[0];
+
+    memset(vis, 0, (size_t)total);
+    ptrdiff_t n_path = 0;
+    ptrdiff_t cur = start;
+    while (cur >= 0 && n_path < n_centre) {
+      path[n_path++] = cur;
+      vis[cur] = 1;
+      ptrdiff_t ci = cur % dims[0], cj = cur / dims[0];
+      ptrdiff_t nxt = -1;
+      for (int n = 0; n < 4 && nxt < 0; n++) {
+        ptrdiff_t ni = ci + c_di[n], nj = cj + c_dj[n];
+        if (ni < 0 || ni >= dims[0] || nj < 0 || nj >= dims[1]) continue;
+        ptrdiff_t nidx = nj * dims[0] + ni;
+        if (on_cl[nidx] && !vis[nidx]) nxt = nidx;
+      }
+      for (int n = 0; n < 4 && nxt < 0; n++) {
+        ptrdiff_t ni = ci + d_di[n], nj = cj + d_dj[n];
+        if (ni < 0 || ni >= dims[0] || nj < 0 || nj >= dims[1]) continue;
+        ptrdiff_t nidx = nj * dims[0] + ni;
+        if (on_cl[nidx] && !vis[nidx]) nxt = nidx;
+      }
+      cur = nxt;
+    }
+
+    for (ptrdiff_t i = 1; i < n_path - 1; i++) {
+      ptrdiff_t ai = path[i - 1] % dims[0], aj = path[i - 1] / dims[0];
+      ptrdiff_t bi = path[i + 1] % dims[0], bj = path[i + 1] / dims[0];
+      ptrdiff_t di = ai - bi, dj = aj - bj;
+      if (di >= -1 && di <= 1 && dj >= -1 && dj <= 1) {
+        on_cl[path[i]] = 0;
+        changed = 1;
+        i++;
+      }
     }
   }
 
-  free(best_abs);
-  if (signed_dist_px) free(signed_dist_px);
-  if (free_nseg) free(nseg);
-}
+  free(vis);
+  free(path);
 
-// ============================================================================
-// Bounded distance map — frontier expansion clipped to half_width, with
-// optional dem/mask filtering.
-// ============================================================================
-// Combines the half_width clipping of swath_compute_distance_map with the
-// dem/mask filtering of swath_compute_full_distance_map.
-
-TOPOTOOLBOX_API
-void swath_frontier_distance_map(float *restrict distance,
-                                 ptrdiff_t *restrict nearest_segment,
-                                 const float *restrict track_i,
-                                 const float *restrict track_j,
-                                 ptrdiff_t n_track_points, ptrdiff_t dims[2],
-                                 float cellsize, float half_width,
-                                 const float *dem, const int8_t *mask,
-                                 int compute_signed) {
-  if (n_track_points < 2) return;
-
-  ptrdiff_t total = dims[0] * dims[1];
-  float hw_px = half_width / cellsize;
-
-  ptrdiff_t *nseg = NULL;
-  int free_nseg = 0;
-  if (nearest_segment != NULL) {
-    nseg = nearest_segment;
-  } else {
-    nseg = (ptrdiff_t *)malloc(total * sizeof(ptrdiff_t));
-    free_nseg = 1;
-  }
-
-  float *best_abs = (float *)malloc(total * sizeof(float));
-  float *signed_dist_px = NULL;
-  if (compute_signed) {
-    signed_dist_px = (float *)malloc(total * sizeof(float));
-  }
-
-  frontier_distance_map(best_abs, signed_dist_px, nseg, track_i, track_j,
-                        n_track_points, dims, hw_px, dem, mask);
-
-  for (ptrdiff_t i = 0; i < total; i++) {
-    if (best_abs[i] == FLT_MAX || best_abs[i] > hw_px) {
-      distance[i] = NAN;
-    } else if (compute_signed && signed_dist_px) {
-      distance[i] = signed_dist_px[i] * cellsize;
-    } else {
-      distance[i] = best_abs[i] * cellsize;
+  ptrdiff_t new_n = 0;
+  for (ptrdiff_t k = 0; k < n_centre; k++) {
+    ptrdiff_t ci = (ptrdiff_t)centre_line_i[k];
+    ptrdiff_t cj = (ptrdiff_t)centre_line_j[k];
+    if (on_cl[cj * dims[0] + ci]) {
+      centre_line_i[new_n] = centre_line_i[k];
+      centre_line_j[new_n] = centre_line_j[k];
+      centre_width[new_n] = centre_width[k];
+      new_n++;
     }
   }
-
-  free(best_abs);
-  if (signed_dist_px) free(signed_dist_px);
-  if (free_nseg) free(nseg);
+  free(on_cl);
+  return new_n;
 }
 
 // ============================================================================
 // Transverse swath — DEM pixels binned by signed perpendicular distance
 // ============================================================================
-// Requires a pre-computed signed distance map (swath_compute_distance_map).
 // If normalize != 0, elevations are shifted so the track-centre bin is at zero.
 
 TOPOTOOLBOX_API

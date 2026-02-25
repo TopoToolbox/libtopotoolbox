@@ -2377,102 +2377,94 @@ TOPOTOOLBOX_API
 ptrdiff_t swath_compute_nbins(float half_width, float bin_resolution);
 
 /**
-   @brief Compute clipped distance map from track with optional centre-line
+   @brief Frontier Dijkstra distance map — raw pixel-unit outputs
 
    @details
-   Computes the distance map for all pixels within half_width of the track.
-   Pixels outside the swath get NAN. All distance outputs are in meters.
+   Runs the frontier Dijkstra expansion and writes raw pixel-space distances
+   directly into caller-allocated arrays.  No unit conversion or NaN filling
+   is performed; that is left to the caller.
 
-   Optionally computes the centre line via boundary-inward Dijkstra: grows
-   from both sides' boundaries inward, detects the ridge (medial axis), and
-   reports local width as the sum of distances from both sides' boundaries.
+   Unvisited pixels receive FLT_MAX in best_abs.  If dem is non-NULL, pixels
+   with NaN elevation are excluded.  If mask is non-NULL, zero-valued pixels
+   are excluded.
 
-   NOTE: swath_transverse and swath_longitudinal expect a SIGNED distance
-   map (compute_signed=1) as input.
-
-   @param[out] distance_from_track Signed or absolute distance per pixel
-   (meters). NAN for pixels outside the swath. Size dims[0]*dims[1].
-   @param[out] nearest_segment Nearest segment index per pixel, or NULL to skip
-   @param[out] dist_from_boundary Inward distance from boundary (meters), or
-   NULL
-   @param[out] centre_line_i Centre-line pixel coords (fast dim), or NULL
-   @param[out] centre_line_j Centre-line pixel coords (slow dim), or NULL
-   @param[out] centre_width Local width at each centre-line pixel (meters), or
-   NULL
+   @param[out] best_abs Absolute pixel-unit distance. FLT_MAX = unvisited.
+               Must be caller-allocated, size dims[0]*dims[1].
+   @param[out] signed_dist Signed pixel-unit distance (positive = left of track).
+               NULL to skip.
+   @param[out] nearest_seg Index of nearest track segment. -1 = unvisited.
+               NULL to skip.
    @param[in] track_i Track coords in fast dimension (pixel space)
    @param[in] track_j Track coords in slow dimension (pixel space)
    @param[in] n_track_points Number of track vertices (>= 2)
    @param[in] dims Grid dimensions [fast, slow]
-   @param[in] cellsize Cell size in meters
-   @param[in] half_width Swath half-width in meters
-   @param[in] compute_signed If nonzero, output signed distance; otherwise
-   absolute
-
-   @return Number of centre-line pixels (0 if centre outputs are NULL)
- */
-TOPOTOOLBOX_API
-ptrdiff_t swath_compute_distance_map(
-    float *distance_from_track, ptrdiff_t *nearest_segment,
-    float *dist_from_boundary, float *centre_line_i, float *centre_line_j,
-    float *centre_width, const float *track_i, const float *track_j,
-    ptrdiff_t n_track_points, ptrdiff_t dims[2], float cellsize,
-    float half_width, int compute_signed);
-
-/**
-   @brief Compute full (unclipped) distance map from track
-
-   @details
-   Computes distance from every grid pixel to the nearest track segment.
-   No half_width clipping. Skips NaN pixels in the DEM and masked-out pixels.
-   All distance outputs are in meters.
-
-   @param[out] distance Distance per pixel (meters). NAN for skipped pixels.
-   @param[out] nearest_segment Nearest segment index, or NULL to skip
-   @param[in] track_i Track coords in fast dimension (pixel space)
-   @param[in] track_j Track coords in slow dimension (pixel space)
-   @param[in] n_track_points Number of track vertices (>= 2)
-   @param[in] dims Grid dimensions [fast, slow]
-   @param[in] cellsize Cell size in meters
-   @param[in] dem DEM for NaN detection, or NULL to skip NaN check
+   @param[in] max_dist_px Expansion clip radius in pixels (FLT_MAX = unbounded)
+   @param[in] dem DEM for NaN detection, or NULL
    @param[in] mask Active mask (nonzero=active), or NULL for all active
-   @param[in] compute_signed If nonzero, output signed distance; otherwise
-   absolute
- */
-TOPOTOOLBOX_API
-void swath_compute_full_distance_map(
-    float *distance, ptrdiff_t *nearest_segment, const float *track_i,
-    const float *track_j, ptrdiff_t n_track_points, ptrdiff_t dims[2],
-    float cellsize, const float *dem, const int8_t *mask, int compute_signed);
-
-/**
-   @brief Compute distance map clipped to half_width, with optional DEM/mask
-   filtering
-
-   @details
-   Combines the half_width clipping of swath_compute_distance_map with the
-   DEM/mask filtering of swath_compute_full_distance_map.  Pixels beyond
-   half_width, outside the mask, or coinciding with NaN DEM values receive NAN.
-   All distance outputs are in meters.
-
-   @param[out] distance Distance per pixel (meters). NAN outside swath or mask.
-   @param[out] nearest_segment Nearest segment index, or NULL to skip
-   @param[in] track_i Track coords in fast dimension (pixel space)
-   @param[in] track_j Track coords in slow dimension (pixel space)
-   @param[in] n_track_points Number of track vertices (>= 2)
-   @param[in] dims Grid dimensions [fast, slow]
-   @param[in] cellsize Cell size in meters
-   @param[in] half_width Swath half-width in meters
-   @param[in] dem DEM for NaN detection, or NULL to skip NaN check
-   @param[in] mask Active mask (nonzero=active), or NULL for all active
-   @param[in] compute_signed If nonzero, output signed distance; otherwise
-   absolute
 */
 TOPOTOOLBOX_API
 void swath_frontier_distance_map(
-    float *distance, ptrdiff_t *nearest_segment, const float *track_i,
+    float *best_abs, float *signed_dist, ptrdiff_t *nearest_seg,
+    const float *track_i, const float *track_j, ptrdiff_t n_track_points,
+    ptrdiff_t dims[2], float max_dist_px, const float *dem,
+    const int8_t *mask);
+
+/**
+   @brief Inward D8 Dijkstra from boundary seed pixels
+
+   @param[out] dist_out  Pixel-unit D8 distances. FLT_MAX = unvisited.
+               Caller-allocated, size dims[0]*dims[1].
+   @param[in]  swath_mask 1=active pixel, 0=excluded. Expansion stays
+               within active pixels.
+   @param[in]  seeds  Flat pixel indices of seed pixels.
+   @param[in]  n_seeds  Number of seeds.
+   @param[in]  dims  Grid dimensions [fast, slow].
+*/
+TOPOTOOLBOX_API
+void swath_boundary_dijkstra(float *dist_out, const int8_t *swath_mask,
+                             const ptrdiff_t *seeds, ptrdiff_t n_seeds,
+                             ptrdiff_t dims[2]);
+
+/**
+   @brief Extract Voronoi ridge pixels between two boundary wavefronts
+
+   @param[out] centre_line_i  Fast-dim coords of ridge pixels (float).
+   @param[out] centre_line_j  Slow-dim coords of ridge pixels (float).
+   @param[out] centre_width   Local width at each ridge pixel (meters).
+   @param[in]  dist_pos  Positive-side boundary DT (pixel units, FLT_MAX=unvisited).
+   @param[in]  dist_neg  Negative-side boundary DT (pixel units, FLT_MAX=unvisited).
+   @param[in]  best_abs  Absolute frontier distance (pixel units, FLT_MAX=outside).
+   @param[in]  hw_px     Swath half-width in pixels.
+   @param[in]  nearest_seg  Nearest track segment index per pixel.
+   @param[in]  track_i, track_j  Track vertices in pixel space.
+   @param[in]  n_track_points  Number of track vertices.
+   @param[in]  dims  Grid dimensions [fast, slow].
+   @param[in]  cellsize  Cell size in meters (used for width conversion).
+   @return  Number of ridge pixels written.
+*/
+TOPOTOOLBOX_API
+ptrdiff_t voronoi_ridge_to_centreline(
+    float *centre_line_i, float *centre_line_j, float *centre_width,
+    const float *dist_pos, const float *dist_neg, const float *best_abs,
+    float hw_px, const ptrdiff_t *nearest_seg, const float *track_i,
     const float *track_j, ptrdiff_t n_track_points, ptrdiff_t dims[2],
-    float cellsize, float half_width, const float *dem, const int8_t *mask,
-    int compute_signed);
+    float cellsize);
+
+/**
+   @brief Thin a rasterised polyline by removing staircase elbows
+
+   @param[in,out] centre_line_i  Fast-dim pixel coords (modified in place).
+   @param[in,out] centre_line_j  Slow-dim pixel coords (modified in place).
+   @param[in,out] centre_width   Width values (modified in place).
+   @param[in]     n_centre  Number of input pixels.
+   @param[in]     dims  Grid dimensions [fast, slow].
+   @return  New pixel count after thinning.
+*/
+TOPOTOOLBOX_API
+ptrdiff_t thin_rasterised_line_to_D8(float *centre_line_i,
+                                     float *centre_line_j,
+                                     float *centre_width, ptrdiff_t n_centre,
+                                     ptrdiff_t dims[2]);
 
 /**
    @brief Compute binned swath profile perpendicular to track
@@ -2480,7 +2472,7 @@ void swath_frontier_distance_map(
    @details
    Aggregates DEM elevations by perpendicular distance to the track.
    Takes a pre-computed SIGNED distance map (in meters) from
-   swath_compute_distance_map (with compute_signed=1).
+   swath_frontier_distance_map (with signed_dist output, scaled by cellsize).
 
    @param[out] bin_distances Distance of each bin center from track (meters)
    @param[out] bin_means Mean elevation per bin
@@ -2496,8 +2488,7 @@ void swath_frontier_distance_map(
    @param[out] bin_percentiles Custom percentile output (n_bins x
    n_percentiles), or NULL
    @param[in] dem DEM array (dims[0]*dims[1])
-   @param[in] distance_from_track SIGNED distance map in meters (from
-   swath_compute_distance_map)
+   @param[in] distance_from_track SIGNED distance map in meters
    @param[in] dims Grid dimensions [fast, slow]
    @param[in] half_width Swath half-width in meters
    @param[in] bin_resolution Bin spacing in meters
