@@ -123,6 +123,14 @@ void pq_decrease_key(PriorityQueue *q, ptrdiff_t idx, float new_priority) {
   }
 }
 
+void pq_increase_key(PriorityQueue *q, ptrdiff_t idx, float new_priority) {
+  if (new_priority > q->priorities[idx]) {
+    ptrdiff_t node = q->back[idx];
+    q->priorities[idx] = new_priority;
+    siftdown(q, node);
+  }
+}
+
 int32_t pq_hasminheap(PriorityQueue *q) {
   // Ensure that the min-heap property is satisfied by the priority queue
   int32_t flag = 1;

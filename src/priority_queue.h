@@ -39,6 +39,7 @@ void pq_insert(PriorityQueue *q, ptrdiff_t key, float priority);
 ptrdiff_t pq_deletemin(PriorityQueue *q);
 
 void pq_decrease_key(PriorityQueue *q, ptrdiff_t idx, float new_priority);
+void pq_increase_key(PriorityQueue *q, ptrdiff_t idx, float new_priority);
 
 // For testing
 int32_t pq_hasminheap(PriorityQueue *q);

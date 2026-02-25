@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "priority_queue.h"
+#include "dijkstra.h"
 #include "stat_helper.h"
 #include "topotoolbox.h"
 
@@ -39,75 +39,6 @@ static const int k_dj8[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
 
   Line simplification — swath_simplify_line (IEF engine, 7 stopping criteria).
 */
-
-// ============================================================================
-// Min-heap — used by frontier Dijkstra and the IEF simplification engine
-// ============================================================================
-
-typedef struct {
-  float abs_dist;  // absolute perpendicular distance in pixels (heap key)
-  ptrdiff_t idx;   // linear pixel index
-} heap_entry;
-
-typedef struct {
-  heap_entry *data;
-  ptrdiff_t size;
-  ptrdiff_t capacity;
-} min_heap;
-
-static void heap_init(min_heap *h, ptrdiff_t initial_capacity) {
-  h->capacity = initial_capacity > 0 ? initial_capacity : 256;
-  h->size = 0;
-  h->data = (heap_entry *)malloc(h->capacity * sizeof(heap_entry));
-}
-
-static void heap_push(min_heap *h, float abs_dist, ptrdiff_t idx) {
-  if (h->size >= h->capacity) {
-    h->capacity *= 2;
-    h->data = (heap_entry *)realloc(h->data, h->capacity * sizeof(heap_entry));
-  }
-  ptrdiff_t i = h->size++;
-  h->data[i].abs_dist = abs_dist;
-  h->data[i].idx = idx;
-  // Sift up
-  while (i > 0) {
-    ptrdiff_t parent = (i - 1) / 2;
-    if (h->data[parent].abs_dist <= h->data[i].abs_dist) break;
-    heap_entry tmp = h->data[parent];
-    h->data[parent] = h->data[i];
-    h->data[i] = tmp;
-    i = parent;
-  }
-}
-
-static heap_entry heap_pop(min_heap *h) {
-  heap_entry top = h->data[0];
-  h->data[0] = h->data[--h->size];
-  // Sift down
-  ptrdiff_t i = 0;
-  for (;;) {
-    ptrdiff_t left = 2 * i + 1;
-    ptrdiff_t right = 2 * i + 2;
-    ptrdiff_t smallest = i;
-    if (left < h->size && h->data[left].abs_dist < h->data[smallest].abs_dist)
-      smallest = left;
-    if (right < h->size && h->data[right].abs_dist < h->data[smallest].abs_dist)
-      smallest = right;
-    if (smallest == i) break;
-    heap_entry tmp = h->data[smallest];
-    h->data[smallest] = h->data[i];
-    h->data[i] = tmp;
-    i = smallest;
-  }
-  return top;
-}
-
-static void heap_free(min_heap *h) {
-  free(h->data);
-  h->data = NULL;
-  h->size = 0;
-  h->capacity = 0;
-}
 
 // ============================================================================
 // Signed perpendicular distance from a point to a segment (pixel space)
@@ -161,66 +92,83 @@ static void boundary_dijkstra(float *restrict dist_out,
                               const ptrdiff_t *seeds, ptrdiff_t n_seeds,
                               ptrdiff_t dims[2], float hw_px) {
   ptrdiff_t total = dims[0] * dims[1];
+  int8_t *mask = (int8_t *)malloc(total * sizeof(int8_t));
+  for (ptrdiff_t i = 0; i < total; i++)
+    mask[i] = (best_abs[i] != FLT_MAX && best_abs[i] <= hw_px) ? 1 : 0;
 
-  // dist_out serves as the PriorityQueue priorities array (indexed by pixel).
-  for (ptrdiff_t i = 0; i < total; i++) dist_out[i] = FLT_MAX;
-
-  ptrdiff_t *pq_heap = (ptrdiff_t *)malloc(total * sizeof(ptrdiff_t));
-  ptrdiff_t *pq_back = (ptrdiff_t *)malloc(total * sizeof(ptrdiff_t));
-  for (ptrdiff_t i = 0; i < total; i++) pq_back[i] = -1;
-  PriorityQueue q = pq_create(total, pq_heap, pq_back, dist_out, 0);
-
-  // Seed boundary pixels at distance 0; pq_insert sets dist_out[idx] = 0.
-  for (ptrdiff_t s = 0; s < n_seeds; s++) {
-    pq_insert(&q, seeds[s], 0.0f);
-  }
-
-  static const float dd8[8] = {1.41421356f, 1.0f, 1.41421356f, 1.0f, 1.0f,
-                               1.41421356f, 1.0f, 1.41421356f};
-
-  while (!pq_isempty(&q)) {
-    ptrdiff_t idx = pq_deletemin(&q);
-
-    ptrdiff_t ci = idx % dims[0];
-    ptrdiff_t cj = idx / dims[0];
-
-    for (int n = 0; n < 8; n++) {
-      ptrdiff_t ni = ci + k_di8[n];
-      ptrdiff_t nj = cj + k_dj8[n];
-      if (ni < 0 || ni >= dims[0] || nj < 0 || nj >= dims[1]) continue;
-
-      ptrdiff_t nidx = nj * dims[0] + ni;
-      if (best_abs[nidx] == FLT_MAX || best_abs[nidx] > hw_px) continue;
-
-      float new_dist = dist_out[idx] + dd8[n];
-      if (new_dist < dist_out[nidx]) {
-        // pq_decrease_key / pq_insert both update dist_out[nidx] via
-        // priorities.
-        if (q.back[nidx] >= 0)
-          pq_decrease_key(&q, nidx, new_dist);
-        else
-          pq_insert(&q, nidx, new_dist);
-      }
-    }
-  }
-
-  free(pq_heap);
-  free(pq_back);
+  GridDijkstra gd;
+  grid_dijkstra_init(&gd, dist_out, dims);
+  for (ptrdiff_t s = 0; s < n_seeds; s++)
+    grid_dijkstra_seed(&gd, seeds[s], 0.0f, NULL, NULL);
+  grid_dijkstra_run(&gd, mask, dijkstra_cost_d8, NULL, NULL);
+  grid_dijkstra_free(&gd);
+  free(mask);
 }
 
 // ============================================================================
-// Frontier distance map — Dijkstra outward from track, bounded at max_dist_px
+// Frontier distance map — perpendicular distance from track via Dijkstra
 // ============================================================================
 //
-// Seeds: track segments rasterized at ~0.5 px spacing.
-// Expansion: 8-connected, ordered by absolute perpendicular distance.
-// Each pixel is settled once via PriorityQueue with decrease_key.
-//
+// Context and callbacks for the swath-specific frontier cost function.
+// The cost function computes perpendicular distance to the nearest track
+// segment in a ±2 window around the parent's nearest segment.
+// on_update writes the nearest segment index and signed distance.
+
+typedef struct {
+  const float *track_i, *track_j;
+  ptrdiff_t n_track_points;
+  ptrdiff_t nrows;
+  ptrdiff_t *nearest_seg;
+  float *signed_dist;
+  float max_dist_px;
+  // Scratch: set by frontier_cost, read by frontier_on_update.
+  ptrdiff_t _last_seg;
+  float _last_signed;
+} FrontierCtx;
+
+static float frontier_cost(ptrdiff_t from, ptrdiff_t to, float from_dist,
+                           int dir, void *ctx_ptr) {
+  (void)from_dist;
+  (void)dir;
+  FrontierCtx *ctx = (FrontierCtx *)ctx_ptr;
+  float px = (float)(to % ctx->nrows);
+  float py = (float)(to / ctx->nrows);
+
+  ptrdiff_t seg = ctx->nearest_seg ? ctx->nearest_seg[from] : 0;
+  ptrdiff_t seg_lo = seg > 1 ? seg - 2 : 0;
+  ptrdiff_t seg_hi =
+      seg + 2 < ctx->n_track_points - 1 ? seg + 2 : ctx->n_track_points - 2;
+
+  float best_ad = FLT_MAX, best_sd = 0.0f;
+  ptrdiff_t best_seg = -1;
+  for (ptrdiff_t sk = seg_lo; sk <= seg_hi; sk++) {
+    float proj_x, proj_y, lam;
+    float d = point_to_segment_distance(
+        px, py, ctx->track_i[sk], ctx->track_j[sk], ctx->track_i[sk + 1],
+        ctx->track_j[sk + 1], &proj_x, &proj_y, &lam);
+    if (fabsf(d) < best_ad) {
+      best_ad = fabsf(d);
+      best_sd = d;
+      best_seg = sk;
+    }
+  }
+  if (best_ad > ctx->max_dist_px) return FLT_MAX;
+  ctx->_last_seg = best_seg;
+  ctx->_last_signed = best_sd;
+  return best_ad;
+}
+
+static void frontier_on_update(ptrdiff_t idx, float new_dist, void *ctx_ptr) {
+  (void)new_dist;
+  FrontierCtx *ctx = (FrontierCtx *)ctx_ptr;
+  if (ctx->nearest_seg) ctx->nearest_seg[idx] = ctx->_last_seg;
+  if (ctx->signed_dist) ctx->signed_dist[idx] = ctx->_last_signed;
+}
+
 // Outputs (caller-allocated, size dims[0]*dims[1]; NULL to skip):
 //   best_abs    — absolute perpendicular distance in pixels (FLT_MAX =
 //   unvisited) signed_dist — signed perpendicular distance in pixels
 //   nearest_seg — index of nearest track segment (-1 = unvisited)
-
 static void frontier_distance_map(
     float *restrict best_abs, float *restrict signed_dist,
     ptrdiff_t *restrict nearest_seg, const float *restrict track_i,
@@ -228,72 +176,41 @@ static void frontier_distance_map(
     float max_dist_px, const float *dem, const int8_t *mask) {
   ptrdiff_t total = dims[0] * dims[1];
 
-  // We always need best_abs for Dijkstra tracking
   int free_best = 0;
   if (best_abs == NULL) {
     best_abs = (float *)malloc(total * sizeof(float));
     free_best = 1;
   }
-
-  // Initialize
-  for (ptrdiff_t i = 0; i < total; i++) {
-    best_abs[i] = FLT_MAX;
-  }
-  if (signed_dist) {
-    for (ptrdiff_t i = 0; i < total; i++) signed_dist[i] = 0.0f;
-  }
-  if (nearest_seg) {
+  if (nearest_seg)
     for (ptrdiff_t i = 0; i < total; i++) nearest_seg[i] = -1;
+  if (signed_dist)
+    for (ptrdiff_t i = 0; i < total; i++) signed_dist[i] = 0.0f;
+
+  // Pre-compute pixel mask from dem/mask inputs.
+  int8_t *pixel_mask = NULL;
+  if (dem || mask) {
+    pixel_mask = (int8_t *)malloc(total * sizeof(int8_t));
+    for (ptrdiff_t i = 0; i < total; i++) {
+      pixel_mask[i] = 1;
+      if (dem && isnan(dem[i])) pixel_mask[i] = 0;
+      if (mask && !mask[i]) pixel_mask[i] = 0;
+    }
   }
 
-  // best_abs serves as the PriorityQueue priorities array (indexed by pixel).
-  ptrdiff_t *pq_heap = (ptrdiff_t *)malloc(total * sizeof(ptrdiff_t));
-  ptrdiff_t *pq_back = (ptrdiff_t *)malloc(total * sizeof(ptrdiff_t));
-  for (ptrdiff_t i = 0; i < total; i++) pq_back[i] = -1;
-  PriorityQueue q = pq_create(total, pq_heap, pq_back, best_abs, 0);
+  FrontierCtx ctx = {.track_i = track_i,
+                     .track_j = track_j,
+                     .n_track_points = n_track_points,
+                     .nrows = dims[0],
+                     .nearest_seg = nearest_seg,
+                     .signed_dist = signed_dist,
+                     .max_dist_px = max_dist_px,
+                     ._last_seg = -1,
+                     ._last_signed = 0.0f};
 
-// Helper: test a pixel against candidate segments, update if better.
-// pq_back[idx] >= 0  → pixel is in queue   → pq_decrease_key
-// pq_back[idx] <  0  → never inserted       → pq_insert  (best_abs == FLT_MAX)
-// pq_back[idx] <  0  → already settled      → skip       (best_abs < FLT_MAX)
-// pq_insert / pq_decrease_key both write best_abs[idx] via the priorities ptr.
-// clang-format off
-#define TRY_PIXEL(pi, pj, seg_lo, seg_hi)                             \
-  do {                                                                \
-    if ((pi) >= 0 && (pi) < dims[0] && (pj) >= 0 && (pj) < dims[1]) { \
-      ptrdiff_t _idx = (pj)*dims[0] + (pi);                           \
-      if (dem && isnan(dem[_idx])) break;                             \
-      if (mask && !mask[_idx]) break;                                 \
-      float _px = (float)(pi);                                        \
-      float _py = (float)(pj);                                        \
-      float _best_sd = 0.0f, _best_ad = FLT_MAX;                      \
-      ptrdiff_t _best_seg = -1;                                       \
-      for (ptrdiff_t _sk = (seg_lo); _sk <= (seg_hi); _sk++) {        \
-        float _proj_x, _proj_y, _lam;                                 \
-        float _d = point_to_segment_distance(                         \
-            _px, _py, track_i[_sk], track_j[_sk], track_i[_sk + 1],   \
-            track_j[_sk + 1], &_proj_x, &_proj_y, &_lam);             \
-        if (fabsf(_d) < _best_ad) {                                   \
-          _best_ad = fabsf(_d);                                       \
-          _best_sd = _d;                                              \
-          _best_seg = _sk;                                            \
-        }                                                             \
-      }                                                               \
-      if (_best_ad < best_abs[_idx] && _best_ad <= max_dist_px) {     \
-        if (q.back[_idx] >= 0) {                                      \
-          if (signed_dist) signed_dist[_idx] = _best_sd;              \
-          if (nearest_seg) nearest_seg[_idx] = _best_seg;             \
-          pq_decrease_key(&q, _idx, _best_ad);                        \
-        } else if (best_abs[_idx] >= FLT_MAX) {                       \
-          if (signed_dist) signed_dist[_idx] = _best_sd;              \
-          if (nearest_seg) nearest_seg[_idx] = _best_seg;             \
-          pq_insert(&q, _idx, _best_ad);                              \
-        }                                                             \
-      }                                                               \
-    }                                                                 \
-  } while (0)
+  GridDijkstra gd;
+  grid_dijkstra_init(&gd, best_abs, dims);
 
-  // Seed: rasterize track segments at ~0.5px spacing
+  // Seed: rasterize track segments at ~0.5px spacing.
   for (ptrdiff_t k = 0; k < n_track_points - 1; k++) {
     float di = track_i[k + 1] - track_i[k];
     float dj = track_j[k + 1] - track_j[k];
@@ -307,37 +224,37 @@ static void frontier_distance_map(
       float t = n_steps > 0 ? (float)s / (float)n_steps : 0.0f;
       ptrdiff_t pi = (ptrdiff_t)(track_i[k] + t * di + 0.5f);
       ptrdiff_t pj = (ptrdiff_t)(track_j[k] + t * dj + 0.5f);
-      TRY_PIXEL(pi, pj, seg_lo, seg_hi);
+      if (pi < 0 || pi >= dims[0] || pj < 0 || pj >= dims[1]) continue;
+      ptrdiff_t idx = pj * dims[0] + pi;
+      if (pixel_mask && !pixel_mask[idx]) continue;
+
+      float px = (float)pi, py = (float)pj;
+      float best_ad = FLT_MAX, best_sd = 0.0f;
+      ptrdiff_t best_seg = -1;
+      for (ptrdiff_t sk = seg_lo; sk <= seg_hi; sk++) {
+        float proj_x, proj_y, lam;
+        float d = point_to_segment_distance(px, py, track_i[sk], track_j[sk],
+                                            track_i[sk + 1], track_j[sk + 1],
+                                            &proj_x, &proj_y, &lam);
+        if (fabsf(d) < best_ad) {
+          best_ad = fabsf(d);
+          best_sd = d;
+          best_seg = sk;
+        }
+      }
+      if (best_ad <= max_dist_px) {
+        ctx._last_seg = best_seg;
+        ctx._last_signed = best_sd;
+        grid_dijkstra_seed(&gd, idx, best_ad, frontier_on_update, &ctx);
+      }
     }
   }
 
-  // Dijkstra expansion
-  while (!pq_isempty(&q)) {
-    ptrdiff_t idx = pq_deletemin(&q);
-
-    ptrdiff_t ci = idx % dims[0];
-    ptrdiff_t cj = idx / dims[0];
-    ptrdiff_t seg = nearest_seg ? nearest_seg[idx] : 0;
-
-    // Search range: parent's segment ±2
-    ptrdiff_t seg_lo = seg > 1 ? seg - 2 : 0;
-    ptrdiff_t seg_hi =
-        seg + 2 < n_track_points - 1 ? seg + 2 : n_track_points - 2;
-
-    for (int n = 0; n < 8; n++) {
-      ptrdiff_t ni = ci + k_di8[n];
-      ptrdiff_t nj = cj + k_dj8[n];
-      TRY_PIXEL(ni, nj, seg_lo, seg_hi);
-    }
-  }
-
-#undef TRY_PIXEL
-
-  free(pq_heap);
-  free(pq_back);
+  grid_dijkstra_run(&gd, pixel_mask, frontier_cost, frontier_on_update, &ctx);
+  grid_dijkstra_free(&gd);
+  free(pixel_mask);
   if (free_best) free(best_abs);
 }
-// clang-format on
 
 // ============================================================================
 // Public API
@@ -2039,52 +1956,11 @@ static float seg_tri_area(float ax, float ay, float bx, float by, float cx,
   return 0.5f * fabsf((bx - ax) * (cy - ay) - (by - ay) * (cx - ax));
 }
 
-// ---- IEF heap (max-deviation via min-heap on neg_dev) ----
-
 typedef struct {
   float neg_dev;  // -max_perp_dist in segment (heap key)
   float seg_rss;  // sum of squared perpendicular distances in segment
   ptrdiff_t lo, hi, max_k;
 } ief_seg;
-
-typedef struct {
-  ief_seg *data;
-  ptrdiff_t size, cap;
-} ief_heap;
-
-static void ief_heap_push(ief_heap *h, ief_seg e) {
-  if (h->size >= h->cap) {
-    h->cap = h->cap ? h->cap * 2 : 64;
-    h->data = (ief_seg *)realloc(h->data, (size_t)h->cap * sizeof(ief_seg));
-  }
-  ptrdiff_t i = h->size++;
-  h->data[i] = e;
-  while (i > 0) {
-    ptrdiff_t p = (i - 1) / 2;
-    if (h->data[p].neg_dev <= h->data[i].neg_dev) break;
-    ief_seg tmp = h->data[p];
-    h->data[p] = h->data[i];
-    h->data[i] = tmp;
-    i = p;
-  }
-}
-
-static ief_seg ief_heap_pop(ief_heap *h) {
-  ief_seg top = h->data[0];
-  h->data[0] = h->data[--h->size];
-  ptrdiff_t i = 0;
-  for (;;) {
-    ptrdiff_t l = 2 * i + 1, r = 2 * i + 2, s = i;
-    if (l < h->size && h->data[l].neg_dev < h->data[s].neg_dev) s = l;
-    if (r < h->size && h->data[r].neg_dev < h->data[s].neg_dev) s = r;
-    if (s == i) break;
-    ief_seg tmp = h->data[s];
-    h->data[s] = h->data[i];
-    h->data[i] = tmp;
-    i = s;
-  }
-  return top;
-}
 
 // Scan interior of [lo, hi] for max perp-dist point and segment RSS.
 static ief_seg ief_make_seg(const float *in_i, const float *in_j, ptrdiff_t lo,
@@ -2118,21 +1994,35 @@ static ptrdiff_t ief_build(const float *in_i, const float *in_j, ptrdiff_t n,
                            ptrdiff_t *seq, float *rmse_curve) {
   if (n <= 2) return 0;
 
-  ief_heap heap = {NULL, 0, 0};
+  // Each step pops 1 segment and pushes at most 2; total slots needed <= 2n-3.
+  ptrdiff_t max_slots = 2 * n;
+  ief_seg *segs = (ief_seg *)malloc((size_t)max_slots * sizeof(ief_seg));
+  ptrdiff_t *pq_heap =
+      (ptrdiff_t *)malloc((size_t)max_slots * sizeof(ptrdiff_t));
+  ptrdiff_t *pq_back =
+      (ptrdiff_t *)malloc((size_t)max_slots * sizeof(ptrdiff_t));
+  float *neg_devs = (float *)malloc((size_t)max_slots * sizeof(float));
+  for (ptrdiff_t i = 0; i < max_slots; i++) pq_back[i] = -1;
+  PriorityQueue q = pq_create(max_slots, pq_heap, pq_back, neg_devs, 0);
+  ptrdiff_t next_slot = 0;
+
   ief_seg init = ief_make_seg(in_i, in_j, 0, n - 1);
   double total_rss = (double)init.seg_rss;
-  ief_heap_push(&heap, init);
+  segs[next_slot] = init;
+  pq_insert(&q, next_slot, init.neg_dev);
+  next_slot++;
 
   rmse_curve[0] = (float)sqrt(total_rss / (double)n);
 
   ptrdiff_t n_steps = n - 2;
   for (ptrdiff_t t = 0; t < n_steps; t++) {
-    if (heap.size == 0) {
+    if (pq_isempty(&q)) {
       seq[t] = 0;
       rmse_curve[t + 1] = 0.0f;
       continue;
     }
-    ief_seg top = ief_heap_pop(&heap);
+    ptrdiff_t slot = pq_deletemin(&q);
+    ief_seg top = segs[slot];
     seq[t] = top.max_k;
     total_rss -= (double)top.seg_rss;
 
@@ -2141,12 +2031,23 @@ static ptrdiff_t ief_build(const float *in_i, const float *in_j, ptrdiff_t n,
     total_rss += (double)left.seg_rss + (double)right.seg_rss;
     if (total_rss < 0.0) total_rss = 0.0;
 
-    if (left.hi - left.lo > 1) ief_heap_push(&heap, left);
-    if (right.hi - right.lo > 1) ief_heap_push(&heap, right);
+    if (left.hi - left.lo > 1) {
+      segs[next_slot] = left;
+      pq_insert(&q, next_slot, left.neg_dev);
+      next_slot++;
+    }
+    if (right.hi - right.lo > 1) {
+      segs[next_slot] = right;
+      pq_insert(&q, next_slot, right.neg_dev);
+      next_slot++;
+    }
 
     rmse_curve[t + 1] = (float)sqrt(total_rss / (double)n);
   }
-  free(heap.data);
+  free(segs);
+  free(pq_heap);
+  free(pq_back);
+  free(neg_devs);
   return n_steps;
 }
 
@@ -2194,56 +2095,60 @@ ptrdiff_t simplify_line(float *out_i, float *out_j, const float *track_i,
   if (method == 5) {
     ptrdiff_t *prv_kept = (ptrdiff_t *)malloc((size_t)n * sizeof(ptrdiff_t));
     ptrdiff_t *nxt_kept = (ptrdiff_t *)malloc((size_t)n * sizeof(ptrdiff_t));
-    float *eff_area = (float *)malloc((size_t)n * sizeof(float));
     uint8_t *inserted = (uint8_t *)calloc((size_t)n, sizeof(uint8_t));
+    ptrdiff_t *pq_heap = (ptrdiff_t *)malloc((size_t)n * sizeof(ptrdiff_t));
+    ptrdiff_t *pq_back = (ptrdiff_t *)malloc((size_t)n * sizeof(ptrdiff_t));
+    float *neg_area = (float *)malloc((size_t)n * sizeof(float));
+    for (ptrdiff_t i = 0; i < n; i++) pq_back[i] = -1;
+    PriorityQueue pq = pq_create(n, pq_heap, pq_back, neg_area, 0);
 
     inserted[0] = 1;
     inserted[n - 1] = 1;
     for (ptrdiff_t k = 1; k < n - 1; k++) {
       prv_kept[k] = 0;
       nxt_kept[k] = n - 1;
-      eff_area[k] = seg_tri_area(track_i[0], track_j[0], track_i[k], track_j[k],
-                                 track_i[n - 1], track_j[n - 1]);
+      float a = seg_tri_area(track_i[0], track_j[0], track_i[k], track_j[k],
+                             track_i[n - 1], track_j[n - 1]);
+      pq_insert(&pq, k, -a);
     }
-    min_heap heap;
-    heap_init(&heap, n);
-    for (ptrdiff_t k = 1; k < n - 1; k++) heap_push(&heap, -eff_area[k], k);
 
-    while (heap.size > 0) {
-      heap_entry top = heap_pop(&heap);
-      ptrdiff_t k = top.idx;
-      if (inserted[k]) continue;
-      float area = -top.abs_dist;
+    while (!pq_isempty(&pq)) {
+      ptrdiff_t k = pq_deletemin(&pq);
+      float area = -pq.priorities[k];
       if (area < tolerance) break;
-      if (top.abs_dist != -eff_area[k]) continue;  // stale
 
       inserted[k] = 1;
       ptrdiff_t p = prv_kept[k], nx = nxt_kept[k];
 
       // Update nxt_kept for uninserted points in (p, k)
-      for (ptrdiff_t q = p + 1; q < k; q++) {
-        if (!inserted[q]) {
-          nxt_kept[q] = k;
+      for (ptrdiff_t qi = p + 1; qi < k; qi++) {
+        if (!inserted[qi]) {
+          nxt_kept[qi] = k;
           float new_a =
-              seg_tri_area(track_i[prv_kept[q]], track_j[prv_kept[q]],
-                           track_i[q], track_j[q], track_i[k], track_j[k]);
-          eff_area[q] = new_a;
-          heap_push(&heap, -new_a, q);
+              seg_tri_area(track_i[prv_kept[qi]], track_j[prv_kept[qi]],
+                           track_i[qi], track_j[qi], track_i[k], track_j[k]);
+          float new_prio = -new_a;
+          if (new_prio < pq.priorities[qi])
+            pq_decrease_key(&pq, qi, new_prio);
+          else if (new_prio > pq.priorities[qi])
+            pq_increase_key(&pq, qi, new_prio);
         }
       }
       // Update prv_kept for uninserted points in (k, nx)
-      for (ptrdiff_t q = k + 1; q < nx; q++) {
-        if (!inserted[q]) {
-          prv_kept[q] = k;
+      for (ptrdiff_t qi = k + 1; qi < nx; qi++) {
+        if (!inserted[qi]) {
+          prv_kept[qi] = k;
           float new_a =
-              seg_tri_area(track_i[k], track_j[k], track_i[q], track_j[q],
-                           track_i[nxt_kept[q]], track_j[nxt_kept[q]]);
-          eff_area[q] = new_a;
-          heap_push(&heap, -new_a, q);
+              seg_tri_area(track_i[k], track_j[k], track_i[qi], track_j[qi],
+                           track_i[nxt_kept[qi]], track_j[nxt_kept[qi]]);
+          float new_prio = -new_a;
+          if (new_prio < pq.priorities[qi])
+            pq_decrease_key(&pq, qi, new_prio);
+          else if (new_prio > pq.priorities[qi])
+            pq_increase_key(&pq, qi, new_prio);
         }
       }
     }
-    heap_free(&heap);
 
     ptrdiff_t cnt = 0;
     for (ptrdiff_t k = 0; k < n; k++)
@@ -2254,8 +2159,10 @@ ptrdiff_t simplify_line(float *out_i, float *out_j, const float *track_i,
       }
     free(prv_kept);
     free(nxt_kept);
-    free(eff_area);
     free(inserted);
+    free(pq_heap);
+    free(pq_back);
+    free(neg_area);
     return cnt;
   }
 
