@@ -27,8 +27,9 @@ static const int k_dj8[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
 
   Longitudinal — per-track-point statistics using either:
     Case 1 (binning_distance <= 0): Bresenham cross-section at each point.
-    Case 2 (binning_distance  > 0): Meijster EDT nearest-track-point
-                assignment + sliding-window accumulation along the track.
+    Case 2 (binning_distance  > 0): caller-supplied nearest_point map
+                (from swath_frontier_distance_map) + sliding-window
+                accumulation along the track.
 
   Windowed longitudinal — per-track-point statistics gathered from an
     oriented rectangle (PCA tangent, ±half_width × ±binning_distance).
@@ -60,19 +61,19 @@ void swath_boundary_dijkstra(float *dist_out, const int8_t *swath_mask,
 // ============================================================================
 //
 // Context and callbacks for the swath-specific frontier cost function.
-// The cost function computes perpendicular distance to the nearest track
-// segment in a ±2 window around the parent's nearest segment.
-// on_update writes the nearest segment index and signed distance.
+// The cost uses point_to_segment_distance against the segment adjacent to the
+// parent's nearest track point (clamped projection prevents phantom rays).
+// on_update writes the nearest point index and signed distance.
 
 typedef struct {
   const float *track_i, *track_j;
   ptrdiff_t n_track_points;
   ptrdiff_t nrows;
-  ptrdiff_t *nearest_seg;
+  ptrdiff_t *nearest_point;
   float *signed_dist;
   float max_dist_px;
   // Scratch: set by frontier_cost, read by frontier_on_update.
-  ptrdiff_t _last_seg;
+  ptrdiff_t _last_point;
   float _last_signed;
 } FrontierCtx;
 
@@ -81,44 +82,39 @@ static float frontier_cost(ptrdiff_t from, ptrdiff_t to, float from_dist,
   (void)from_dist;
   (void)dir;
   FrontierCtx *ctx = (FrontierCtx *)ctx_ptr;
-  float px = (float)(to % ctx->nrows);
-  float py = (float)(to / ctx->nrows);
-
-  ptrdiff_t seg = ctx->nearest_seg ? ctx->nearest_seg[from] : 0;
-  ptrdiff_t seg_lo = seg > 1 ? seg - 2 : 0;
-  ptrdiff_t seg_hi =
-      seg + 2 < ctx->n_track_points - 1 ? seg + 2 : ctx->n_track_points - 2;
-
-  float best_ad = FLT_MAX, best_sd = 0.0f;
-  ptrdiff_t best_seg = -1;
-  for (ptrdiff_t sk = seg_lo; sk <= seg_hi; sk++) {
-    float proj_x, proj_y, lam;
-    float d = point_to_segment_distance(
-        px, py, ctx->track_i[sk], ctx->track_j[sk], ctx->track_i[sk + 1],
-        ctx->track_j[sk + 1], &proj_x, &proj_y, &lam);
-    if (fabsf(d) < best_ad) {
-      best_ad = fabsf(d);
-      best_sd = d;
-      best_seg = sk;
-    }
-  }
-  if (best_ad > ctx->max_dist_px) return FLT_MAX;
-  ctx->_last_seg = best_seg;
-  ctx->_last_signed = best_sd;
-  return best_ad;
+  ptrdiff_t k = ctx->nearest_point[from];
+  if (k < 0) return FLT_MAX;
+  float to_i = (float)(to % ctx->nrows);
+  float to_j = (float)(to / ctx->nrows);
+  // Use the segment adjacent to track point k.
+  // k < n-1: segment k→k+1; last point: segment k-1→k.
+  // point_to_segment_distance has clamped projection (t∈[0,1]), which
+  // prevents phantom rays at every bend and at both endpoints.
+  ptrdiff_t ka = (k < ctx->n_track_points - 1) ? k : k - 1;
+  ptrdiff_t kb = ka + 1;
+  float proj_x, proj_y, lam;
+  float signed_d =
+      point_to_segment_distance(to_i, to_j, ctx->track_i[ka], ctx->track_j[ka],
+                                ctx->track_i[kb], ctx->track_j[kb],
+                                &proj_x, &proj_y, &lam);
+  float abs_d = fabsf(signed_d);
+  if (abs_d > ctx->max_dist_px) return FLT_MAX;
+  ctx->_last_point = k;
+  ctx->_last_signed = signed_d;
+  return abs_d;
 }
 
 static void frontier_on_update(ptrdiff_t idx, float new_dist, void *ctx_ptr) {
   (void)new_dist;
   FrontierCtx *ctx = (FrontierCtx *)ctx_ptr;
-  if (ctx->nearest_seg) ctx->nearest_seg[idx] = ctx->_last_seg;
+  if (ctx->nearest_point) ctx->nearest_point[idx] = ctx->_last_point;
   if (ctx->signed_dist) ctx->signed_dist[idx] = ctx->_last_signed;
 }
 
 TOPOTOOLBOX_API
 void swath_frontier_distance_map(
     float *restrict best_abs, float *restrict signed_dist,
-    ptrdiff_t *restrict nearest_seg, const float *restrict track_i,
+    ptrdiff_t *restrict nearest_point, const float *restrict track_i,
     const float *restrict track_j, ptrdiff_t n_track_points, ptrdiff_t dims[2],
     float max_dist_px, const float *dem, const int8_t *mask) {
   ptrdiff_t total = dims[0] * dims[1];
@@ -128,8 +124,8 @@ void swath_frontier_distance_map(
     best_abs = (float *)malloc(total * sizeof(float));
     free_best = 1;
   }
-  if (nearest_seg)
-    for (ptrdiff_t i = 0; i < total; i++) nearest_seg[i] = -1;
+  if (nearest_point)
+    for (ptrdiff_t i = 0; i < total; i++) nearest_point[i] = -1;
   if (signed_dist)
     for (ptrdiff_t i = 0; i < total; i++) signed_dist[i] = 0.0f;
 
@@ -148,53 +144,26 @@ void swath_frontier_distance_map(
                      .track_j = track_j,
                      .n_track_points = n_track_points,
                      .nrows = dims[0],
-                     .nearest_seg = nearest_seg,
+                     .nearest_point = nearest_point,
                      .signed_dist = signed_dist,
                      .max_dist_px = max_dist_px,
-                     ._last_seg = -1,
+                     ._last_point = -1,
                      ._last_signed = 0.0f};
 
   GridDijkstra gd;
   grid_dijkstra_init(&gd, best_abs, dims);
 
-  // Seed: rasterize track segments at ~0.5px spacing.
-  for (ptrdiff_t k = 0; k < n_track_points - 1; k++) {
-    float di = track_i[k + 1] - track_i[k];
-    float dj = track_j[k + 1] - track_j[k];
-    float seg_len = sqrtf(di * di + dj * dj);
-    ptrdiff_t n_steps = (ptrdiff_t)(seg_len * 2.0f) + 1;
-
-    ptrdiff_t seg_lo = k > 0 ? k - 1 : 0;
-    ptrdiff_t seg_hi = k + 1 < n_track_points - 1 ? k + 1 : k;
-
-    for (ptrdiff_t s = 0; s <= n_steps; s++) {
-      float t = n_steps > 0 ? (float)s / (float)n_steps : 0.0f;
-      ptrdiff_t pi = (ptrdiff_t)(track_i[k] + t * di + 0.5f);
-      ptrdiff_t pj = (ptrdiff_t)(track_j[k] + t * dj + 0.5f);
-      if (pi < 0 || pi >= dims[0] || pj < 0 || pj >= dims[1]) continue;
-      ptrdiff_t idx = pj * dims[0] + pi;
-      if (pixel_mask && !pixel_mask[idx]) continue;
-
-      float px = (float)pi, py = (float)pj;
-      float best_ad = FLT_MAX, best_sd = 0.0f;
-      ptrdiff_t best_seg = -1;
-      for (ptrdiff_t sk = seg_lo; sk <= seg_hi; sk++) {
-        float proj_x, proj_y, lam;
-        float d = point_to_segment_distance(px, py, track_i[sk], track_j[sk],
-                                            track_i[sk + 1], track_j[sk + 1],
-                                            &proj_x, &proj_y, &lam);
-        if (fabsf(d) < best_ad) {
-          best_ad = fabsf(d);
-          best_sd = d;
-          best_seg = sk;
-        }
-      }
-      if (best_ad <= max_dist_px) {
-        ctx._last_seg = best_seg;
-        ctx._last_signed = best_sd;
-        grid_dijkstra_seed(&gd, idx, best_ad, frontier_on_update, &ctx);
-      }
-    }
+  // Seed: one seed per track point at its rounded pixel position.
+  // Track is assumed D8-contiguous (guaranteed by prepare_track in Python).
+  for (ptrdiff_t k = 0; k < n_track_points; k++) {
+    ptrdiff_t pi = (ptrdiff_t)(track_i[k] + 0.5f);
+    ptrdiff_t pj = (ptrdiff_t)(track_j[k] + 0.5f);
+    if (pi < 0 || pi >= dims[0] || pj < 0 || pj >= dims[1]) continue;
+    ptrdiff_t idx = pj * dims[0] + pi;
+    if (pixel_mask && !pixel_mask[idx]) continue;
+    ctx._last_point = k;
+    ctx._last_signed = 0.0f;
+    grid_dijkstra_seed(&gd, idx, 0.0f, frontier_on_update, &ctx);
   }
 
   grid_dijkstra_run(&gd, pixel_mask, frontier_cost, frontier_on_update, &ctx);
@@ -223,7 +192,7 @@ TOPOTOOLBOX_API
 ptrdiff_t voronoi_ridge_to_centreline(
     float *centre_line_i, float *centre_line_j, float *centre_width,
     const float *dist_pos, const float *dist_neg, const float *best_abs,
-    float hw_px, const ptrdiff_t *nearest_seg, const float *track_i,
+    float hw_px, const ptrdiff_t *nearest_point, const float *track_i,
     const float *track_j, ptrdiff_t n_track_points, ptrdiff_t dims[2],
     float cellsize) {
   ptrdiff_t n_centre = 0;
@@ -257,15 +226,22 @@ ptrdiff_t voronoi_ridge_to_centreline(
     }
     if (!on_cl) continue;
 
-    // End-cap clipping: recompute unclamped projection t
-    ptrdiff_t seg = nearest_seg[idx];
-    float si = track_i[seg + 1] - track_i[seg];
-    float sj = track_j[seg + 1] - track_j[seg];
-    float len2 = si * si + sj * sj;
-    if (len2 > 0.0f) {
-      float t = ((ci - track_i[seg]) * si + (cj - track_j[seg]) * sj) / len2;
-      if (seg == 0 && t < 0.0f) continue;
-      if (seg == n_track_points - 2 && t > 1.0f) continue;
+    // End-cap clipping: exclude pixels outside the track endpoints.
+    ptrdiff_t k = nearest_point[idx];
+    if (k == 0 || k == n_track_points - 1) {
+      float di = (float)ci - track_i[k];
+      float dj = (float)cj - track_j[k];
+      float tdi, tdj;
+      if (k == 0) {
+        tdi = track_i[1] - track_i[0];
+        tdj = track_j[1] - track_j[0];
+      } else {
+        tdi = track_i[k] - track_i[k - 1];
+        tdj = track_j[k] - track_j[k - 1];
+      }
+      float along = di * tdi + dj * tdj;
+      if (k == 0 && along < 0.0f) continue;
+      if (k == n_track_points - 1 && along > 0.0f) continue;
     }
 
     centre_line_i[n_centre] = (float)ci;
@@ -421,191 +397,10 @@ void swath_transverse(float *restrict bin_distances, float *restrict bin_means,
 //   within half_width metres.
 //
 // Case 2 (binning_distance > 0):
-//   Assigns every swath pixel to its nearest track point via Meijster EDT
-//   (compute_track_assignment), then applies a sliding window of width
+//   Uses caller-supplied nearest_point map (from swath_frontier_distance_map)
+//   to assign pixels to track points, then applies a sliding window of width
 //   ±binning_distance metres along the cumulative track distance, using
 //   Lemire monotonic deques for O(1) amortised min/max per output point.
-
-
-// ============================================================================
-// Meijster EDT nearest-track-point labeling (internal, Case 2 only)
-// ============================================================================
-//
-// Two-pass algorithm: column scan builds row distances, row parabola envelope
-// resolves the 2-D nearest-seed per pixel.
-//
-// Seeds: one per track point (rounded position) or one per rasterized segment
-// pixel (use_segment_seeds != 0, more accurate for coarsely sampled tracks).
-//
-// Returns a malloc'd array [dims[0]*dims[1]]; caller frees.
-// Value = nearest track-point index, or -1 for pixels outside the mask.
-static ptrdiff_t *compute_track_assignment(const float *track_i,
-                                           const float *track_j,
-                                           ptrdiff_t n_track_points,
-                                           const float *distance_from_track,
-                                           ptrdiff_t dims[2], float half_width,
-                                           int use_segment_seeds) {
-  ptrdiff_t nrows = dims[0], ncols = dims[1];
-  ptrdiff_t total = nrows * ncols;
-  ptrdiff_t INF_VAL = nrows + ncols + 2;
-
-  // g[j*nrows+i]  = row distance from row i to nearest seed in column j
-  // lg[j*nrows+i] = track point index of that nearest seed (-1 = none)
-  ptrdiff_t *g = (ptrdiff_t *)malloc(total * sizeof(ptrdiff_t));
-  ptrdiff_t *lg = (ptrdiff_t *)malloc(total * sizeof(ptrdiff_t));
-  for (ptrdiff_t idx = 0; idx < total; idx++) {
-    g[idx] = INF_VAL;
-    lg[idx] = -1;
-  }
-
-  if (use_segment_seeds) {
-    // Rasterize each segment at ~0.5px spacing. For each rasterized pixel,
-    // assign the nearest track point by Euclidean distance.
-    for (ptrdiff_t k = 0; k < n_track_points - 1; k++) {
-      float di = track_i[k + 1] - track_i[k];
-      float dj = track_j[k + 1] - track_j[k];
-      float seg_len = sqrtf(di * di + dj * dj);
-      ptrdiff_t n_steps = (ptrdiff_t)(seg_len * 2.0f) + 1;
-
-      for (ptrdiff_t s = 0; s <= n_steps; s++) {
-        float t = n_steps > 0 ? (float)s / (float)n_steps : 0.0f;
-        ptrdiff_t si = (ptrdiff_t)(track_i[k] + t * di + 0.5f);
-        ptrdiff_t sj = (ptrdiff_t)(track_j[k] + t * dj + 0.5f);
-        if (si < 0 || si >= nrows || sj < 0 || sj >= ncols) continue;
-        ptrdiff_t sidx = sj * nrows + si;
-
-        float min_d2 = FLT_MAX;
-        ptrdiff_t best_pt = -1;
-        for (ptrdiff_t p = 0; p < n_track_points; p++) {
-          float tdi = (float)si - track_i[p];
-          float tdj = (float)sj - track_j[p];
-          float d2 = tdi * tdi + tdj * tdj;
-          if (d2 < min_d2) {
-            min_d2 = d2;
-            best_pt = p;
-          }
-        }
-
-        if (lg[sidx] < 0) {
-          g[sidx] = 0;
-          lg[sidx] = best_pt;
-        } else {
-          float tdi = (float)si - track_i[lg[sidx]];
-          float tdj = (float)sj - track_j[lg[sidx]];
-          if (min_d2 < tdi * tdi + tdj * tdj) {
-            g[sidx] = 0;
-            lg[sidx] = best_pt;
-          }
-        }
-      }
-    }
-  } else {
-    // One seed per track point at its rounded grid position.
-    for (ptrdiff_t k = 0; k < n_track_points; k++) {
-      ptrdiff_t si = (ptrdiff_t)(track_i[k] + 0.5f);
-      ptrdiff_t sj = (ptrdiff_t)(track_j[k] + 0.5f);
-      if (si < 0 || si >= nrows || sj < 0 || sj >= ncols) continue;
-      ptrdiff_t sidx = sj * nrows + si;
-      if (lg[sidx] < 0) {
-        g[sidx] = 0;
-        lg[sidx] = k;
-      } else {
-        float aki = (float)si - track_i[k], akj = (float)sj - track_j[k];
-        float api = (float)si - track_i[lg[sidx]],
-              apj = (float)sj - track_j[lg[sidx]];
-        if (aki * aki + akj * akj < api * api + apj * apj) lg[sidx] = k;
-      }
-    }
-  }
-
-  // Phase 1: column scan — for each column j, propagate nearest-seed row
-  // distance up and down so g[j*nrows+i] = distance to nearest seed in col j.
-  for (ptrdiff_t j = 0; j < ncols; j++) {
-    for (ptrdiff_t i = 1; i < nrows; i++) {
-      ptrdiff_t cur = j * nrows + i, prev = j * nrows + (i - 1);
-      if (g[prev] < INF_VAL && g[prev] + 1 < g[cur]) {
-        g[cur] = g[prev] + 1;
-        lg[cur] = lg[prev];
-      }
-    }
-    for (ptrdiff_t i = nrows - 2; i >= 0; i--) {
-      ptrdiff_t cur = j * nrows + i, next = j * nrows + (i + 1);
-      if (g[next] < INF_VAL && g[next] + 1 < g[cur]) {
-        g[cur] = g[next] + 1;
-        lg[cur] = lg[next];
-      }
-    }
-  }
-
-  // Phase 2: row parabola envelope (Meijster).
-  // For each row i, find which column j's seed is the globally nearest
-  // using the parabola Sep function: first col where u beats s is
-  //   w = floor((u²+gu² - s²-gs²) / (2*(u-s))) + 1
-  ptrdiff_t *assignment = (ptrdiff_t *)malloc(total * sizeof(ptrdiff_t));
-  for (ptrdiff_t idx = 0; idx < total; idx++) assignment[idx] = -1;
-
-  ptrdiff_t *stk_s = (ptrdiff_t *)malloc(ncols * sizeof(ptrdiff_t));
-  ptrdiff_t *stk_t = (ptrdiff_t *)malloc(ncols * sizeof(ptrdiff_t));
-  ptrdiff_t *stk_l = (ptrdiff_t *)malloc(ncols * sizeof(ptrdiff_t));
-
-  for (ptrdiff_t i = 0; i < nrows; i++) {
-    ptrdiff_t q = -1;
-
-    // Forward scan: build parabola stack
-    for (ptrdiff_t u = 0; u < ncols; u++) {
-      ptrdiff_t gu = g[u * nrows + i];
-      if (gu >= INF_VAL) continue;
-
-      // Pop while u dominates top at top's start column
-      while (q >= 0) {
-        ptrdiff_t s = stk_s[q], gs = g[s * nrows + i];
-        double sep = ((double)(u * u) - (double)(s * s) + (double)(gu * gu) -
-                      (double)(gs * gs)) /
-                     (2.0 * (double)(u - s));
-        ptrdiff_t w = (ptrdiff_t)floor(sep) + 1;
-        if (w > stk_t[q])
-          break;  // u only takes over after top's range: keep top
-        q--;
-      }
-
-      // Compute where u starts being the closest
-      ptrdiff_t w_start;
-      if (q < 0) {
-        w_start = 0;
-      } else {
-        ptrdiff_t s = stk_s[q], gs = g[s * nrows + i];
-        double sep = ((double)(u * u) - (double)(s * s) + (double)(gu * gu) -
-                      (double)(gs * gs)) /
-                     (2.0 * (double)(u - s));
-        w_start = (ptrdiff_t)floor(sep) + 1;
-      }
-
-      if (w_start < ncols) {
-        q++;
-        stk_s[q] = u;
-        stk_t[q] = w_start;
-        stk_l[q] = lg[u * nrows + i];
-      }
-    }
-
-    if (q < 0) continue;
-
-    // Backward scan: assign each masked pixel to its nearest track point
-    for (ptrdiff_t u = ncols - 1; u >= 0; u--) {
-      while (q > 0 && u < stk_t[q]) q--;
-      ptrdiff_t idx = u * nrows + i;
-      float d = distance_from_track[idx];
-      if (!isnan(d) && fabsf(d) <= half_width) assignment[idx] = stk_l[q];
-    }
-  }
-
-  free(g);
-  free(lg);
-  free(stk_s);
-  free(stk_t);
-  free(stk_l);
-  return assignment;
-}
 
 TOPOTOOLBOX_API
 ptrdiff_t swath_longitudinal(
@@ -618,8 +413,8 @@ ptrdiff_t swath_longitudinal(
     const float *restrict track_i, const float *restrict track_j,
     ptrdiff_t n_track_points, const float *restrict distance_from_track,
     ptrdiff_t dims[2], float cellsize, float half_width, float binning_distance,
-    ptrdiff_t n_points_regression, ptrdiff_t use_segment_seeds, ptrdiff_t skip,
-    float *result_track_i, float *result_track_j) {
+    ptrdiff_t n_points_regression, const ptrdiff_t *restrict nearest_point,
+    ptrdiff_t skip, float *result_track_i, float *result_track_j) {
   if (n_track_points < 2) return 0;
   ptrdiff_t effective_skip = (skip < 1) ? 1 : skip;
 
@@ -699,21 +494,12 @@ ptrdiff_t swath_longitudinal(
   } else {
     // --- Case 2: sliding window over pre-computed per-block stats ---
     ptrdiff_t total = dims[0] * dims[1];
-    ptrdiff_t *assignment = compute_track_assignment(
-        track_i, track_j, n_track_points, distance_from_track, dims, half_width,
-        (int)use_segment_seeds);
 
     // Per-block precomputed stats
-    double *blk_sum = (double *)calloc(n_track_points, sizeof(double));
-    double *blk_sum2 = (double *)calloc(n_track_points, sizeof(double));
-    ptrdiff_t *blk_count =
-        (ptrdiff_t *)calloc(n_track_points, sizeof(ptrdiff_t));
-    float *blk_min = (float *)malloc(n_track_points * sizeof(float));
-    float *blk_max = (float *)malloc(n_track_points * sizeof(float));
-    for (ptrdiff_t k = 0; k < n_track_points; k++) {
-      blk_min[k] = FLT_MAX;
-      blk_max[k] = -FLT_MAX;
-    }
+    stats_accumulator *blk_acc =
+        (stats_accumulator *)calloc(n_track_points, sizeof(stats_accumulator));
+    for (ptrdiff_t k = 0; k < n_track_points; k++)
+      accumulator_init(&blk_acc[k]);
 
     // CSR pixel lists (only needed for percentiles)
     ptrdiff_t *pt_offset = NULL, *pt_pixels = NULL, *pt_fill_arr = NULL;
@@ -721,10 +507,13 @@ ptrdiff_t swath_longitudinal(
       ptrdiff_t *cnt = (ptrdiff_t *)calloc(n_track_points, sizeof(ptrdiff_t));
       ptrdiff_t n_assigned = 0;
       for (ptrdiff_t idx = 0; idx < total; idx++) {
-        if (assignment[idx] >= 0 && !isnan(dem[idx])) {
-          cnt[assignment[idx]]++;
-          n_assigned++;
-        }
+        ptrdiff_t a = nearest_point[idx];
+        if (a < 0) continue;
+        float d = distance_from_track[idx];
+        if (isnan(d) || fabsf(d) > half_width) continue;
+        if (isnan(dem[idx])) continue;
+        cnt[a]++;
+        n_assigned++;
       }
       pt_offset = (ptrdiff_t *)malloc((n_track_points + 1) * sizeof(ptrdiff_t));
       pt_offset[0] = 0;
@@ -735,31 +524,26 @@ ptrdiff_t swath_longitudinal(
       pt_fill_arr = (ptrdiff_t *)calloc(n_track_points, sizeof(ptrdiff_t));
       // Fill block stats and CSR in one pass
       for (ptrdiff_t idx = 0; idx < total; idx++) {
-        ptrdiff_t a = assignment[idx];
-        if (a < 0 || isnan(dem[idx])) continue;
-        double v = (double)dem[idx];
-        blk_sum[a] += v;
-        blk_sum2[a] += v * v;
-        blk_count[a]++;
-        if (dem[idx] < blk_min[a]) blk_min[a] = dem[idx];
-        if (dem[idx] > blk_max[a]) blk_max[a] = dem[idx];
+        ptrdiff_t a = nearest_point[idx];
+        if (a < 0) continue;
+        float d = distance_from_track[idx];
+        if (isnan(d) || fabsf(d) > half_width) continue;
+        if (isnan(dem[idx])) continue;
+        accumulator_add(&blk_acc[a], dem[idx]);
         pt_pixels[pt_offset[a] + pt_fill_arr[a]] = idx;
         pt_fill_arr[a]++;
       }
     } else {
       // Block stats only
       for (ptrdiff_t idx = 0; idx < total; idx++) {
-        ptrdiff_t a = assignment[idx];
-        if (a < 0 || isnan(dem[idx])) continue;
-        double v = (double)dem[idx];
-        blk_sum[a] += v;
-        blk_sum2[a] += v * v;
-        blk_count[a]++;
-        if (dem[idx] < blk_min[a]) blk_min[a] = dem[idx];
-        if (dem[idx] > blk_max[a]) blk_max[a] = dem[idx];
+        ptrdiff_t a = nearest_point[idx];
+        if (a < 0) continue;
+        float d = distance_from_track[idx];
+        if (isnan(d) || fabsf(d) > half_width) continue;
+        if (isnan(dem[idx])) continue;
+        accumulator_add(&blk_acc[a], dem[idx]);
       }
     }
-    free(assignment);
 
     // Monotonic deques for sliding window min/max
     ptrdiff_t *min_dq = (ptrdiff_t *)malloc(n_track_points * sizeof(ptrdiff_t));
@@ -775,25 +559,25 @@ ptrdiff_t swath_longitudinal(
       while (hi < n_track_points - 1 &&
              cum_dist[hi + 1] - cum_dist[pt] <= binning_distance) {
         hi++;
-        win_sum += blk_sum[hi];
-        win_sum2 += blk_sum2[hi];
-        win_count += blk_count[hi];
-        if (blk_count[hi] > 0) {
+        win_sum += blk_acc[hi].sum;
+        win_sum2 += blk_acc[hi].sum_sq;
+        win_count += blk_acc[hi].count;
+        if (blk_acc[hi].count > 0) {
           while (min_head <= min_tail &&
-                 blk_min[min_dq[min_tail]] >= blk_min[hi])
+                 blk_acc[min_dq[min_tail]].min_val >= blk_acc[hi].min_val)
             min_tail--;
           min_dq[++min_tail] = hi;
           while (max_head <= max_tail &&
-                 blk_max[max_dq[max_tail]] <= blk_max[hi])
+                 blk_acc[max_dq[max_tail]].max_val <= blk_acc[hi].max_val)
             max_tail--;
           max_dq[++max_tail] = hi;
         }
       }
       // Shrink left: remove blocks outside binning_distance behind pt
       while (lo <= hi && cum_dist[pt] - cum_dist[lo] > binning_distance) {
-        win_sum -= blk_sum[lo];
-        win_sum2 -= blk_sum2[lo];
-        win_count -= blk_count[lo];
+        win_sum -= blk_acc[lo].sum;
+        win_sum2 -= blk_acc[lo].sum_sq;
+        win_count -= blk_acc[lo].count;
         if (min_head <= min_tail && min_dq[min_head] == lo) min_head++;
         if (max_head <= max_tail && max_dq[max_head] == lo) max_head++;
         lo++;
@@ -807,10 +591,12 @@ ptrdiff_t swath_longitudinal(
           point_counts[out] = win_count;
           point_means[out] = (float)mean;
           point_stddevs[out] = (float)sqrt(var > 0.0 ? var : 0.0);
-          point_mins[out] =
-              (min_head <= min_tail) ? blk_min[min_dq[min_head]] : NAN;
-          point_maxs[out] =
-              (max_head <= max_tail) ? blk_max[max_dq[max_head]] : NAN;
+          point_mins[out] = (min_head <= min_tail)
+                                ? blk_acc[min_dq[min_head]].min_val
+                                : NAN;
+          point_maxs[out] = (max_head <= max_tail)
+                                ? blk_acc[max_dq[max_head]].max_val
+                                : NAN;
         } else {
           point_counts[out] = 0;
           point_means[out] = NAN;
@@ -828,11 +614,7 @@ ptrdiff_t swath_longitudinal(
       }
     }
 
-    free(blk_sum);
-    free(blk_sum2);
-    free(blk_count);
-    free(blk_min);
-    free(blk_max);
+    free(blk_acc);
     free(min_dq);
     free(max_dq);
     if (compute_percentiles) {
@@ -1117,9 +899,9 @@ ptrdiff_t swath_windowed_get_point_samples(
 //
 // Case 1 (binning_distance <= 0): Bresenham cross-section filtered by
 //   distance_from_track.
-// Case 2 (binning_distance  > 0): Meijster EDT assignment; gathers all pixels
-//   whose nearest track point falls within [pt_lo, pt_hi] (the
-//   ±binning_distance window around point_index along the cumulative distance).
+// Case 2 (binning_distance  > 0): uses caller-supplied nearest_point map;
+//   gathers all pixels whose nearest track point falls within [pt_lo, pt_hi]
+//   (the ±binning_distance window around point_index along cumulative distance).
 
 TOPOTOOLBOX_API
 ptrdiff_t swath_get_point_pixels(
@@ -1128,7 +910,7 @@ ptrdiff_t swath_get_point_pixels(
     ptrdiff_t n_track_points, ptrdiff_t point_index,
     const float *restrict distance_from_track, ptrdiff_t dims[2],
     float cellsize, float half_width, float binning_distance,
-    ptrdiff_t n_points_regression, ptrdiff_t use_segment_seeds) {
+    ptrdiff_t n_points_regression, const ptrdiff_t *restrict nearest_point) {
   if (n_track_points < 2) return 0;
   if (point_index < 0 || point_index >= n_track_points) return 0;
 
@@ -1170,7 +952,7 @@ ptrdiff_t swath_get_point_pixels(
     free(bres_i);
     free(bres_j);
   } else {
-    // --- Case 2: Meijster EDT nearest-track-point assignment ---
+    // --- Case 2: nearest_point map + cumulative distance window ---
 
     float *cum_dist = (float *)malloc(n_track_points * sizeof(float));
     cum_dist[0] = 0.0f;
@@ -1188,16 +970,14 @@ ptrdiff_t swath_get_point_pixels(
            cum_dist[pt_hi + 1] - cum_dist[point_index] <= binning_distance)
       pt_hi++;
 
-    ptrdiff_t *assignment = compute_track_assignment(
-        track_i, track_j, n_track_points, distance_from_track, dims, half_width,
-        (int)use_segment_seeds);
-
-    // Gather pixels assigned to track points in [pt_lo..pt_hi]
+    // Gather pixels whose nearest track point falls in [pt_lo..pt_hi]
     for (ptrdiff_t pj = 0; pj < dims[1]; pj++) {
       for (ptrdiff_t pi = 0; pi < dims[0]; pi++) {
         ptrdiff_t idx = pj * dims[0] + pi;
-        ptrdiff_t a = assignment[idx];
+        ptrdiff_t a = nearest_point[idx];
         if (a < pt_lo || a > pt_hi) continue;
+        float d = distance_from_track[idx];
+        if (isnan(d) || fabsf(d) > half_width) continue;
 
         pixels_i[n_pixels] = pi;
         pixels_j[n_pixels] = pj;
@@ -1205,7 +985,6 @@ ptrdiff_t swath_get_point_pixels(
       }
     }
 
-    free(assignment);
     free(cum_dist);
   }
 

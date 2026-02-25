@@ -2378,7 +2378,7 @@ void lowerenv(float *elevation, uint8_t *knickpoints, float *distance,
                Must be caller-allocated, size dims[0]*dims[1].
    @param[out] signed_dist Signed pixel-unit distance (positive = left of track).
                NULL to skip.
-   @param[out] nearest_seg Index of nearest track segment. -1 = unvisited.
+   @param[out] nearest_point Index of nearest track point. -1 = unvisited.
                NULL to skip.
    @param[in] track_i Track coords in fast dimension (pixel space)
    @param[in] track_j Track coords in slow dimension (pixel space)
@@ -2390,7 +2390,7 @@ void lowerenv(float *elevation, uint8_t *knickpoints, float *distance,
 */
 TOPOTOOLBOX_API
 void swath_frontier_distance_map(
-    float *best_abs, float *signed_dist, ptrdiff_t *nearest_seg,
+    float *best_abs, float *signed_dist, ptrdiff_t *nearest_point,
     const float *track_i, const float *track_j, ptrdiff_t n_track_points,
     ptrdiff_t dims[2], float max_dist_px, const float *dem,
     const int8_t *mask);
@@ -2421,7 +2421,7 @@ void swath_boundary_dijkstra(float *dist_out, const int8_t *swath_mask,
    @param[in]  dist_neg  Negative-side boundary DT (pixel units, FLT_MAX=unvisited).
    @param[in]  best_abs  Absolute frontier distance (pixel units, FLT_MAX=outside).
    @param[in]  hw_px     Swath half-width in pixels.
-   @param[in]  nearest_seg  Nearest track segment index per pixel.
+   @param[in]  nearest_point  Nearest track point index per pixel.
    @param[in]  track_i, track_j  Track vertices in pixel space.
    @param[in]  n_track_points  Number of track vertices.
    @param[in]  dims  Grid dimensions [fast, slow].
@@ -2432,7 +2432,7 @@ TOPOTOOLBOX_API
 ptrdiff_t voronoi_ridge_to_centreline(
     float *centre_line_i, float *centre_line_j, float *centre_width,
     const float *dist_pos, const float *dist_neg, const float *best_abs,
-    float hw_px, const ptrdiff_t *nearest_seg, const float *track_i,
+    float hw_px, const ptrdiff_t *nearest_point, const float *track_i,
     const float *track_j, ptrdiff_t n_track_points, ptrdiff_t dims[2],
     float cellsize);
 
@@ -2524,9 +2524,8 @@ void swath_transverse(float *bin_distances, float *bin_means,
    @param[in] n_points_regression Number of track points used for PCA
    regression to determine the local tangent direction at each point.
    Centred on the query point; clamped to track bounds. Minimum 2.
-   @param[in] use_segment_seeds 0 = BFS assignment seeded from rounded track
-   point positions; nonzero = Meijster exact EDT with sub-pixel segment
-   rasterization (more accurate for coarsely sampled tracks, same O(n) cost).
+   @param[in]  nearest_point    Per-pixel nearest track-point index, from
+   swath_frontier_distance_map. Required when binning_distance > 0.
    @param[in]  skip             Process every skip-th track point (1 = all).
                Only indices where index % skip == 0 produce output rows.
    @param[out] result_track_i   Kept track-point fast coords [n_result], or NULL
@@ -2543,7 +2542,7 @@ ptrdiff_t swath_longitudinal(
     const float *track_i, const float *track_j, ptrdiff_t n_track_points,
     const float *distance_from_track, ptrdiff_t dims[2], float cellsize,
     float half_width, float binning_distance, ptrdiff_t n_points_regression,
-    ptrdiff_t use_segment_seeds, ptrdiff_t skip, float *result_track_i,
+    const ptrdiff_t *nearest_point, ptrdiff_t skip, float *result_track_i,
     float *result_track_j);
 
 /**
@@ -2651,9 +2650,8 @@ ptrdiff_t swath_windowed_get_point_samples(
    If <= 0, gathers pixels along the orthogonal cross-section only.
    If > 0, gathers pixels within bounding box between edge orthogonals.
    @param[in] n_points_regression Number of track points for PCA regression
-   @param[in] use_segment_seeds 0 = seed EDT from track point positions only;
-   nonzero = rasterize track segments at sub-pixel spacing before seeding
-   (more accurate for coarsely sampled tracks, same O(n) cost)
+   @param[in] nearest_point Per-pixel nearest track-point index, from
+   swath_frontier_distance_map. Required when binning_distance > 0.
 
    @return Number of pixels written
  */
@@ -2663,7 +2661,7 @@ ptrdiff_t swath_get_point_pixels(
     const float *track_j, ptrdiff_t n_track_points, ptrdiff_t point_index,
     const float *distance_from_track, ptrdiff_t dims[2], float cellsize,
     float half_width, float binning_distance, ptrdiff_t n_points_regression,
-    ptrdiff_t use_segment_seeds);
+    const ptrdiff_t *nearest_point);
 
 /**
    @brief Rasterize a continuous path between ordered reference points.
