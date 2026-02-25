@@ -11,6 +11,7 @@ add_library(topotoolbox
   reconstruct.c
   priority_queue.c
   dijkstra.c
+  polyline.c
   stat_helper.c
   excesstopography.c
   graphflood/gf_utils.c

@@ -2361,20 +2361,6 @@ void lowerenv(float *elevation, uint8_t *knickpoints, float *distance,
               ptrdiff_t *ix, uint8_t *onenvelope, ptrdiff_t *source,
               ptrdiff_t *target, ptrdiff_t edge_count, ptrdiff_t node_count);
 
-/**
-   @brief Compute number of bins for swath profile
-
-   @details
-   Helper function to compute the number of bins needed for a swath
-   profile given the half-width and bin resolution.
-
-   @param[in] half_width Half-width of the swath in meters
-   @param[in] bin_resolution Spacing between bin centers in meters
-
-   @return Number of bins from -half_width to +half_width
- */
-TOPOTOOLBOX_API
-ptrdiff_t swath_compute_nbins(float half_width, float bin_resolution);
 
 /**
    @brief Frontier Dijkstra distance map — raw pixel-unit outputs
@@ -2492,7 +2478,7 @@ ptrdiff_t thin_rasterised_line_to_D8(float *centre_line_i,
    @param[in] dims Grid dimensions [fast, slow]
    @param[in] half_width Swath half-width in meters
    @param[in] bin_resolution Bin spacing in meters
-   @param[in] n_bins Number of bins (use swath_compute_nbins)
+   @param[in] n_bins Number of bins (= int(2*half_width/bin_resolution) + 1)
    @param[in] normalize If nonzero, normalize elevations to track elevation
  */
 TOPOTOOLBOX_API
