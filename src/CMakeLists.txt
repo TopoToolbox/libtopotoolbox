@@ -13,6 +13,7 @@ add_library(topotoolbox
   dijkstra.c
   polyline.c
   stat_helper.c
+  deque.c
   excesstopography.c
   graphflood/gf_utils.c
   graphflood/sfgraph.c

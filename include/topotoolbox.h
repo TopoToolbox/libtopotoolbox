@@ -2541,7 +2541,7 @@ ptrdiff_t swath_longitudinal(
     ptrdiff_t n_percentiles, float *point_percentiles, const float *dem,
     const float *track_i, const float *track_j, ptrdiff_t n_track_points,
     const float *distance_from_track, ptrdiff_t dims[2], float cellsize,
-    float half_width, float binning_distance, ptrdiff_t n_points_regression,
+    float half_width, float binning_distance,
     const ptrdiff_t *nearest_point, ptrdiff_t skip, float *result_track_i,
     float *result_track_j);
 
@@ -2660,7 +2660,7 @@ ptrdiff_t swath_get_point_pixels(
     ptrdiff_t *pixels_i, ptrdiff_t *pixels_j, const float *track_i,
     const float *track_j, ptrdiff_t n_track_points, ptrdiff_t point_index,
     const float *distance_from_track, ptrdiff_t dims[2], float cellsize,
-    float half_width, float binning_distance, ptrdiff_t n_points_regression,
+    float half_width, float binning_distance,
     const ptrdiff_t *nearest_point);
 
 /**

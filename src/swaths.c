@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "deque.h"
 #include "dijkstra.h"
 #include "polyline.h"
 #include "stat_helper.h"
@@ -413,39 +414,29 @@ ptrdiff_t swath_longitudinal(
     const float *restrict track_i, const float *restrict track_j,
     ptrdiff_t n_track_points, const float *restrict distance_from_track,
     ptrdiff_t dims[2], float cellsize, float half_width, float binning_distance,
-    ptrdiff_t n_points_regression, const ptrdiff_t *restrict nearest_point,
+    const ptrdiff_t *restrict nearest_point,
     ptrdiff_t skip, float *result_track_i, float *result_track_j) {
   if (n_track_points < 2) return 0;
   ptrdiff_t effective_skip = (skip < 1) ? 1 : skip;
-
-  float hw_px = half_width / cellsize;
 
   int compute_percentiles =
       (point_medians != NULL || point_q1 != NULL || point_q3 != NULL ||
        (percentile_list != NULL && n_percentiles > 0 &&
         point_percentiles != NULL));
 
-  // Cumulative along-track distance (meters) — needed for binning_distance > 0
-  float *cum_dist = NULL;
-  if (binning_distance > 0.0f) {
-    cum_dist = (float *)malloc(n_track_points * sizeof(float));
-    cum_dist[0] = 0.0f;
-    for (ptrdiff_t k = 0; k < n_track_points - 1; k++) {
-      float di = track_i[k + 1] - track_i[k];
-      float dj = track_j[k + 1] - track_j[k];
-      cum_dist[k + 1] = cum_dist[k] + sqrtf(di * di + dj * dj) * cellsize;
-    }
+  // --- Step 1: cumulative along-track distance ---
+  // Used by the sliding window to decide which track-point blocks fall within
+  // ±binning_distance of the current output point.
+  float *cum_dist = (float *)malloc(n_track_points * sizeof(float));
+  cum_dist[0] = 0.0f;
+  for (ptrdiff_t k = 0; k < n_track_points - 1; k++) {
+    float di = track_i[k + 1] - track_i[k];
+    float dj = track_j[k + 1] - track_j[k];
+    cum_dist[k + 1] = cum_dist[k] + sqrtf(di * di + dj * dj) * cellsize;
   }
 
-  // Per-point accumulators — only needed for Case 1 (Bresenham cross-sections)
-  stats_accumulator *accumulators = NULL;
-  if (binning_distance <= 0.0f) {
-    accumulators =
-        (stats_accumulator *)calloc(n_track_points, sizeof(stats_accumulator));
-    for (ptrdiff_t k = 0; k < n_track_points; k++)
-      accumulator_init(&accumulators[k]);
-  }
-
+  // Percentile accumulators: one raw-value buffer per output track point.
+  // These are populated lazily during the sliding-window pass (Step 4).
   percentile_accumulator *p_accumulators = NULL;
   if (compute_percentiles) {
     p_accumulators = (percentile_accumulator *)calloc(
@@ -454,56 +445,27 @@ ptrdiff_t swath_longitudinal(
       percentile_accumulator_init(&p_accumulators[k], 64);
   }
 
-  if (binning_distance <= 0.0f) {
-    // --- Case 1: single cross-section via Bresenham (per track point) ---
-    ptrdiff_t bres_cap = (ptrdiff_t)(2.0f * hw_px) + 16;
-    ptrdiff_t *bres_i = (ptrdiff_t *)malloc(bres_cap * sizeof(ptrdiff_t));
-    ptrdiff_t *bres_j = (ptrdiff_t *)malloc(bres_cap * sizeof(ptrdiff_t));
-
-    for (ptrdiff_t pt = 0; pt < n_track_points; pt++) {
-      if (effective_skip > 1 && pt % effective_skip != 0) continue;
-      float tang_i, tang_j;
-      compute_local_tangent(track_i, track_j, n_track_points, pt,
-                            n_points_regression, &tang_i, &tang_j);
-      float orth_i = -tang_j;
-      float orth_j = tang_i;
-
-      ptrdiff_t ai = (ptrdiff_t)(track_i[pt] - orth_i * hw_px + 0.5f);
-      ptrdiff_t aj = (ptrdiff_t)(track_j[pt] - orth_j * hw_px + 0.5f);
-      ptrdiff_t bi = (ptrdiff_t)(track_i[pt] + orth_i * hw_px + 0.5f);
-      ptrdiff_t bj = (ptrdiff_t)(track_j[pt] + orth_j * hw_px + 0.5f);
-
-      ptrdiff_t n_bres = bresenham_d8(bres_i, bres_j, ai, aj, bi, bj, 0);
-
-      for (ptrdiff_t p = 0; p < n_bres; p++) {
-        ptrdiff_t pi = bres_i[p], pj = bres_j[p];
-        if (pi < 0 || pi >= dims[0] || pj < 0 || pj >= dims[1]) continue;
-        ptrdiff_t idx = pj * dims[0] + pi;
-        float dist_m = distance_from_track[idx];
-        if (isnan(dist_m)) continue;
-        if (fabsf(dist_m) > half_width) continue;
-        if (isnan(dem[idx])) continue;
-
-        accumulator_add(&accumulators[pt], dem[idx]);
-        if (compute_percentiles)
-          percentile_accumulator_add(&p_accumulators[pt], dem[idx]);
-      }
-    }
-    free(bres_i);
-    free(bres_j);
-  } else {
-    // --- Case 2: sliding window over pre-computed per-block stats ---
+  {
+    // --- Step 2: assign each DEM pixel to its nearest track point (block) ---
+    // nearest_point[idx] was precomputed by swath_frontier_distance_map.
+    // Here we accumulate per-block stats (sum, sum², count, min, max) for
+    // every pixel within half_width of the track.  The sliding window in
+    // Step 3 will aggregate these blocks into a ±binning_distance window.
     ptrdiff_t total = dims[0] * dims[1];
 
-    // Per-block precomputed stats
     stats_accumulator *blk_acc =
         (stats_accumulator *)calloc(n_track_points, sizeof(stats_accumulator));
     for (ptrdiff_t k = 0; k < n_track_points; k++)
       accumulator_init(&blk_acc[k]);
 
-    // CSR pixel lists (only needed for percentiles)
+    // For percentiles we also need to remember which pixel indices belong to
+    // each block, so we can replay them into the per-output-point percentile
+    // accumulator during the sliding-window pass.  We store them in a CSR
+    // (compressed sparse row) layout: pt_pixels[pt_offset[k]..pt_offset[k+1]]
+    // are the flat pixel indices assigned to block k.
     ptrdiff_t *pt_offset = NULL, *pt_pixels = NULL, *pt_fill_arr = NULL;
     if (compute_percentiles) {
+      // First pass: count pixels per block to size the CSR arrays.
       ptrdiff_t *cnt = (ptrdiff_t *)calloc(n_track_points, sizeof(ptrdiff_t));
       ptrdiff_t n_assigned = 0;
       for (ptrdiff_t idx = 0; idx < total; idx++) {
@@ -515,6 +477,7 @@ ptrdiff_t swath_longitudinal(
         cnt[a]++;
         n_assigned++;
       }
+      // Build CSR row-start offsets from counts.
       pt_offset = (ptrdiff_t *)malloc((n_track_points + 1) * sizeof(ptrdiff_t));
       pt_offset[0] = 0;
       for (ptrdiff_t k = 0; k < n_track_points; k++)
@@ -522,7 +485,7 @@ ptrdiff_t swath_longitudinal(
       free(cnt);
       pt_pixels = (ptrdiff_t *)malloc(n_assigned * sizeof(ptrdiff_t));
       pt_fill_arr = (ptrdiff_t *)calloc(n_track_points, sizeof(ptrdiff_t));
-      // Fill block stats and CSR in one pass
+      // Second pass: fill block stats and CSR pixel list together.
       for (ptrdiff_t idx = 0; idx < total; idx++) {
         ptrdiff_t a = nearest_point[idx];
         if (a < 0) continue;
@@ -534,7 +497,7 @@ ptrdiff_t swath_longitudinal(
         pt_fill_arr[a]++;
       }
     } else {
-      // Block stats only
+      // No percentiles: single pass, block stats only.
       for (ptrdiff_t idx = 0; idx < total; idx++) {
         ptrdiff_t a = nearest_point[idx];
         if (a < 0) continue;
@@ -545,17 +508,27 @@ ptrdiff_t swath_longitudinal(
       }
     }
 
-    // Monotonic deques for sliding window min/max
-    ptrdiff_t *min_dq = (ptrdiff_t *)malloc(n_track_points * sizeof(ptrdiff_t));
-    ptrdiff_t *max_dq = (ptrdiff_t *)malloc(n_track_points * sizeof(ptrdiff_t));
-    ptrdiff_t min_head = 0, min_tail = -1;
-    ptrdiff_t max_head = 0, max_tail = -1;
+    // --- Step 3: sliding window along the track ---
+    // The window [lo..hi] is a contiguous range of block indices such that
+    // both cum_dist[lo] and cum_dist[hi] are within binning_distance of
+    // cum_dist[pt].  As pt advances, lo and hi move monotonically right,
+    // giving O(n) total work.
+    //
+    // sum/sum² are maintained incrementally (add on right, subtract on left).
+    // min/max use MonoDeque (Lemire) for O(1) amortised per step.
+    ptrdiff_t *min_idx = (ptrdiff_t *)malloc(n_track_points * sizeof(ptrdiff_t));
+    ptrdiff_t *max_idx = (ptrdiff_t *)malloc(n_track_points * sizeof(ptrdiff_t));
+    float     *min_val = (float *)malloc(n_track_points * sizeof(float));
+    float     *max_val = (float *)malloc(n_track_points * sizeof(float));
+    MonoDeque min_dq, max_dq;
+    mdeque_init(&min_dq, min_idx, min_val);
+    mdeque_init(&max_dq, max_idx, max_val);
     double win_sum = 0.0, win_sum2 = 0.0;
     ptrdiff_t win_count = 0;
     ptrdiff_t lo = 0, hi = -1;
 
     for (ptrdiff_t pt = 0; pt < n_track_points; pt++) {
-      // Expand right: add blocks within binning_distance ahead of pt
+      // Expand right: absorb blocks whose distance from pt is ≤ binning_distance.
       while (hi < n_track_points - 1 &&
              cum_dist[hi + 1] - cum_dist[pt] <= binning_distance) {
         hi++;
@@ -563,40 +536,31 @@ ptrdiff_t swath_longitudinal(
         win_sum2 += blk_acc[hi].sum_sq;
         win_count += blk_acc[hi].count;
         if (blk_acc[hi].count > 0) {
-          while (min_head <= min_tail &&
-                 blk_acc[min_dq[min_tail]].min_val >= blk_acc[hi].min_val)
-            min_tail--;
-          min_dq[++min_tail] = hi;
-          while (max_head <= max_tail &&
-                 blk_acc[max_dq[max_tail]].max_val <= blk_acc[hi].max_val)
-            max_tail--;
-          max_dq[++max_tail] = hi;
+          mdeque_push_min(&min_dq, hi, blk_acc[hi].min_val);
+          mdeque_push_max(&max_dq, hi, blk_acc[hi].max_val);
         }
       }
-      // Shrink left: remove blocks outside binning_distance behind pt
+      // Shrink left: evict blocks that have fallen more than binning_distance behind pt.
       while (lo <= hi && cum_dist[pt] - cum_dist[lo] > binning_distance) {
         win_sum -= blk_acc[lo].sum;
         win_sum2 -= blk_acc[lo].sum_sq;
         win_count -= blk_acc[lo].count;
-        if (min_head <= min_tail && min_dq[min_head] == lo) min_head++;
-        if (max_head <= max_tail && max_dq[max_head] == lo) max_head++;
+        mdeque_evict(&min_dq, lo);
+        mdeque_evict(&max_dq, lo);
         lo++;
       }
-      // Write output only for kept track points
+      // Write output for kept track points (honouring skip).
       if (effective_skip <= 1 || pt % effective_skip == 0) {
         ptrdiff_t out = pt / effective_skip;
         if (win_count > 0) {
           double mean = win_sum / (double)win_count;
+          // Var = E[x²] - E[x]² (online formula, stable for float precision here).
           double var = win_sum2 / (double)win_count - mean * mean;
           point_counts[out] = win_count;
           point_means[out] = (float)mean;
           point_stddevs[out] = (float)sqrt(var > 0.0 ? var : 0.0);
-          point_mins[out] = (min_head <= min_tail)
-                                ? blk_acc[min_dq[min_head]].min_val
-                                : NAN;
-          point_maxs[out] = (max_head <= max_tail)
-                                ? blk_acc[max_dq[max_head]].max_val
-                                : NAN;
+          point_mins[out] = !mdeque_empty(&min_dq) ? mdeque_front_val(&min_dq) : NAN;
+          point_maxs[out] = !mdeque_empty(&max_dq) ? mdeque_front_val(&max_dq) : NAN;
         } else {
           point_counts[out] = 0;
           point_means[out] = NAN;
@@ -604,8 +568,13 @@ ptrdiff_t swath_longitudinal(
           point_mins[out] = NAN;
           point_maxs[out] = NAN;
         }
+        if (result_track_i) result_track_i[out] = track_i[pt];
+        if (result_track_j) result_track_j[out] = track_j[pt];
       }
-      // Percentile accumulation for this window
+      // For percentiles: replay all raw pixel values in the current window
+      // [lo..hi] into this output point's percentile accumulator.
+      // This is more expensive than mean/std (O(pixels in window) per point)
+      // but unavoidable since percentiles don't decompose additively.
       if (compute_percentiles &&
           (effective_skip <= 1 || pt % effective_skip == 0)) {
         for (ptrdiff_t k = lo; k <= hi; k++)
@@ -615,8 +584,10 @@ ptrdiff_t swath_longitudinal(
     }
 
     free(blk_acc);
-    free(min_dq);
-    free(max_dq);
+    free(min_idx);
+    free(max_idx);
+    free(min_val);
+    free(max_val);
     if (compute_percentiles) {
       free(pt_offset);
       free(pt_pixels);
@@ -624,26 +595,13 @@ ptrdiff_t swath_longitudinal(
     }
   }
 
-  // Finalize statistics
-  ptrdiff_t n_result = 0;
-  for (ptrdiff_t k = 0; k < n_track_points; k++) {
-    if (effective_skip > 1 && k % effective_skip != 0) continue;
-    ptrdiff_t out = k / effective_skip;
-    n_result = out + 1;
-
-    if (binning_distance <= 0.0f) {
-      point_means[out] = accumulator_mean(&accumulators[k]);
-      point_stddevs[out] = accumulator_stddev(&accumulators[k]);
-      point_mins[out] =
-          accumulators[k].count > 0 ? accumulators[k].min_val : NAN;
-      point_maxs[out] =
-          accumulators[k].count > 0 ? accumulators[k].max_val : NAN;
-      point_counts[out] = accumulators[k].count;
-    }
-
-    if (compute_percentiles) {
+  // --- Step 4: percentile finalization ---
+  // Sort each output point's raw-value buffer and query the requested ranks.
+  if (compute_percentiles) {
+    for (ptrdiff_t k = 0; k < n_track_points; k++) {
+      if (effective_skip > 1 && k % effective_skip != 0) continue;
+      ptrdiff_t out = k / effective_skip;
       percentile_accumulator_sort(&p_accumulators[k]);
-
       if (point_medians != NULL)
         point_medians[out] =
             percentile_accumulator_get(&p_accumulators[k], 50.0f);
@@ -651,29 +609,27 @@ ptrdiff_t swath_longitudinal(
         point_q1[out] = percentile_accumulator_get(&p_accumulators[k], 25.0f);
       if (point_q3 != NULL)
         point_q3[out] = percentile_accumulator_get(&p_accumulators[k], 75.0f);
-
       if (percentile_list != NULL && n_percentiles > 0 &&
           point_percentiles != NULL) {
-        for (ptrdiff_t p = 0; p < n_percentiles; p++) {
+        for (ptrdiff_t p = 0; p < n_percentiles; p++)
           point_percentiles[out * n_percentiles + p] =
               percentile_accumulator_get(&p_accumulators[k],
                                          (float)percentile_list[p]);
-        }
       }
     }
-
-    if (result_track_i) result_track_i[out] = track_i[k];
-    if (result_track_j) result_track_j[out] = track_j[k];
-  }
-
-  // Cleanup
-  if (cum_dist) free(cum_dist);
-  if (accumulators) free(accumulators);
-  if (compute_percentiles) {
     for (ptrdiff_t k = 0; k < n_track_points; k++)
       percentile_accumulator_free(&p_accumulators[k]);
     free(p_accumulators);
   }
+
+  // Count written output points (= ceil(n_track_points / effective_skip)).
+  ptrdiff_t n_result = 0;
+  for (ptrdiff_t k = 0; k < n_track_points; k++) {
+    if (effective_skip > 1 && k % effective_skip != 0) continue;
+    n_result = k / effective_skip + 1;
+  }
+
+  free(cum_dist);
   return n_result;
 }
 
@@ -910,83 +866,41 @@ ptrdiff_t swath_get_point_pixels(
     ptrdiff_t n_track_points, ptrdiff_t point_index,
     const float *restrict distance_from_track, ptrdiff_t dims[2],
     float cellsize, float half_width, float binning_distance,
-    ptrdiff_t n_points_regression, const ptrdiff_t *restrict nearest_point) {
+    const ptrdiff_t *restrict nearest_point) {
   if (n_track_points < 2) return 0;
   if (point_index < 0 || point_index >= n_track_points) return 0;
 
-  float hw_px = half_width / cellsize;
   ptrdiff_t n_pixels = 0;
 
-  float tang_i, tang_j;
-  compute_local_tangent(track_i, track_j, n_track_points, point_index,
-                        n_points_regression, &tang_i, &tang_j);
-  float orth_i = -tang_j;
-  float orth_j = tang_i;
+  float *cum_dist = (float *)malloc(n_track_points * sizeof(float));
+  cum_dist[0] = 0.0f;
+  for (ptrdiff_t k = 0; k < n_track_points - 1; k++) {
+    float di = track_i[k + 1] - track_i[k];
+    float dj = track_j[k + 1] - track_j[k];
+    cum_dist[k + 1] = cum_dist[k] + sqrtf(di * di + dj * dj) * cellsize;
+  }
 
-  if (binning_distance <= 0.0f) {
-    // --- Case 1: single cross-section via Bresenham ---
-    ptrdiff_t ai = (ptrdiff_t)(track_i[point_index] - orth_i * hw_px + 0.5f);
-    ptrdiff_t aj = (ptrdiff_t)(track_j[point_index] - orth_j * hw_px + 0.5f);
-    ptrdiff_t bi = (ptrdiff_t)(track_i[point_index] + orth_i * hw_px + 0.5f);
-    ptrdiff_t bj = (ptrdiff_t)(track_j[point_index] + orth_j * hw_px + 0.5f);
+  ptrdiff_t pt_lo = point_index, pt_hi = point_index;
+  while (pt_lo > 0 &&
+         cum_dist[point_index] - cum_dist[pt_lo - 1] <= binning_distance)
+    pt_lo--;
+  while (pt_hi < n_track_points - 1 &&
+         cum_dist[pt_hi + 1] - cum_dist[point_index] <= binning_distance)
+    pt_hi++;
 
-    ptrdiff_t bres_cap = (ptrdiff_t)(2.0f * hw_px) + 16;
-    ptrdiff_t *bres_i = (ptrdiff_t *)malloc(bres_cap * sizeof(ptrdiff_t));
-    ptrdiff_t *bres_j = (ptrdiff_t *)malloc(bres_cap * sizeof(ptrdiff_t));
-
-    ptrdiff_t n_bres = bresenham_d8(bres_i, bres_j, ai, aj, bi, bj, 0);
-
-    for (ptrdiff_t p = 0; p < n_bres; p++) {
-      ptrdiff_t pi = bres_i[p], pj = bres_j[p];
-      if (pi < 0 || pi >= dims[0] || pj < 0 || pj >= dims[1]) continue;
+  for (ptrdiff_t pj = 0; pj < dims[1]; pj++) {
+    for (ptrdiff_t pi = 0; pi < dims[0]; pi++) {
       ptrdiff_t idx = pj * dims[0] + pi;
-      float dist_m = distance_from_track[idx];
-      if (isnan(dist_m)) continue;
-      if (fabsf(dist_m) > half_width) continue;
-
+      ptrdiff_t a = nearest_point[idx];
+      if (a < pt_lo || a > pt_hi) continue;
+      float d = distance_from_track[idx];
+      if (isnan(d) || fabsf(d) > half_width) continue;
       pixels_i[n_pixels] = pi;
       pixels_j[n_pixels] = pj;
       n_pixels++;
     }
-
-    free(bres_i);
-    free(bres_j);
-  } else {
-    // --- Case 2: nearest_point map + cumulative distance window ---
-
-    float *cum_dist = (float *)malloc(n_track_points * sizeof(float));
-    cum_dist[0] = 0.0f;
-    for (ptrdiff_t k = 0; k < n_track_points - 1; k++) {
-      float di = track_i[k + 1] - track_i[k];
-      float dj = track_j[k + 1] - track_j[k];
-      cum_dist[k + 1] = cum_dist[k] + sqrtf(di * di + dj * dj) * cellsize;
-    }
-
-    ptrdiff_t pt_lo = point_index, pt_hi = point_index;
-    while (pt_lo > 0 &&
-           cum_dist[point_index] - cum_dist[pt_lo - 1] <= binning_distance)
-      pt_lo--;
-    while (pt_hi < n_track_points - 1 &&
-           cum_dist[pt_hi + 1] - cum_dist[point_index] <= binning_distance)
-      pt_hi++;
-
-    // Gather pixels whose nearest track point falls in [pt_lo..pt_hi]
-    for (ptrdiff_t pj = 0; pj < dims[1]; pj++) {
-      for (ptrdiff_t pi = 0; pi < dims[0]; pi++) {
-        ptrdiff_t idx = pj * dims[0] + pi;
-        ptrdiff_t a = nearest_point[idx];
-        if (a < pt_lo || a > pt_hi) continue;
-        float d = distance_from_track[idx];
-        if (isnan(d) || fabsf(d) > half_width) continue;
-
-        pixels_i[n_pixels] = pi;
-        pixels_j[n_pixels] = pj;
-        n_pixels++;
-      }
-    }
-
-    free(cum_dist);
   }
 
+  free(cum_dist);
   return n_pixels;
 }

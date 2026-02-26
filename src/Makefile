@@ -140,6 +140,30 @@ topotoolbox/fast:
 	cd /home/bgailleton/code/ttb/libtopotoolbox && $(MAKE) $(MAKESILENT) -f src/CMakeFiles/topotoolbox.dir/build.make src/CMakeFiles/topotoolbox.dir/build
 .PHONY : topotoolbox/fast
 
+deque.o: deque.c.o
+.PHONY : deque.o
+
+# target to build an object file
+deque.c.o:
+	cd /home/bgailleton/code/ttb/libtopotoolbox && $(MAKE) $(MAKESILENT) -f src/CMakeFiles/topotoolbox.dir/build.make src/CMakeFiles/topotoolbox.dir/deque.c.o
+.PHONY : deque.c.o
+
+deque.i: deque.c.i
+.PHONY : deque.i
+
+# target to preprocess a source file
+deque.c.i:
+	cd /home/bgailleton/code/ttb/libtopotoolbox && $(MAKE) $(MAKESILENT) -f src/CMakeFiles/topotoolbox.dir/build.make src/CMakeFiles/topotoolbox.dir/deque.c.i
+.PHONY : deque.c.i
+
+deque.s: deque.c.s
+.PHONY : deque.s
+
+# target to generate assembly for a file
+deque.c.s:
+	cd /home/bgailleton/code/ttb/libtopotoolbox && $(MAKE) $(MAKESILENT) -f src/CMakeFiles/topotoolbox.dir/build.make src/CMakeFiles/topotoolbox.dir/deque.c.s
+.PHONY : deque.c.s
+
 dijkstra.o: dijkstra.c.o
 .PHONY : dijkstra.o
 
@@ -726,6 +750,9 @@ help:
 	@echo "... rebuild_cache"
 	@echo "... test"
 	@echo "... topotoolbox"
+	@echo "... deque.o"
+	@echo "... deque.i"
+	@echo "... deque.s"
 	@echo "... dijkstra.o"
 	@echo "... dijkstra.i"
 	@echo "... dijkstra.s"
