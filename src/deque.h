@@ -16,24 +16,24 @@ typedef struct {
     ptrdiff_t *idx;
     float     *val;
     ptrdiff_t  head, tail;
-} MonoDeque;
+} SlidingExtremaDQ;
 
 // Initialise with caller-provided arrays of length >= capacity.
-void mdeque_init(MonoDeque *dq, ptrdiff_t *idx_buf, float *val_buf);
+void sedq_init(SlidingExtremaDQ *dq, ptrdiff_t *idx_buf, float *val_buf);
 
 // Push (i, v): evict dominated tail entries, then append.
-// Use push_min for a min-deque (front = minimum of window).
-void mdeque_push_min(MonoDeque *dq, ptrdiff_t i, float v);
-// Use push_max for a max-deque (front = maximum of window).
-void mdeque_push_max(MonoDeque *dq, ptrdiff_t i, float v);
+// Use sedq_push_min for a min-deque (front = minimum of window).
+void sedq_push_min(SlidingExtremaDQ *dq, ptrdiff_t i, float v);
+// Use sedq_push_max for a max-deque (front = maximum of window).
+void sedq_push_max(SlidingExtremaDQ *dq, ptrdiff_t i, float v);
 
 // Evict the front entry if its index equals i (call when block i leaves window).
-void mdeque_evict(MonoDeque *dq, ptrdiff_t i);
+void sedq_evict(SlidingExtremaDQ *dq, ptrdiff_t i);
 
-// Front index / value.  Only call when !mdeque_empty().
-ptrdiff_t mdeque_front_idx(const MonoDeque *dq);
-float     mdeque_front_val(const MonoDeque *dq);
+// Front index / value.  Only call when !sedq_empty().
+ptrdiff_t sedq_front_idx(const SlidingExtremaDQ *dq);
+float     sedq_front_val(const SlidingExtremaDQ *dq);
 
-int mdeque_empty(const MonoDeque *dq);
+int sedq_empty(const SlidingExtremaDQ *dq);
 
 #endif // DEQUE_H

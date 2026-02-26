@@ -515,14 +515,14 @@ ptrdiff_t swath_longitudinal(
     // giving O(n) total work.
     //
     // sum/sum² are maintained incrementally (add on right, subtract on left).
-    // min/max use MonoDeque (Lemire) for O(1) amortised per step.
+    // min/max use SlidingExtremaDQ (Lemire) for O(1) amortised per step.
     ptrdiff_t *min_idx = (ptrdiff_t *)malloc(n_track_points * sizeof(ptrdiff_t));
     ptrdiff_t *max_idx = (ptrdiff_t *)malloc(n_track_points * sizeof(ptrdiff_t));
     float     *min_val = (float *)malloc(n_track_points * sizeof(float));
     float     *max_val = (float *)malloc(n_track_points * sizeof(float));
-    MonoDeque min_dq, max_dq;
-    mdeque_init(&min_dq, min_idx, min_val);
-    mdeque_init(&max_dq, max_idx, max_val);
+    SlidingExtremaDQ min_dq, max_dq;
+    sedq_init(&min_dq, min_idx, min_val);
+    sedq_init(&max_dq, max_idx, max_val);
     double win_sum = 0.0, win_sum2 = 0.0;
     ptrdiff_t win_count = 0;
     ptrdiff_t lo = 0, hi = -1;
@@ -536,8 +536,8 @@ ptrdiff_t swath_longitudinal(
         win_sum2 += blk_acc[hi].sum_sq;
         win_count += blk_acc[hi].count;
         if (blk_acc[hi].count > 0) {
-          mdeque_push_min(&min_dq, hi, blk_acc[hi].min_val);
-          mdeque_push_max(&max_dq, hi, blk_acc[hi].max_val);
+          sedq_push_min(&min_dq, hi, blk_acc[hi].min_val);
+          sedq_push_max(&max_dq, hi, blk_acc[hi].max_val);
         }
       }
       // Shrink left: evict blocks that have fallen more than binning_distance behind pt.
@@ -545,8 +545,8 @@ ptrdiff_t swath_longitudinal(
         win_sum -= blk_acc[lo].sum;
         win_sum2 -= blk_acc[lo].sum_sq;
         win_count -= blk_acc[lo].count;
-        mdeque_evict(&min_dq, lo);
-        mdeque_evict(&max_dq, lo);
+        sedq_evict(&min_dq, lo);
+        sedq_evict(&max_dq, lo);
         lo++;
       }
       // Write output for kept track points (honouring skip).
@@ -559,8 +559,8 @@ ptrdiff_t swath_longitudinal(
           point_counts[out] = win_count;
           point_means[out] = (float)mean;
           point_stddevs[out] = (float)sqrt(var > 0.0 ? var : 0.0);
-          point_mins[out] = !mdeque_empty(&min_dq) ? mdeque_front_val(&min_dq) : NAN;
-          point_maxs[out] = !mdeque_empty(&max_dq) ? mdeque_front_val(&max_dq) : NAN;
+          point_mins[out] = !sedq_empty(&min_dq) ? sedq_front_val(&min_dq) : NAN;
+          point_maxs[out] = !sedq_empty(&max_dq) ? sedq_front_val(&max_dq) : NAN;
         } else {
           point_counts[out] = 0;
           point_means[out] = NAN;
