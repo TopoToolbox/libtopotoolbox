@@ -269,7 +269,7 @@ ptrdiff_t swath_longitudinal(
     const float *restrict track_i, const float *restrict track_j,
     ptrdiff_t n_track_points, const float *restrict distance_from_track,
     ptrdiff_t dims[2], float cellsize, float half_width, float binning_distance,
-    const ptrdiff_t *restrict nearest_point,
+    const ptrdiff_t *restrict nearest_point, const float *restrict cum_dist,
     ptrdiff_t skip, float *result_track_i, float *result_track_j) {
   if (n_track_points < 2) return 0;
   ptrdiff_t effective_skip = (skip < 1) ? 1 : skip;
@@ -280,15 +280,8 @@ ptrdiff_t swath_longitudinal(
         point_percentiles != NULL));
 
   // --- Step 1: cumulative along-track distance ---
-  // Used by the sliding window to decide which track-point blocks fall within
-  // ±binning_distance of the current output point.
-  float *cum_dist = (float *)malloc(n_track_points * sizeof(float));
-  cum_dist[0] = 0.0f;
-  for (ptrdiff_t k = 0; k < n_track_points - 1; k++) {
-    float di = track_i[k + 1] - track_i[k];
-    float dj = track_j[k + 1] - track_j[k];
-    cum_dist[k + 1] = cum_dist[k] + sqrtf(di * di + dj * dj) * cellsize;
-  }
+  // Caller-supplied (size n_track_points). cum_dist[k] = arc-length in meters
+  // from track point 0 to track point k.
 
   // Percentile accumulators: one raw-value buffer per output track point.
   // These are populated lazily during the sliding-window pass (Step 4).
@@ -484,225 +477,10 @@ ptrdiff_t swath_longitudinal(
     n_result = k / effective_skip + 1;
   }
 
-  free(cum_dist);
   return n_result;
 }
 
-// ============================================================================
-// Windowed longitudinal swath — oriented rectangle, all interior pixels
-// ============================================================================
-//
-// For each (kept) track point:
-//   1. Compute local PCA tangent (ti, tj); orthogonal = (-tj, ti).
-//   2. Define rectangle: ±binning_distance along track, ±half_width orthogonal.
-//   3. Scan the axis-aligned bounding box; accept pixels satisfying both
-//      |Δ·tang| ≤ bd_px  AND  |Δ·orth| ≤ hw_px.
-//   4. Pass 1: accumulate mean/std/min/max/count.
-//   5. Pass 2 (if percentiles requested): 2048-bin histogram over [vmin, vmax],
-//      queries resolved by rank scan.
-//
-// No pre-computed distance map required.  Independent of swath_longitudinal.
 
-TOPOTOOLBOX_API
-ptrdiff_t swath_longitudinal_windowed(
-    float *point_means, float *point_stddevs, float *point_mins,
-    float *point_maxs, ptrdiff_t *point_counts, float *point_medians,
-    float *point_q1, float *point_q3, const int *percentile_list,
-    ptrdiff_t n_percentiles, float *point_percentiles, const float *dem,
-    const float *track_i, const float *track_j, ptrdiff_t n_track_points,
-    ptrdiff_t dims[2], float cellsize, float half_width, float binning_distance,
-    ptrdiff_t n_points_regression, ptrdiff_t skip, float *result_track_i,
-    float *result_track_j) {
-  if (n_track_points < 2) return 0;
-  ptrdiff_t effective_skip = (skip < 1) ? 1 : skip;
-
-  ptrdiff_t nrows = dims[0], ncols = dims[1];
-  float hw_px = half_width / cellsize;
-  float bd_px = binning_distance / cellsize;
-  static const int slw_n_bins = 2048;
-
-  int compute_percentiles =
-      (point_medians != NULL || point_q1 != NULL || point_q3 != NULL ||
-       (percentile_list != NULL && n_percentiles > 0 &&
-        point_percentiles != NULL));
-
-  ptrdiff_t *hist = compute_percentiles
-                        ? (ptrdiff_t *)calloc(slw_n_bins, sizeof(ptrdiff_t))
-                        : NULL;
-
-  ptrdiff_t n_result = 0;
-  for (ptrdiff_t pt = 0; pt < n_track_points; pt++) {
-    if (effective_skip > 1 && pt % effective_skip != 0) continue;
-    ptrdiff_t out = pt / effective_skip;
-    float ti, tj;
-    compute_local_tangent(track_i, track_j, n_track_points, pt,
-                          n_points_regression, &ti, &tj);
-    float oi = -tj, oj = ti;  // orthogonal direction
-    float ci = track_i[pt], cj = track_j[pt];
-
-    // Axis-aligned bounding box of the oriented rectangle
-    float R = hw_px + bd_px;
-    ptrdiff_t pi_lo = (ptrdiff_t)(ci - R);
-    if (pi_lo < 0) pi_lo = 0;
-    ptrdiff_t pi_hi = (ptrdiff_t)(ci + R) + 1;
-    if (pi_hi >= nrows) pi_hi = nrows - 1;
-    ptrdiff_t pj_lo = (ptrdiff_t)(cj - R);
-    if (pj_lo < 0) pj_lo = 0;
-    ptrdiff_t pj_hi = (ptrdiff_t)(cj + R) + 1;
-    if (pj_hi >= ncols) pj_hi = ncols - 1;
-
-    // Pass 1: mean / std / min / max / count
-    double sum = 0.0, sum2 = 0.0;
-    ptrdiff_t count = 0;
-    float vmin = FLT_MAX, vmax = -FLT_MAX;
-
-    for (ptrdiff_t pj = pj_lo; pj <= pj_hi; pj++) {
-      for (ptrdiff_t pi = pi_lo; pi <= pi_hi; pi++) {
-        float di = (float)pi - ci, dj = (float)pj - cj;
-        if (fabsf(di * ti + dj * tj) > bd_px) continue;  // along-track
-        if (fabsf(di * oi + dj * oj) > hw_px) continue;  // orthogonal
-        float v = dem[pj * nrows + pi];
-        if (isnan(v)) continue;
-        sum += (double)v;
-        sum2 += (double)v * (double)v;
-        count++;
-        if (v < vmin) vmin = v;
-        if (v > vmax) vmax = v;
-      }
-    }
-
-    if (count > 0) {
-      double mean = sum / (double)count;
-      double var = sum2 / (double)count - mean * mean;
-      point_counts[out] = count;
-      point_means[out] = (float)mean;
-      point_stddevs[out] = (float)sqrt(var > 0.0 ? var : 0.0);
-      point_mins[out] = vmin;
-      point_maxs[out] = vmax;
-    } else {
-      point_counts[out] = 0;
-      point_means[out] = NAN;
-      point_stddevs[out] = NAN;
-      point_mins[out] = NAN;
-      point_maxs[out] = NAN;
-    }
-
-    // Pass 2 (percentiles): histogram over window pixels
-    if (compute_percentiles) {
-      if (count <= 0) {
-        if (point_medians) point_medians[out] = NAN;
-        if (point_q1) point_q1[out] = NAN;
-        if (point_q3) point_q3[out] = NAN;
-        if (percentile_list && n_percentiles > 0 && point_percentiles)
-          for (ptrdiff_t p = 0; p < n_percentiles; p++)
-            point_percentiles[out * n_percentiles + p] = NAN;
-      } else if (vmax <= vmin) {
-        if (point_medians) point_medians[out] = vmin;
-        if (point_q1) point_q1[out] = vmin;
-        if (point_q3) point_q3[out] = vmin;
-        if (percentile_list && n_percentiles > 0 && point_percentiles)
-          for (ptrdiff_t p = 0; p < n_percentiles; p++)
-            point_percentiles[out * n_percentiles + p] = vmin;
-      } else {
-        float bw = (vmax - vmin) / (float)slw_n_bins;
-
-        memset(hist, 0, slw_n_bins * sizeof(ptrdiff_t));
-
-        for (ptrdiff_t pj = pj_lo; pj <= pj_hi; pj++) {
-          for (ptrdiff_t pi = pi_lo; pi <= pi_hi; pi++) {
-            float di = (float)pi - ci, dj = (float)pj - cj;
-            if (fabsf(di * ti + dj * tj) > bd_px) continue;
-            if (fabsf(di * oi + dj * oj) > hw_px) continue;
-            float v = dem[pj * nrows + pi];
-            if (isnan(v)) continue;
-            int b = (int)((v - vmin) / bw);
-            if (b < 0) b = 0;
-            if (b >= slw_n_bins) b = slw_n_bins - 1;
-            hist[b]++;
-          }
-        }
-
-#define HPCT(pval, dst)                                              \
-  do {                                                               \
-    ptrdiff_t _t = (ptrdiff_t)ceilf((pval) / 100.0f * (float)count); \
-    _t = (_t < 1) ? 1 : (_t > count ? count : _t);                   \
-    ptrdiff_t _c = 0;                                                \
-    (dst) = vmax;                                                    \
-    for (ptrdiff_t _b = 0; _b < slw_n_bins; _b++) {                  \
-      _c += hist[_b];                                                \
-      if (_c >= _t) {                                                \
-        (dst) = vmin + ((float)_b + 0.5f) * bw;                      \
-        break;                                                       \
-      }                                                              \
-    }                                                                \
-  } while (0)
-
-        if (point_medians) HPCT(50.0f, point_medians[out]);
-        if (point_q1) HPCT(25.0f, point_q1[out]);
-        if (point_q3) HPCT(75.0f, point_q3[out]);
-        if (percentile_list && n_percentiles > 0 && point_percentiles)
-          for (ptrdiff_t p = 0; p < n_percentiles; p++)
-            HPCT((float)percentile_list[p],
-                 point_percentiles[out * n_percentiles + p]);
-
-#undef HPCT
-      }
-    }
-
-    if (result_track_i) result_track_i[out] = track_i[pt];
-    if (result_track_j) result_track_j[out] = track_j[pt];
-    n_result = out + 1;
-  }
-
-  if (hist) free(hist);
-  return n_result;
-}
-
-// Returns integer pixel coordinates of all pixels inside the oriented rectangle
-// for a single track point.  Mirrors swath_longitudinal_windowed exactly.
-// Safe upper bound for output arrays: dims[0] * dims[1].
-TOPOTOOLBOX_API
-ptrdiff_t swath_windowed_get_point_samples(
-    ptrdiff_t *pixels_i, ptrdiff_t *pixels_j, const float *track_i,
-    const float *track_j, ptrdiff_t n_track_points, ptrdiff_t point_index,
-    ptrdiff_t dims[2], float cellsize, float half_width, float binning_distance,
-    ptrdiff_t n_points_regression) {
-  if (n_track_points < 2) return 0;
-  if (point_index < 0 || point_index >= n_track_points) return 0;
-
-  ptrdiff_t nrows = dims[0], ncols = dims[1];
-  float hw_px = half_width / cellsize;
-  float bd_px = binning_distance / cellsize;
-
-  float ti, tj;
-  compute_local_tangent(track_i, track_j, n_track_points, point_index,
-                        n_points_regression, &ti, &tj);
-  float oi = -tj, oj = ti;
-  float ci = track_i[point_index], cj = track_j[point_index];
-
-  float R = hw_px + bd_px;
-  ptrdiff_t pi_lo = (ptrdiff_t)(ci - R);
-  if (pi_lo < 0) pi_lo = 0;
-  ptrdiff_t pi_hi = (ptrdiff_t)(ci + R) + 1;
-  if (pi_hi >= nrows) pi_hi = nrows - 1;
-  ptrdiff_t pj_lo = (ptrdiff_t)(cj - R);
-  if (pj_lo < 0) pj_lo = 0;
-  ptrdiff_t pj_hi = (ptrdiff_t)(cj + R) + 1;
-  if (pj_hi >= ncols) pj_hi = ncols - 1;
-
-  ptrdiff_t n_out = 0;
-  for (ptrdiff_t pj = pj_lo; pj <= pj_hi; pj++) {
-    for (ptrdiff_t pi = pi_lo; pi <= pi_hi; pi++) {
-      float di = (float)pi - ci, dj = (float)pj - cj;
-      if (fabsf(di * ti + dj * tj) > bd_px) continue;
-      if (fabsf(di * oi + dj * oj) > hw_px) continue;
-      pixels_i[n_out] = pi;
-      pixels_j[n_out] = pj;
-      n_out++;
-    }
-  }
-  return n_out;
-}
 
 // ============================================================================
 // Per-point pixel retrieval — mirrors swath_longitudinal (vanilla)
@@ -721,19 +499,12 @@ ptrdiff_t swath_get_point_pixels(
     ptrdiff_t n_track_points, ptrdiff_t point_index,
     const float *restrict distance_from_track, ptrdiff_t dims[2],
     float cellsize, float half_width, float binning_distance,
-    const ptrdiff_t *restrict nearest_point) {
+    const ptrdiff_t *restrict nearest_point,
+    const float *restrict cum_dist) {
   if (n_track_points < 2) return 0;
   if (point_index < 0 || point_index >= n_track_points) return 0;
 
   ptrdiff_t n_pixels = 0;
-
-  float *cum_dist = (float *)malloc(n_track_points * sizeof(float));
-  cum_dist[0] = 0.0f;
-  for (ptrdiff_t k = 0; k < n_track_points - 1; k++) {
-    float di = track_i[k + 1] - track_i[k];
-    float dj = track_j[k + 1] - track_j[k];
-    cum_dist[k + 1] = cum_dist[k] + sqrtf(di * di + dj * dj) * cellsize;
-  }
 
   ptrdiff_t pt_lo = point_index, pt_hi = point_index;
   while (pt_lo > 0 &&
@@ -756,6 +527,5 @@ ptrdiff_t swath_get_point_pixels(
     }
   }
 
-  free(cum_dist);
   return n_pixels;
 }

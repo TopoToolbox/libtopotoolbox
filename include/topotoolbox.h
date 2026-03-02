@@ -2554,92 +2554,10 @@ ptrdiff_t swath_longitudinal(
     const float *track_i, const float *track_j, ptrdiff_t n_track_points,
     const float *distance_from_track, ptrdiff_t dims[2], float cellsize,
     float half_width, float binning_distance,
-    const ptrdiff_t *nearest_point, ptrdiff_t skip, float *result_track_i,
+    const ptrdiff_t *nearest_point, const float *cum_dist,
+    ptrdiff_t skip, float *result_track_i,
     float *result_track_j);
 
-/**
-   @brief Longitudinal swath profile via bilinear orthogonal sampling and
-   sliding-window statistics.
-
-   @details
-   For each track point computes a local tangent via PCA, defines an oriented
-   rectangle of half-width half_width (orthogonal to track) and half-length
-   binning_distance (along track), then gathers every DEM pixel whose centre
-   falls inside that rectangle. No pre-computed distance map required.
-
-   Percentiles use a per-point 2048-bin histogram (two passes over the window).
-
-   @param[out] point_means    Per-point mean (size n_track_points)
-   @param[out] point_stddevs  Per-point stddev
-   @param[out] point_mins     Per-point minimum
-   @param[out] point_maxs     Per-point maximum
-   @param[out] point_counts   Per-point valid pixel count
-   @param[out] point_medians  Per-point median (NULL to skip)
-   @param[out] point_q1       Per-point 25th percentile (NULL to skip)
-   @param[out] point_q3       Per-point 75th percentile (NULL to skip)
-   @param[in]  percentile_list Integer percentile values 0–100 (NULL to skip)
-   @param[in]  n_percentiles   Length of percentile_list
-   @param[out] point_percentiles Output [n_track_points * n_percentiles] (NULL
-   to skip)
-   @param[in]  dem             DEM array [dims[0] * dims[1]]
-   @param[in]  track_i         Track coords fast dim (pixel space)
-   @param[in]  track_j         Track coords slow dim (pixel space)
-   @param[in]  n_track_points  Number of track vertices (>= 2)
-   @param[in]  dims            Grid dimensions [fast, slow]
-   @param[in]  cellsize        Cell size in metres
-   @param[in]  half_width      Rectangle half-width (orthogonal) in metres
-   @param[in]  binning_distance Rectangle half-length (along track) in metres
-   @param[in]  n_points_regression Track points used for PCA tangent estimation
-   @param[in]  skip             Process every skip-th track point (1 = all).
-               Only indices where index % skip == 0 produce output rows.
-   @param[out] result_track_i   Kept track-point fast coords [n_result], or NULL
-   @param[out] result_track_j   Kept track-point slow coords [n_result], or NULL
-
-   @return Number of output points written (= ceil(n_track_points / skip))
-*/
-TOPOTOOLBOX_API
-ptrdiff_t swath_longitudinal_windowed(
-    float *point_means, float *point_stddevs, float *point_mins,
-    float *point_maxs, ptrdiff_t *point_counts, float *point_medians,
-    float *point_q1, float *point_q3, const int *percentile_list,
-    ptrdiff_t n_percentiles, float *point_percentiles, const float *dem,
-    const float *track_i, const float *track_j, ptrdiff_t n_track_points,
-    ptrdiff_t dims[2], float cellsize, float half_width, float binning_distance,
-    ptrdiff_t n_points_regression, ptrdiff_t skip, float *result_track_i,
-    float *result_track_j);
-
-/**
-   @brief Get pixel coordinates for a single point's oriented-rectangle window.
-
-   @details
-   Returns integer (pi, pj) coordinates of every pixel inside the oriented
-   rectangle centred on track_i[point_index], track_j[point_index].
-   The rectangle axes are computed via local PCA tangent over
-   n_points_regression neighbours.  Along-track half-length = binning_distance
-   / cellsize pixels; orthogonal half-width = half_width / cellsize pixels.
-
-   Safe upper bound for pre-allocation: dims[0] * dims[1].
-
-   @param[out] pixels_i         Fast-dim integer pixel coordinates
-   @param[out] pixels_j         Slow-dim integer pixel coordinates
-   @param[in]  track_i          Track coords fast dim (pixel space)
-   @param[in]  track_j          Track coords slow dim (pixel space)
-   @param[in]  n_track_points   Number of track vertices (>= 2)
-   @param[in]  point_index      Query track point index
-   @param[in]  dims             Grid dimensions [fast, slow]
-   @param[in]  cellsize         Cell size in metres
-   @param[in]  half_width       Orthogonal half-width in metres
-   @param[in]  binning_distance Along-track half-length in metres
-   @param[in]  n_points_regression  Neighbourhood size for PCA tangent
-
-   @return Number of pixels written
-*/
-TOPOTOOLBOX_API
-ptrdiff_t swath_windowed_get_point_samples(
-    ptrdiff_t *pixels_i, ptrdiff_t *pixels_j, const float *track_i,
-    const float *track_j, ptrdiff_t n_track_points, ptrdiff_t point_index,
-    ptrdiff_t dims[2], float cellsize, float half_width, float binning_distance,
-    ptrdiff_t n_points_regression);
 
 /**
    @brief Get pixel coordinates associated with a single track point
@@ -2673,7 +2591,7 @@ ptrdiff_t swath_get_point_pixels(
     const float *track_j, ptrdiff_t n_track_points, ptrdiff_t point_index,
     const float *distance_from_track, ptrdiff_t dims[2], float cellsize,
     float half_width, float binning_distance,
-    const ptrdiff_t *nearest_point);
+    const ptrdiff_t *nearest_point, const float *cum_dist);
 
 /**
    @brief Rasterize a continuous path between ordered reference points.
