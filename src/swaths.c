@@ -119,6 +119,7 @@ void swath_frontier_distance_map(float *restrict best_abs,
                                  ptrdiff_t n_track_points, ptrdiff_t dims[2],
                                  float max_dist_px, const int8_t *mask) {
   ptrdiff_t total = dims[0] * dims[1];
+  if (total <= 0) return;
 
   if (nearest_point)
     for (ptrdiff_t i = 0; i < total; i++) nearest_point[i] = -1;

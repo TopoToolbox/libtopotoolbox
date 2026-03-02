@@ -2532,15 +2532,14 @@ ptrdiff_t thin_rasterised_line_to_D8(float *centre_line_i, float *centre_line_j,
    @param[in] binning_distance Along-track binning distance in meters.
    If <= 0, each point gathers pixels along its orthogonal cross-section only.
    If > 0, gathers pixels within the bounding box between edge orthogonals
-   at ±binning_distance along the track, filtered by distance_from_track.
+   within binning_distance along the track, filtered by distance_from_track.
    @param[in]  nearest_point    Per-pixel nearest track-point index, from
    swath_frontier_distance_map. Required when binning_distance > 0.
    @param[in]  cum_dist         Cumulative along-track distance in meters,
-   size n_track_points. cum_dist[k] = arc-length from point 0 to point k.
+   size n_track_points. Entry k holds arc-length from point 0 to point k.
    @param[in]  skip             Process every skip-th track point (1 = all).
-               Only indices where index % skip == 0 produce output rows.
-   @param[out] result_track_i   Kept track-point fast coords [n_result], or NULL
-   @param[out] result_track_j   Kept track-point slow coords [n_result], or NULL
+   @param[out] result_track_i   Kept track-point fast coords, or NULL
+   @param[out] result_track_j   Kept track-point slow coords, or NULL
 
    @return Number of output points written (= ceil(n_track_points / skip))
  */
@@ -2579,7 +2578,7 @@ ptrdiff_t swath_longitudinal(
    @param[in] nearest_point Per-pixel nearest track-point index, from
    swath_frontier_distance_map. Required when binning_distance > 0.
    @param[in] cum_dist Cumulative along-track distance in meters, size
-   n_track_points. cum_dist[k] = arc-length from point 0 to point k.
+   n_track_points. Entry k holds arc-length from point 0 to point k.
 
    @return Number of pixels written
  */
