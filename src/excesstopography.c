@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "priority_queue.h"
+#include "helpers/priority_queue.h"
 #include "topotoolbox.h"
 
 /*

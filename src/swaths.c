@@ -7,10 +7,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "deque.h"
-#include "dijkstra.h"
-#include "polyline.h"
-#include "stat_helper.h"
+#include "helpers/deque.h"
+#include "helpers/dijkstra.h"
+#include "helpers/polyline.h"
+#include "helpers/stat_func.h"
 #include "topotoolbox.h"
 
 // 8-connected neighbor offsets (row, col) — shared by all D8 operations.
