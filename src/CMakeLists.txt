@@ -10,10 +10,6 @@ add_library(topotoolbox
   gradient8.c
   reconstruct.c
   priority_queue.c
-  dijkstra.c
-  polyline.c
-  stat_helper.c
-  deque.c
   excesstopography.c
   graphflood/gf_utils.c
   graphflood/sfgraph.c
@@ -26,7 +22,6 @@ add_library(topotoolbox
   drainagebasins.c
   hillshade.c
   knickpoints.c
-  swaths.c
 )
 
 # Define the include directory
