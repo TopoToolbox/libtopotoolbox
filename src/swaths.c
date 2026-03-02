@@ -128,7 +128,7 @@ void swath_frontier_distance_map(float *restrict best_abs,
   // Copy caller mask into a mutable local buffer (Dijkstra needs int8_t*).
   int8_t *pixel_mask = NULL;
   if (mask) {
-    pixel_mask = (int8_t *)malloc(total * sizeof(int8_t));
+    pixel_mask = (int8_t *)malloc((size_t)total * sizeof(int8_t));
     for (ptrdiff_t i = 0; i < total; i++) pixel_mask[i] = mask[i] ? 1 : 0;
   }
 
