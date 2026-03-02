@@ -2474,7 +2474,8 @@ void swath_boundary_dijkstra(float *dist_out, const int8_t *swath_mask,
    FLT_MAX=outside).
    @param[in]  hw_px     Swath half-width in pixels.
    @param[in]  nearest_point  Nearest track point index per pixel.
-   @param[in]  track_i, track_j  Track vertices in pixel space.
+   @param[in]  track_i  Track vertices fast dim (pixel space).
+   @param[in]  track_j  Track vertices slow dim (pixel space).
    @param[in]  n_track_points  Number of track vertices.
    @param[in]  dims  Grid dimensions [fast, slow].
    @param[in]  cellsize  Cell size in meters (used for width conversion).
