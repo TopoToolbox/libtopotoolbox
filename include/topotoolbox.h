@@ -2412,7 +2412,6 @@ void lowerenv(float *elevation, uint8_t *knickpoints, float *distance,
               ptrdiff_t *ix, uint8_t *onenvelope, ptrdiff_t *source,
               ptrdiff_t *target, ptrdiff_t edge_count, ptrdiff_t node_count);
 
-
 /**
    @brief Frontier Dijkstra distance map — raw pixel-unit outputs
 
@@ -2427,8 +2426,8 @@ void lowerenv(float *elevation, uint8_t *knickpoints, float *distance,
 
    @param[out] best_abs Absolute pixel-unit distance. FLT_MAX = unvisited.
                Must be caller-allocated, size dims[0]*dims[1].
-   @param[out] signed_dist Signed pixel-unit distance (positive = left of track).
-               NULL to skip.
+   @param[out] signed_dist Signed pixel-unit distance (positive = left of
+   track). NULL to skip.
    @param[out] nearest_point Index of nearest track point. -1 = unvisited.
                NULL to skip.
    @param[in] track_i Track coords in fast dimension (pixel space)
@@ -2439,10 +2438,11 @@ void lowerenv(float *elevation, uint8_t *knickpoints, float *distance,
    @param[in] mask Active mask (nonzero=active), or NULL for all active
 */
 TOPOTOOLBOX_API
-void swath_frontier_distance_map(
-    float *best_abs, float *signed_dist, ptrdiff_t *nearest_point,
-    const float *track_i, const float *track_j, ptrdiff_t n_track_points,
-    ptrdiff_t dims[2], float max_dist_px, const int8_t *mask);
+void swath_frontier_distance_map(float *best_abs, float *signed_dist,
+                                 ptrdiff_t *nearest_point, const float *track_i,
+                                 const float *track_j, ptrdiff_t n_track_points,
+                                 ptrdiff_t dims[2], float max_dist_px,
+                                 const int8_t *mask);
 
 /**
    @brief Inward D8 Dijkstra from boundary seed pixels
@@ -2466,9 +2466,12 @@ void swath_boundary_dijkstra(float *dist_out, const int8_t *swath_mask,
    @param[out] centre_line_i  Fast-dim coords of ridge pixels (float).
    @param[out] centre_line_j  Slow-dim coords of ridge pixels (float).
    @param[out] centre_width   Local width at each ridge pixel (meters).
-   @param[in]  dist_pos  Positive-side boundary DT (pixel units, FLT_MAX=unvisited).
-   @param[in]  dist_neg  Negative-side boundary DT (pixel units, FLT_MAX=unvisited).
-   @param[in]  best_abs  Absolute frontier distance (pixel units, FLT_MAX=outside).
+   @param[in]  dist_pos  Positive-side boundary DT (pixel units,
+   FLT_MAX=unvisited).
+   @param[in]  dist_neg  Negative-side boundary DT (pixel units,
+   FLT_MAX=unvisited).
+   @param[in]  best_abs  Absolute frontier distance (pixel units,
+   FLT_MAX=outside).
    @param[in]  hw_px     Swath half-width in pixels.
    @param[in]  nearest_point  Nearest track point index per pixel.
    @param[in]  track_i, track_j  Track vertices in pixel space.
@@ -2496,8 +2499,7 @@ ptrdiff_t voronoi_ridge_to_centreline(
    @return  New pixel count after thinning.
 */
 TOPOTOOLBOX_API
-ptrdiff_t thin_rasterised_line_to_D8(float *centre_line_i,
-                                     float *centre_line_j,
+ptrdiff_t thin_rasterised_line_to_D8(float *centre_line_i, float *centre_line_j,
                                      float *centre_width, ptrdiff_t n_centre,
                                      ptrdiff_t dims[2]);
 
@@ -2551,11 +2553,9 @@ ptrdiff_t swath_longitudinal(
     ptrdiff_t n_percentiles, float *point_percentiles, const float *dem,
     const float *track_i, const float *track_j, ptrdiff_t n_track_points,
     const float *distance_from_track, ptrdiff_t dims[2], float cellsize,
-    float half_width, float binning_distance,
-    const ptrdiff_t *nearest_point, const float *cum_dist,
-    ptrdiff_t skip, float *result_track_i,
+    float half_width, float binning_distance, const ptrdiff_t *nearest_point,
+    const float *cum_dist, ptrdiff_t skip, float *result_track_i,
     float *result_track_j);
-
 
 /**
    @brief Get pixel coordinates associated with a single track point
@@ -2588,8 +2588,8 @@ ptrdiff_t swath_get_point_pixels(
     ptrdiff_t *pixels_i, ptrdiff_t *pixels_j, const float *track_i,
     const float *track_j, ptrdiff_t n_track_points, ptrdiff_t point_index,
     const float *distance_from_track, ptrdiff_t dims[2], float cellsize,
-    float half_width, float binning_distance,
-    const ptrdiff_t *nearest_point, const float *cum_dist);
+    float half_width, float binning_distance, const ptrdiff_t *nearest_point,
+    const float *cum_dist);
 
 /**
    @brief Rasterize a continuous path between ordered reference points.
