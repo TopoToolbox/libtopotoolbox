@@ -1,5 +1,7 @@
 #define TOPOTOOLBOX_BUILD
 
+#include "polyline.h"
+
 #include <float.h>
 #include <math.h>
 #include <stddef.h>
@@ -7,7 +9,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "polyline.h"
 #include "priority_queue.h"
 #include "topotoolbox.h"
 
@@ -290,8 +291,7 @@ ptrdiff_t bresenham_d4(ptrdiff_t *out_i, ptrdiff_t *out_j, ptrdiff_t i0,
 // Elbow removal — thin a rasterised polyline to 1-pixel D8 width
 // ============================================================================
 TOPOTOOLBOX_API
-ptrdiff_t thin_rasterised_line_to_D8(float *centre_line_i,
-                                     float *centre_line_j,
+ptrdiff_t thin_rasterised_line_to_D8(float *centre_line_i, float *centre_line_j,
                                      float *centre_width, ptrdiff_t n_centre,
                                      ptrdiff_t dims[2]) {
   if (n_centre <= 2) return n_centre;
@@ -313,8 +313,8 @@ ptrdiff_t thin_rasterised_line_to_D8(float *centre_line_i,
   }
 
   for (ptrdiff_t k = 0; k < n_centre; k++)
-    on_cl[(ptrdiff_t)centre_line_j[k] * dims[0] +
-          (ptrdiff_t)centre_line_i[k]] = 1;
+    on_cl[(ptrdiff_t)centre_line_j[k] * dims[0] + (ptrdiff_t)centre_line_i[k]] =
+        1;
 
   int changed = 1;
   while (changed) {
@@ -334,8 +334,8 @@ ptrdiff_t thin_rasterised_line_to_D8(float *centre_line_i,
       if (nc == 1) start = cj * dims[0] + ci;
     }
     if (start < 0)
-      start = (ptrdiff_t)centre_line_j[0] * dims[0] +
-              (ptrdiff_t)centre_line_i[0];
+      start =
+          (ptrdiff_t)centre_line_j[0] * dims[0] + (ptrdiff_t)centre_line_i[0];
 
     memset(vis, 0, (size_t)total);
     ptrdiff_t n_path = 0;

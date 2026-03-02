@@ -32,8 +32,7 @@ float point_to_segment_distance(float px, float py, float ax, float ay,
 // n_points_regression neighbours.  Output: unit vector (*ti, *tj).
 void compute_local_tangent(const float *track_i, const float *track_j,
                            ptrdiff_t n_track_points, ptrdiff_t pt,
-                           ptrdiff_t n_points_regression, float *ti,
-                           float *tj);
+                           ptrdiff_t n_points_regression, float *ti, float *tj);
 
 // Bresenham D8 rasterisation: one pixel per step (diagonal or cardinal).
 // skip_first: if nonzero, the start pixel is not written.
