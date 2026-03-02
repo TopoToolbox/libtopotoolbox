@@ -2453,45 +2453,6 @@ ptrdiff_t thin_rasterised_line_to_D8(float *centre_line_i,
                                      ptrdiff_t dims[2]);
 
 /**
-   @brief Compute binned swath profile perpendicular to track
-
-   @details
-   Aggregates DEM elevations by perpendicular distance to the track.
-   Takes a pre-computed SIGNED distance map (in meters) from
-   swath_frontier_distance_map (with signed_dist output, scaled by cellsize).
-
-   @param[out] bin_distances Distance of each bin center from track (meters)
-   @param[out] bin_means Mean elevation per bin
-   @param[out] bin_stddevs Standard deviation per bin
-   @param[out] bin_mins Minimum elevation per bin
-   @param[out] bin_maxs Maximum elevation per bin
-   @param[out] bin_counts Pixel count per bin
-   @param[out] bin_medians Median per bin, or NULL
-   @param[out] bin_q1 25th percentile per bin, or NULL
-   @param[out] bin_q3 75th percentile per bin, or NULL
-   @param[in] percentile_list Custom percentiles (0-100), or NULL
-   @param[in] n_percentiles Number of percentiles
-   @param[out] bin_percentiles Custom percentile output (n_bins x
-   n_percentiles), or NULL
-   @param[in] dem DEM array (dims[0]*dims[1])
-   @param[in] distance_from_track SIGNED distance map in meters
-   @param[in] dims Grid dimensions [fast, slow]
-   @param[in] half_width Swath half-width in meters
-   @param[in] bin_resolution Bin spacing in meters
-   @param[in] n_bins Number of bins (= int(2*half_width/bin_resolution) + 1)
-   @param[in] normalize If nonzero, normalize elevations to track elevation
- */
-TOPOTOOLBOX_API
-void swath_transverse(float *bin_distances, float *bin_means,
-                      float *bin_stddevs, float *bin_mins, float *bin_maxs,
-                      ptrdiff_t *bin_counts, float *bin_medians, float *bin_q1,
-                      float *bin_q3, const int *percentile_list,
-                      ptrdiff_t n_percentiles, float *bin_percentiles,
-                      const float *dem, const float *distance_from_track,
-                      ptrdiff_t dims[2], float half_width, float bin_resolution,
-                      ptrdiff_t n_bins, int normalize);
-
-/**
    @brief Compute per-point swath profile along track
 
    @details
