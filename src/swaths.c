@@ -120,11 +120,6 @@ void swath_frontier_distance_map(
     float max_dist_px, const float *dem, const int8_t *mask) {
   ptrdiff_t total = dims[0] * dims[1];
 
-  int free_best = 0;
-  if (best_abs == NULL) {
-    best_abs = (float *)malloc(total * sizeof(float));
-    free_best = 1;
-  }
   if (nearest_point)
     for (ptrdiff_t i = 0; i < total; i++) nearest_point[i] = -1;
   if (signed_dist)
@@ -170,7 +165,6 @@ void swath_frontier_distance_map(
   grid_dijkstra_run(&gd, pixel_mask, frontier_cost, frontier_on_update, &ctx);
   grid_dijkstra_free(&gd);
   free(pixel_mask);
-  if (free_best) free(best_abs);
 }
 
 // ============================================================================
