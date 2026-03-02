@@ -2436,15 +2436,13 @@ void lowerenv(float *elevation, uint8_t *knickpoints, float *distance,
    @param[in] n_track_points Number of track vertices (>= 2)
    @param[in] dims Grid dimensions [fast, slow]
    @param[in] max_dist_px Expansion clip radius in pixels (FLT_MAX = unbounded)
-   @param[in] dem DEM for NaN detection, or NULL
    @param[in] mask Active mask (nonzero=active), or NULL for all active
 */
 TOPOTOOLBOX_API
 void swath_frontier_distance_map(
     float *best_abs, float *signed_dist, ptrdiff_t *nearest_point,
     const float *track_i, const float *track_j, ptrdiff_t n_track_points,
-    ptrdiff_t dims[2], float max_dist_px, const float *dem,
-    const int8_t *mask);
+    ptrdiff_t dims[2], float max_dist_px, const int8_t *mask);
 
 /**
    @brief Inward D8 Dijkstra from boundary seed pixels
