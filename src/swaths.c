@@ -41,7 +41,6 @@ static const int k_dj8[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
   Polyline geometry (Bresenham, tangent, simplification) lives in polyline.c.
 */
 
-
 // ============================================================================
 // Boundary Dijkstra — inward D8 wavefront from swath-edge pixels
 // ============================================================================
@@ -94,10 +93,9 @@ static float frontier_cost(ptrdiff_t from, ptrdiff_t to, float from_dist,
   ptrdiff_t ka = (k < ctx->n_track_points - 1) ? k : k - 1;
   ptrdiff_t kb = ka + 1;
   float proj_x, proj_y, lam;
-  float signed_d =
-      point_to_segment_distance(to_i, to_j, ctx->track_i[ka], ctx->track_j[ka],
-                                ctx->track_i[kb], ctx->track_j[kb],
-                                &proj_x, &proj_y, &lam);
+  float signed_d = point_to_segment_distance(
+      to_i, to_j, ctx->track_i[ka], ctx->track_j[ka], ctx->track_i[kb],
+      ctx->track_j[kb], &proj_x, &proj_y, &lam);
   float abs_d = fabsf(signed_d);
   if (abs_d > ctx->max_dist_px) return FLT_MAX;
   ctx->_last_point = k;
@@ -113,11 +111,13 @@ static void frontier_on_update(ptrdiff_t idx, float new_dist, void *ctx_ptr) {
 }
 
 TOPOTOOLBOX_API
-void swath_frontier_distance_map(
-    float *restrict best_abs, float *restrict signed_dist,
-    ptrdiff_t *restrict nearest_point, const float *restrict track_i,
-    const float *restrict track_j, ptrdiff_t n_track_points, ptrdiff_t dims[2],
-    float max_dist_px, const int8_t *mask) {
+void swath_frontier_distance_map(float *restrict best_abs,
+                                 float *restrict signed_dist,
+                                 ptrdiff_t *restrict nearest_point,
+                                 const float *restrict track_i,
+                                 const float *restrict track_j,
+                                 ptrdiff_t n_track_points, ptrdiff_t dims[2],
+                                 float max_dist_px, const int8_t *mask) {
   ptrdiff_t total = dims[0] * dims[1];
 
   if (nearest_point)
@@ -129,8 +129,7 @@ void swath_frontier_distance_map(
   int8_t *pixel_mask = NULL;
   if (mask) {
     pixel_mask = (int8_t *)malloc(total * sizeof(int8_t));
-    for (ptrdiff_t i = 0; i < total; i++)
-      pixel_mask[i] = mask[i] ? 1 : 0;
+    for (ptrdiff_t i = 0; i < total; i++) pixel_mask[i] = mask[i] ? 1 : 0;
   }
 
   FrontierCtx ctx = {.track_i = track_i,
@@ -167,7 +166,6 @@ void swath_frontier_distance_map(
 // ============================================================================
 // Public API
 // ============================================================================
-
 
 // ============================================================================
 // Voronoi ridge — centre-line pixel extraction from two boundary DT fields
@@ -243,7 +241,6 @@ ptrdiff_t voronoi_ridge_to_centreline(
   }
   return n_centre;
 }
-
 
 // ============================================================================
 // Longitudinal swath — per-track-point statistics
@@ -361,10 +358,12 @@ ptrdiff_t swath_longitudinal(
     //
     // sum/sum² are maintained incrementally (add on right, subtract on left).
     // min/max use SlidingExtremaDQ (Lemire) for O(1) amortised per step.
-    ptrdiff_t *min_idx = (ptrdiff_t *)malloc(n_track_points * sizeof(ptrdiff_t));
-    ptrdiff_t *max_idx = (ptrdiff_t *)malloc(n_track_points * sizeof(ptrdiff_t));
-    float     *min_val = (float *)malloc(n_track_points * sizeof(float));
-    float     *max_val = (float *)malloc(n_track_points * sizeof(float));
+    ptrdiff_t *min_idx =
+        (ptrdiff_t *)malloc(n_track_points * sizeof(ptrdiff_t));
+    ptrdiff_t *max_idx =
+        (ptrdiff_t *)malloc(n_track_points * sizeof(ptrdiff_t));
+    float *min_val = (float *)malloc(n_track_points * sizeof(float));
+    float *max_val = (float *)malloc(n_track_points * sizeof(float));
     SlidingExtremaDQ min_dq, max_dq;
     sedq_init(&min_dq, min_idx, min_val);
     sedq_init(&max_dq, max_idx, max_val);
@@ -373,7 +372,8 @@ ptrdiff_t swath_longitudinal(
     ptrdiff_t lo = 0, hi = -1;
 
     for (ptrdiff_t pt = 0; pt < n_track_points; pt++) {
-      // Expand right: absorb blocks whose distance from pt is ≤ binning_distance.
+      // Expand right: absorb blocks whose distance from pt is ≤
+      // binning_distance.
       while (hi < n_track_points - 1 &&
              cum_dist[hi + 1] - cum_dist[pt] <= binning_distance) {
         hi++;
@@ -385,7 +385,8 @@ ptrdiff_t swath_longitudinal(
           sedq_push_max(&max_dq, hi, blk_acc[hi].max_val);
         }
       }
-      // Shrink left: evict blocks that have fallen more than binning_distance behind pt.
+      // Shrink left: evict blocks that have fallen more than binning_distance
+      // behind pt.
       while (lo <= hi && cum_dist[pt] - cum_dist[lo] > binning_distance) {
         win_sum -= blk_acc[lo].sum;
         win_sum2 -= blk_acc[lo].sum_sq;
@@ -399,13 +400,16 @@ ptrdiff_t swath_longitudinal(
         ptrdiff_t out = pt / effective_skip;
         if (win_count > 0) {
           double mean = win_sum / (double)win_count;
-          // Var = E[x²] - E[x]² (online formula, stable for float precision here).
+          // Var = E[x²] - E[x]² (online formula, stable for float precision
+          // here).
           double var = win_sum2 / (double)win_count - mean * mean;
           point_counts[out] = win_count;
           point_means[out] = (float)mean;
           point_stddevs[out] = (float)sqrt(var > 0.0 ? var : 0.0);
-          point_mins[out] = !sedq_empty(&min_dq) ? sedq_front_val(&min_dq) : NAN;
-          point_maxs[out] = !sedq_empty(&max_dq) ? sedq_front_val(&max_dq) : NAN;
+          point_mins[out] =
+              !sedq_empty(&min_dq) ? sedq_front_val(&min_dq) : NAN;
+          point_maxs[out] =
+              !sedq_empty(&max_dq) ? sedq_front_val(&max_dq) : NAN;
         } else {
           point_counts[out] = 0;
           point_means[out] = NAN;
@@ -477,8 +481,6 @@ ptrdiff_t swath_longitudinal(
   return n_result;
 }
 
-
-
 // ============================================================================
 // Per-point pixel retrieval — mirrors swath_longitudinal (vanilla)
 // ============================================================================
@@ -487,7 +489,8 @@ ptrdiff_t swath_longitudinal(
 //   distance_from_track.
 // Case 2 (binning_distance  > 0): uses caller-supplied nearest_point map;
 //   gathers all pixels whose nearest track point falls within [pt_lo, pt_hi]
-//   (the ±binning_distance window around point_index along cumulative distance).
+//   (the ±binning_distance window around point_index along cumulative
+//   distance).
 
 TOPOTOOLBOX_API
 ptrdiff_t swath_get_point_pixels(
@@ -496,8 +499,7 @@ ptrdiff_t swath_get_point_pixels(
     ptrdiff_t n_track_points, ptrdiff_t point_index,
     const float *restrict distance_from_track, ptrdiff_t dims[2],
     float cellsize, float half_width, float binning_distance,
-    const ptrdiff_t *restrict nearest_point,
-    const float *restrict cum_dist) {
+    const ptrdiff_t *restrict nearest_point, const float *restrict cum_dist) {
   if (n_track_points < 2) return 0;
   if (point_index < 0 || point_index >= n_track_points) return 0;
 
