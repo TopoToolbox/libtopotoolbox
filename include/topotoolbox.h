@@ -2619,9 +2619,10 @@ ptrdiff_t sample_points_between_refs(ptrdiff_t *out_i, ptrdiff_t *out_j,
 
 /** @name simplify_line method constants */
 /** @{ */
-#define SIMPLIFY_FIXED_N 0  /**< tolerance = exact number of output points */
-#define SIMPLIFY_KNEEDLE 1  /**< tolerance unused; automatic knee detection */
-#define SIMPLIFY_VW_AREA 2  /**< tolerance = triangle area threshold (coord units squared) */
+#define SIMPLIFY_FIXED_N 0 /**< tolerance = exact number of output points */
+#define SIMPLIFY_KNEEDLE 1 /**< tolerance unused; automatic knee detection */
+#define SIMPLIFY_VW_AREA \
+  2 /**< tolerance = triangle area threshold (coord units squared) */
 /** @} */
 
 /**

@@ -532,7 +532,6 @@ static ptrdiff_t ief_build(const float *in_i, const float *in_j, ptrdiff_t n,
   return n_steps;
 }
 
-
 TOPOTOOLBOX_API
 ptrdiff_t simplify_line(float *out_i, float *out_j, const float *track_i,
                         const float *track_j, ptrdiff_t n_points,
