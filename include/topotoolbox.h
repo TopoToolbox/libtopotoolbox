@@ -2619,16 +2619,9 @@ ptrdiff_t sample_points_between_refs(ptrdiff_t *out_i, ptrdiff_t *out_j,
 
 /** @name simplify_line method constants */
 /** @{ */
-#define SIMPLIFY_FIXED_N 0 /**< tolerance = exact number of output points */
-#define SIMPLIFY_KNEEDLE 1 /**< tolerance unused; automatic knee detection */
-#define SIMPLIFY_AIC 2 /**< tolerance unused; Akaike information criterion */
-#define SIMPLIFY_BIC                                                         \
-  3                    /**< tolerance unused; Bayesian information criterion \
-                        */
-#define SIMPLIFY_MDL 4 /**< tolerance unused; minimum description length */
-#define SIMPLIFY_VW_AREA \
-  5 /**< tolerance = triangle area threshold (coord² units) */
-#define SIMPLIFY_L_METHOD 6 /**< tolerance unused; L-method elbow detection */
+#define SIMPLIFY_FIXED_N 0  /**< tolerance = exact number of output points */
+#define SIMPLIFY_KNEEDLE 1  /**< tolerance unused; automatic knee detection */
+#define SIMPLIFY_VW_AREA 2  /**< tolerance = triangle area threshold (coord units squared) */
 /** @} */
 
 /**
@@ -2636,7 +2629,7 @@ ptrdiff_t sample_points_between_refs(ptrdiff_t *out_i, ptrdiff_t *out_j,
 
    @details
    Reduces vertices while preserving shape. First and last points are always
-   kept. Seven stopping criteria are supported:
+   kept. Three stopping criteria are supported:
 
    method 0 (SIMPLIFY_FIXED_N): tolerance = exact number of output points
      (clamped to [2, n_points]).
@@ -2644,25 +2637,10 @@ ptrdiff_t sample_points_between_refs(ptrdiff_t *out_i, ptrdiff_t *out_j,
    method 1 (SIMPLIFY_KNEEDLE): automatic knee detection on normalised RMSE
      curve; tolerance is ignored.
 
-   method 2 (SIMPLIFY_AIC): Akaike information criterion minimisation.
-     tolerance = RMSE noise floor (same coordinate units as track).
-     The log-fit term stops improving once RMSE drops below tolerance,
-     preventing the criterion from trivially returning all points.
-     Larger tolerance → fewer output points.
-
-   method 3 (SIMPLIFY_BIC): Bayesian information criterion minimisation.
-     tolerance = RMSE noise floor (same semantics as AIC).
-
-   method 4 (SIMPLIFY_MDL): minimum description length minimisation.
-     tolerance = RMSE noise floor (same semantics as AIC).
-
-   method 5 (SIMPLIFY_VW_AREA): Visvalingam-Whyatt area-based insertion.
+   method 2 (SIMPLIFY_VW_AREA): Visvalingam-Whyatt area-based insertion.
      tolerance = triangle area threshold (coordinate units squared). Points
      are inserted in decreasing triangle-area order; stops when the next
      point's effective area falls below tolerance.
-
-   method 6 (SIMPLIFY_L_METHOD): L-method elbow detection on RMSE curve;
-     tolerance ignored.
 
    @param[out] out_i Simplified coords fast dim (pre-allocated, size n_points)
    @param[out] out_j Simplified coords slow dim (pre-allocated, size n_points)
@@ -2670,7 +2648,7 @@ ptrdiff_t sample_points_between_refs(ptrdiff_t *out_i, ptrdiff_t *out_j,
    @param[in]  track_j Input coords slow dim
    @param[in]  n_points Number of input vertices
    @param[in]  tolerance Meaning depends on method (see above)
-   @param[in]  method    One of SIMPLIFY_* constants (0–6)
+   @param[in]  method    One of SIMPLIFY_* constants (0-2)
 
    @return Number of vertices in the simplified line
 */

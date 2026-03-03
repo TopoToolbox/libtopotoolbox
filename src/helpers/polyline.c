@@ -532,30 +532,6 @@ static ptrdiff_t ief_build(const float *in_i, const float *in_j, ptrdiff_t n,
   return n_steps;
 }
 
-static float ols_residual(const float *y, ptrdiff_t from, ptrdiff_t to) {
-  ptrdiff_t m = to - from + 1;
-  if (m < 2) return 0.0f;
-  double sx = 0, sy = 0, sxy = 0, sxx = 0;
-  for (ptrdiff_t k = 0; k < m; k++) {
-    double x = (double)k;
-    double yi = (double)y[from + k];
-    sx += x;
-    sy += yi;
-    sxy += x * yi;
-    sxx += x * x;
-  }
-  double denom = (double)m * sxx - sx * sx;
-  if (denom < 1e-15) return 0.0f;
-  double slope = ((double)m * sxy - sx * sy) / denom;
-  double intercept = (sy - slope * sx) / (double)m;
-  float res = 0.0f;
-  for (ptrdiff_t k = 0; k < m; k++) {
-    double pred = slope * (double)k + intercept;
-    double r = (double)y[from + k] - pred;
-    res += (float)(r * r);
-  }
-  return res;
-}
 
 TOPOTOOLBOX_API
 ptrdiff_t simplify_line(float *out_i, float *out_j, const float *track_i,
@@ -571,8 +547,8 @@ ptrdiff_t simplify_line(float *out_i, float *out_j, const float *track_i,
 
   ptrdiff_t n = n_points;
 
-  // ---- Method 5: VW-area IEF (separate code path) ----
-  if (method == 5) {
+  // ---- Method 2: VW-area IEF (separate code path) ----
+  if (method == 2) {
     ptrdiff_t *prv_kept = (ptrdiff_t *)malloc((size_t)n * sizeof(ptrdiff_t));
     ptrdiff_t *nxt_kept = (ptrdiff_t *)malloc((size_t)n * sizeof(ptrdiff_t));
     uint8_t *inserted = (uint8_t *)calloc((size_t)n, sizeof(uint8_t));
@@ -644,7 +620,7 @@ ptrdiff_t simplify_line(float *out_i, float *out_j, const float *track_i,
     return cnt;
   }
 
-  // ---- Methods 0-4, 6: IEF engine + stopping criterion ----
+  // ---- Methods 0-1: IEF engine + stopping criterion ----
   ptrdiff_t *seq = (ptrdiff_t *)malloc((size_t)(n - 2) * sizeof(ptrdiff_t));
   float *rmse_curve = (float *)malloc((size_t)(n - 1) * sizeof(float));
   ief_build(track_i, track_j, n, seq, rmse_curve);
@@ -656,7 +632,8 @@ ptrdiff_t simplify_line(float *out_i, float *out_j, const float *track_i,
     if (n_target < 2) n_target = 2;
     if (n_target > n) n_target = n;
 
-  } else if (method == 1) {
+  } else {
+    // Method 1: knee of normalised RMSE curve
     float y0 = rmse_curve[0];
     ptrdiff_t best_k = 0;
     float best_d = FLT_MAX;
@@ -670,83 +647,6 @@ ptrdiff_t simplify_line(float *out_i, float *out_j, const float *track_i,
       }
     }
     n_target = best_k + 2;
-
-  } else if (method == 2) {
-    float min_rmse2 = tolerance * tolerance;
-    if (min_rmse2 < 1e-30f) min_rmse2 = 1e-30f;
-    ptrdiff_t best_k = 0;
-    float best_aic = FLT_MAX;
-    for (ptrdiff_t k = 0; k < n - 1; k++) {
-      float rmse2 = rmse_curve[k] * rmse_curve[k];
-      if (rmse2 < min_rmse2) rmse2 = min_rmse2;
-      float aic = 2.0f * (float)(k + 2) + (float)n * logf(rmse2);
-      if (aic < best_aic) {
-        best_aic = aic;
-        best_k = k;
-      }
-    }
-    n_target = best_k + 2;
-
-  } else if (method == 3) {
-    float min_rmse2 = tolerance * tolerance;
-    if (min_rmse2 < 1e-30f) min_rmse2 = 1e-30f;
-    float logn = (n > 1) ? logf((float)n) : 0.0f;
-    ptrdiff_t best_k = 0;
-    float best_bic = FLT_MAX;
-    for (ptrdiff_t k = 0; k < n - 1; k++) {
-      float rmse2 = rmse_curve[k] * rmse_curve[k];
-      if (rmse2 < min_rmse2) rmse2 = min_rmse2;
-      float bic = (float)(k + 2) * logn + (float)n * logf(rmse2);
-      if (bic < best_bic) {
-        best_bic = bic;
-        best_k = k;
-      }
-    }
-    n_target = best_k + 2;
-
-  } else if (method == 4) {
-    float min_i = track_i[0], max_i = track_i[0];
-    float min_j = track_j[0], max_j = track_j[0];
-    for (ptrdiff_t k = 1; k < n; k++) {
-      if (track_i[k] < min_i) min_i = track_i[k];
-      if (track_i[k] > max_i) max_i = track_i[k];
-      if (track_j[k] < min_j) min_j = track_j[k];
-      if (track_j[k] > max_j) max_j = track_j[k];
-    }
-    float coord_range =
-        (max_i - min_i > max_j - min_j) ? max_i - min_i : max_j - min_j;
-    if (coord_range < 1.0f) coord_range = 1.0f;
-    float log2_range = log2f(coord_range);
-    float log2e = 1.0f / logf(2.0f);
-    float min_rmse = (tolerance > 1e-15f) ? tolerance : 1e-15f;
-
-    ptrdiff_t best_k = 0;
-    float best_mdl = FLT_MAX;
-    for (ptrdiff_t k = 0; k < n - 1; k++) {
-      float rmse_k = rmse_curve[k];
-      if (rmse_k < min_rmse) rmse_k = min_rmse;
-      float mdl =
-          2.0f * (float)(k + 2) * log2_range + (float)n * log2e * logf(rmse_k);
-      if (mdl < best_mdl) {
-        best_mdl = mdl;
-        best_k = k;
-      }
-    }
-    n_target = best_k + 2;
-
-  } else {
-    // Method 6: L-method
-    ptrdiff_t best_m = 0;
-    float best_score = FLT_MAX;
-    for (ptrdiff_t m = 1; m <= n - 3; m++) {
-      float score =
-          ols_residual(rmse_curve, 0, m) + ols_residual(rmse_curve, m, n - 2);
-      if (score < best_score) {
-        best_score = score;
-        best_m = m;
-      }
-    }
-    n_target = best_m + 2;
   }
 
   if (n_target < 2) n_target = 2;
