@@ -409,7 +409,6 @@ static ptrdiff_t ief_build(const float *in_i, const float *in_j, ptrdiff_t n,
   return n_steps;
 }
 
-TOPOTOOLBOX_API
 static ptrdiff_t simplify_fixed_n(float *out_i, float *out_j,
                                   const float *track_i, const float *track_j,
                                   ptrdiff_t n, float tolerance) {
