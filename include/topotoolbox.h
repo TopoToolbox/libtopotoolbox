@@ -2420,16 +2420,17 @@ void lowerenv(float *elevation, uint8_t *knickpoints, float *distance,
    directly into caller-allocated arrays.  No unit conversion or NaN filling
    is performed; that is left to the caller.
 
-   Unvisited pixels receive FLT_MAX in best_abs.  If dem is non-NULL, pixels
-   with NaN elevation are excluded.  If mask is non-NULL, zero-valued pixels
-   are excluded.
+   Unvisited pixels receive FLT_MAX in best_abs.  If mask is non-NULL,
+   zero-valued pixels are excluded from expansion.  The caller is responsible
+   for encoding any NaN-elevation exclusion into the mask before calling.
 
    @param[out] best_abs Absolute pixel-unit distance. FLT_MAX = unvisited.
                Must be caller-allocated, size dims[0]*dims[1].
-   @param[out] signed_dist Signed pixel-unit distance (positive = left of
-   track). NULL to skip.
+   @param[out] signed_dist Signed pixel-unit distance from the track segment.
+               Positive when pixel is to the left of the directed track, 
+               negative to the right. Pass NULL to omit.
    @param[out] nearest_point Index of nearest track point. -1 = unvisited.
-               NULL to skip.
+               Pass NULL to omit.
    @param[in] track_i Track coords in fast dimension (pixel space)
    @param[in] track_j Track coords in slow dimension (pixel space)
    @param[in] n_track_points Number of track vertices (>= 2)
@@ -2465,7 +2466,8 @@ void swath_boundary_dijkstra(float *dist_out, const int8_t *swath_mask,
 
    @param[out] centre_line_i  Fast-dim coords of ridge pixels (float).
    @param[out] centre_line_j  Slow-dim coords of ridge pixels (float).
-   @param[out] centre_width   Local width at each ridge pixel (meters).
+   @param[out] centre_width   Local width at each ridge pixel 
+   (same units than cellsize).
    @param[in]  dist_pos  Positive-side boundary DT (pixel units,
    FLT_MAX=unvisited).
    @param[in]  dist_neg  Negative-side boundary DT (pixel units,
@@ -2612,18 +2614,11 @@ ptrdiff_t swath_get_point_pixels(
    D4.
 */
 TOPOTOOLBOX_API
-ptrdiff_t sample_points_between_refs(ptrdiff_t *out_i, ptrdiff_t *out_j,
+ptrdiff_t rasterize_path(ptrdiff_t *out_i, ptrdiff_t *out_j,
                                      const ptrdiff_t *ref_i,
                                      const ptrdiff_t *ref_j, ptrdiff_t n_refs,
                                      int close_loop, int use_d4);
 
-/** @name simplify_line method constants */
-/** @{ */
-#define SIMPLIFY_FIXED_N 0 /**< tolerance = exact number of output points */
-#define SIMPLIFY_KNEEDLE 1 /**< tolerance unused; automatic knee detection */
-#define SIMPLIFY_VW_AREA \
-  2 /**< tolerance = triangle area threshold (coord units squared) */
-/** @} */
 
 /**
    @brief Simplify a polyline using the Iterative End-Point Fit (IEF) engine.

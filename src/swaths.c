@@ -17,29 +17,42 @@
 static const int k_di8[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
 static const int k_dj8[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
 
-/*
-  Swath profile analysis — libtopotoolbox
-  ========================================
-
-  Three analysis modes, all operating in pixel-space float coordinates:
-
-  Transverse  — collapses the swath into a single cross-sectional profile
-                binned by signed perpendicular distance from the track.
-
-  Longitudinal — per-track-point statistics using either:
-    Case 1 (binning_distance <= 0): Bresenham cross-section at each point.
-    Case 2 (binning_distance  > 0): caller-supplied nearest_point map
-                (from swath_frontier_distance_map) + sliding-window
-                accumulation along the track.
-
-  Windowed longitudinal — per-track-point statistics gathered from an
-    oriented rectangle (PCA tangent, ±half_width × ±binning_distance).
-    No pre-computed distance map required.
-
-  Distance maps — swath_frontier_distance_map (raw pixel-unit Dijkstra outputs).
-
-  Polyline geometry (Bresenham, tangent, simplification) lives in polyline.c.
-*/
+// ============================================================================
+// Swath profile — overview
+// ============================================================================
+//
+// This file implements the core C routines for swath profiling. Two profile
+// types are supported:
+//
+//   Transverse — global statistics binned by signed cross-track distance.
+//   Longitudinal — windowed statistics computed along the track.
+//
+// The following functions are exposed through the public API:
+//
+//   swath_frontier_distance_map   Dijkstra expansion from track seed pixels,
+//                                 producing absolute and signed pixel-unit
+//                                 distance maps and a nearest-track-point map.
+//
+//   swath_boundary_dijkstra       Inward D8 Dijkstra from swath-edge pixels,
+//                                 producing a distance-from-boundary map.
+//
+//   voronoi_ridge_to_centreline   Extracts the centreline of a shape from a
+//                                 boundary distance map via Voronoi ridges.
+//
+//   swath_longitudinal            Computes a full longitudinal swath profile.
+//                                 Each pixel is assigned to exactly one track
+//                                 point (nearest-point rule).
+//
+//   swath_get_point_pixels        Returns all pixels assigned to a single
+//                                 track point (or a window of track points).
+//
+// Memory allocation for output arrays is the caller's responsibility, except
+// for the internal percentile scratch buffer in swath_longitudinal.
+// Transverse swath statistics and windowed longitudinal logic are implemented
+// in the higher-level layer(s).
+//
+// Polyline geometry (Bresenham rasterisation, simplification) is in
+// helpers/polyline.c.
 
 // ============================================================================
 // Boundary Dijkstra — inward D8 wavefront from swath-edge pixels
@@ -126,13 +139,6 @@ void swath_frontier_distance_map(float *restrict best_abs,
   if (signed_dist)
     for (ptrdiff_t i = 0; i < total; i++) signed_dist[i] = 0.0f;
 
-  // Copy caller mask into a mutable local buffer (Dijkstra needs int8_t*).
-  int8_t *pixel_mask = NULL;
-  if (mask) {
-    pixel_mask = (int8_t *)malloc((size_t)total * sizeof(int8_t));
-    for (ptrdiff_t i = 0; i < total; i++) pixel_mask[i] = mask[i] ? 1 : 0;
-  }
-
   FrontierCtx ctx = {.track_i = track_i,
                      .track_j = track_j,
                      .n_track_points = n_track_points,
@@ -153,15 +159,14 @@ void swath_frontier_distance_map(float *restrict best_abs,
     ptrdiff_t pj = (ptrdiff_t)(track_j[k] + 0.5f);
     if (pi < 0 || pi >= dims[0] || pj < 0 || pj >= dims[1]) continue;
     ptrdiff_t idx = pj * dims[0] + pi;
-    if (pixel_mask && !pixel_mask[idx]) continue;
+    if (mask && !mask[idx]) continue;
     ctx._last_point = k;
     ctx._last_signed = 0.0f;
     grid_dijkstra_seed(&gd, idx, 0.0f, frontier_on_update, &ctx);
   }
 
-  grid_dijkstra_run(&gd, pixel_mask, frontier_cost, frontier_on_update, &ctx);
+  grid_dijkstra_run(&gd, mask, frontier_cost, frontier_on_update, &ctx);
   grid_dijkstra_free(&gd);
-  free(pixel_mask);
 }
 
 // ============================================================================

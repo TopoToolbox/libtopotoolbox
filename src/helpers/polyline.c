@@ -56,128 +56,6 @@ float point_to_segment_distance(float px, float py, float ax, float ay,
 }
 
 // ============================================================================
-// Local tangent via PCA — used by longitudinal and windowed swath functions
-// ============================================================================
-//
-// Fits a 2×2 covariance matrix over a window of n_points_regression
-// neighbouring track points centred on pt.  The principal eigenvector gives
-// the local tangent direction; orientation is fixed to agree with the
-// forward-difference at pt.  Falls back to the endpoint direction when
-// the covariance is degenerate (e.g. integer-quantised track coordinates).
-void compute_local_tangent(const float *track_i, const float *track_j,
-                           ptrdiff_t n_track_points, ptrdiff_t pt,
-                           ptrdiff_t n_points_regression, float *ti,
-                           float *tj) {
-  ptrdiff_t half_n = n_points_regression / 2;
-  if (half_n < 1) half_n = 1;
-
-  ptrdiff_t win_lo = pt - half_n;
-  ptrdiff_t win_hi = pt + half_n;
-  if (win_lo < 0) win_lo = 0;
-  if (win_hi >= n_track_points) win_hi = n_track_points - 1;
-  if (win_hi - win_lo < 1) {
-    if (pt < n_track_points - 1) {
-      win_lo = pt;
-      win_hi = pt + 1;
-    } else {
-      win_lo = pt - 1;
-      win_hi = pt;
-    }
-  }
-
-  ptrdiff_t n = win_hi - win_lo + 1;
-
-  float mean_i = 0.0f, mean_j = 0.0f;
-  for (ptrdiff_t k = win_lo; k <= win_hi; k++) {
-    mean_i += track_i[k];
-    mean_j += track_j[k];
-  }
-  mean_i /= n;
-  mean_j /= n;
-
-  float cov_ii = 0.0f, cov_ij = 0.0f, cov_jj = 0.0f;
-  for (ptrdiff_t k = win_lo; k <= win_hi; k++) {
-    float di = track_i[k] - mean_i;
-    float dj = track_j[k] - mean_j;
-    cov_ii += di * di;
-    cov_ij += di * dj;
-    cov_jj += dj * dj;
-  }
-
-  float tang_i, tang_j;
-
-  float diff = cov_ii - cov_jj;
-  float D = sqrtf(diff * diff + 4.0f * cov_ij * cov_ij);
-  float vi, vj;
-
-  if (cov_ii >= cov_jj) {
-    vi = diff + D;
-    vj = 2.0f * cov_ij;
-  } else {
-    vi = 2.0f * cov_ij;
-    vj = -diff + D;
-  }
-
-  float vlen = sqrtf(vi * vi + vj * vj);
-
-  if (vlen > 1e-10f) {
-    tang_i = vi / vlen;
-    tang_j = vj / vlen;
-  } else {
-    tang_i = 0.0f;
-    tang_j = 0.0f;
-    ptrdiff_t lo = win_lo, hi = win_hi;
-    for (;;) {
-      float di = track_i[hi] - track_i[lo];
-      float dj = track_j[hi] - track_j[lo];
-      float len = sqrtf(di * di + dj * dj);
-
-      if (len > 0.5f) {
-        float minor = (fabsf(di) < fabsf(dj)) ? fabsf(di) : fabsf(dj);
-        if (minor >= 2.0f || (lo == 0 && hi == n_track_points - 1)) {
-          tang_i = di / len;
-          tang_j = dj / len;
-          break;
-        }
-      }
-
-      if (lo == 0 && hi == n_track_points - 1) {
-        if (len > 0.0f) {
-          tang_i = di / len;
-          tang_j = dj / len;
-        } else {
-          tang_i = 1.0f;
-          tang_j = 0.0f;
-        }
-        break;
-      }
-
-      if (lo > 0) lo--;
-      if (hi < n_track_points - 1) hi++;
-    }
-  }
-
-  float fwd_i, fwd_j;
-  if (pt > 0 && pt < n_track_points - 1) {
-    fwd_i = track_i[pt + 1] - track_i[pt - 1];
-    fwd_j = track_j[pt + 1] - track_j[pt - 1];
-  } else if (pt == 0) {
-    fwd_i = track_i[1] - track_i[0];
-    fwd_j = track_j[1] - track_j[0];
-  } else {
-    fwd_i = track_i[pt] - track_i[pt - 1];
-    fwd_j = track_j[pt] - track_j[pt - 1];
-  }
-  if (tang_i * fwd_i + tang_j * fwd_j < 0.0f) {
-    tang_i = -tang_i;
-    tang_j = -tang_j;
-  }
-
-  *ti = tang_i;
-  *tj = tang_j;
-}
-
-// ============================================================================
 // Bresenham rasterization — D8 (diagonal allowed) and D4 (cardinal only)
 // ============================================================================
 
@@ -394,10 +272,9 @@ ptrdiff_t thin_rasterised_line_to_D8(float *centre_line_i, float *centre_line_j,
 // Bresenham rasterization of a full polyline
 // ============================================================================
 TOPOTOOLBOX_API
-ptrdiff_t sample_points_between_refs(ptrdiff_t *out_i, ptrdiff_t *out_j,
-                                     const ptrdiff_t *ref_i,
-                                     const ptrdiff_t *ref_j, ptrdiff_t n_refs,
-                                     int close_loop, int use_d4) {
+ptrdiff_t rasterize_path(ptrdiff_t *out_i, ptrdiff_t *out_j,
+                         const ptrdiff_t *ref_i, const ptrdiff_t *ref_j,
+                         ptrdiff_t n_refs, int close_loop, int use_d4) {
   if (n_refs < 2) return 0;
 
   ptrdiff_t total = 0;
@@ -533,121 +410,14 @@ static ptrdiff_t ief_build(const float *in_i, const float *in_j, ptrdiff_t n,
 }
 
 TOPOTOOLBOX_API
-ptrdiff_t simplify_line(float *out_i, float *out_j, const float *track_i,
-                        const float *track_j, ptrdiff_t n_points,
-                        float tolerance, int method) {
-  if (n_points <= 2) {
-    for (ptrdiff_t k = 0; k < n_points; k++) {
-      out_i[k] = track_i[k];
-      out_j[k] = track_j[k];
-    }
-    return n_points;
-  }
-
-  ptrdiff_t n = n_points;
-
-  // ---- Method 2: VW-area IEF (separate code path) ----
-  if (method == 2) {
-    ptrdiff_t *prv_kept = (ptrdiff_t *)malloc((size_t)n * sizeof(ptrdiff_t));
-    ptrdiff_t *nxt_kept = (ptrdiff_t *)malloc((size_t)n * sizeof(ptrdiff_t));
-    uint8_t *inserted = (uint8_t *)calloc((size_t)n, sizeof(uint8_t));
-    ptrdiff_t *pq_heap = (ptrdiff_t *)malloc((size_t)n * sizeof(ptrdiff_t));
-    ptrdiff_t *pq_back = (ptrdiff_t *)malloc((size_t)n * sizeof(ptrdiff_t));
-    float *neg_area = (float *)malloc((size_t)n * sizeof(float));
-    for (ptrdiff_t i = 0; i < n; i++) pq_back[i] = -1;
-    PriorityQueue pq = pq_create(n, pq_heap, pq_back, neg_area, 0);
-
-    inserted[0] = 1;
-    inserted[n - 1] = 1;
-    for (ptrdiff_t k = 1; k < n - 1; k++) {
-      prv_kept[k] = 0;
-      nxt_kept[k] = n - 1;
-      float a = seg_tri_area(track_i[0], track_j[0], track_i[k], track_j[k],
-                             track_i[n - 1], track_j[n - 1]);
-      pq_insert(&pq, k, -a);
-    }
-
-    while (!pq_isempty(&pq)) {
-      ptrdiff_t k = pq_deletemin(&pq);
-      float area = -pq.priorities[k];
-      if (area < tolerance) break;
-
-      inserted[k] = 1;
-      ptrdiff_t p = prv_kept[k], nx = nxt_kept[k];
-
-      for (ptrdiff_t qi = p + 1; qi < k; qi++) {
-        if (!inserted[qi]) {
-          nxt_kept[qi] = k;
-          float new_a =
-              seg_tri_area(track_i[prv_kept[qi]], track_j[prv_kept[qi]],
-                           track_i[qi], track_j[qi], track_i[k], track_j[k]);
-          float new_prio = -new_a;
-          if (new_prio < pq.priorities[qi])
-            pq_decrease_key(&pq, qi, new_prio);
-          else if (new_prio > pq.priorities[qi])
-            pq_increase_key(&pq, qi, new_prio);
-        }
-      }
-      for (ptrdiff_t qi = k + 1; qi < nx; qi++) {
-        if (!inserted[qi]) {
-          prv_kept[qi] = k;
-          float new_a =
-              seg_tri_area(track_i[k], track_j[k], track_i[qi], track_j[qi],
-                           track_i[nxt_kept[qi]], track_j[nxt_kept[qi]]);
-          float new_prio = -new_a;
-          if (new_prio < pq.priorities[qi])
-            pq_decrease_key(&pq, qi, new_prio);
-          else if (new_prio > pq.priorities[qi])
-            pq_increase_key(&pq, qi, new_prio);
-        }
-      }
-    }
-
-    ptrdiff_t cnt = 0;
-    for (ptrdiff_t k = 0; k < n; k++)
-      if (inserted[k]) {
-        out_i[cnt] = track_i[k];
-        out_j[cnt] = track_j[k];
-        cnt++;
-      }
-    free(prv_kept);
-    free(nxt_kept);
-    free(inserted);
-    free(pq_heap);
-    free(pq_back);
-    free(neg_area);
-    return cnt;
-  }
-
-  // ---- Methods 0-1: IEF engine + stopping criterion ----
+static ptrdiff_t simplify_fixed_n(float *out_i, float *out_j,
+                                  const float *track_i, const float *track_j,
+                                  ptrdiff_t n, float tolerance) {
   ptrdiff_t *seq = (ptrdiff_t *)malloc((size_t)(n - 2) * sizeof(ptrdiff_t));
   float *rmse_curve = (float *)malloc((size_t)(n - 1) * sizeof(float));
   ief_build(track_i, track_j, n, seq, rmse_curve);
 
-  ptrdiff_t n_target = 2;
-
-  if (method == 0) {
-    n_target = (ptrdiff_t)tolerance;
-    if (n_target < 2) n_target = 2;
-    if (n_target > n) n_target = n;
-
-  } else {
-    // Method 1: knee of normalised RMSE curve
-    float y0 = rmse_curve[0];
-    ptrdiff_t best_k = 0;
-    float best_d = FLT_MAX;
-    for (ptrdiff_t k = 0; k < n - 1; k++) {
-      float xk = (n > 2) ? (float)k / (float)(n - 2) : 0.0f;
-      float yk = (y0 > 1e-12f) ? rmse_curve[k] / y0 : 0.0f;
-      float d = yk + xk - 1.0f;
-      if (d < best_d) {
-        best_d = d;
-        best_k = k;
-      }
-    }
-    n_target = best_k + 2;
-  }
-
+  ptrdiff_t n_target = (ptrdiff_t)tolerance;
   if (n_target < 2) n_target = 2;
   if (n_target > n) n_target = n;
 
@@ -668,4 +438,141 @@ ptrdiff_t simplify_line(float *out_i, float *out_j, const float *track_i,
   free(rmse_curve);
   free(keep);
   return cnt;
+}
+
+static ptrdiff_t simplify_kneedle(float *out_i, float *out_j,
+                                  const float *track_i, const float *track_j,
+                                  ptrdiff_t n) {
+  ptrdiff_t *seq = (ptrdiff_t *)malloc((size_t)(n - 2) * sizeof(ptrdiff_t));
+  float *rmse_curve = (float *)malloc((size_t)(n - 1) * sizeof(float));
+  ief_build(track_i, track_j, n, seq, rmse_curve);
+
+  float y0 = rmse_curve[0];
+  ptrdiff_t best_k = 0;
+  float best_d = FLT_MAX;
+  for (ptrdiff_t k = 0; k < n - 1; k++) {
+    float xk = (n > 2) ? (float)k / (float)(n - 2) : 0.0f;
+    float yk = (y0 > 1e-12f) ? rmse_curve[k] / y0 : 0.0f;
+    float d = yk + xk - 1.0f;
+    if (d < best_d) {
+      best_d = d;
+      best_k = k;
+    }
+  }
+  ptrdiff_t n_target = best_k + 2;
+  if (n_target < 2) n_target = 2;
+  if (n_target > n) n_target = n;
+
+  uint8_t *keep = (uint8_t *)calloc((size_t)n, 1);
+  keep[0] = 1;
+  keep[n - 1] = 1;
+  for (ptrdiff_t k = 0; k < n_target - 2; k++) keep[seq[k]] = 1;
+
+  ptrdiff_t cnt = 0;
+  for (ptrdiff_t k = 0; k < n; k++)
+    if (keep[k]) {
+      out_i[cnt] = track_i[k];
+      out_j[cnt] = track_j[k];
+      cnt++;
+    }
+
+  free(seq);
+  free(rmse_curve);
+  free(keep);
+  return cnt;
+}
+
+static ptrdiff_t simplify_vw_area(float *out_i, float *out_j,
+                                  const float *track_i, const float *track_j,
+                                  ptrdiff_t n, float tolerance) {
+  ptrdiff_t *prv_kept = (ptrdiff_t *)malloc((size_t)n * sizeof(ptrdiff_t));
+  ptrdiff_t *nxt_kept = (ptrdiff_t *)malloc((size_t)n * sizeof(ptrdiff_t));
+  uint8_t *inserted = (uint8_t *)calloc((size_t)n, sizeof(uint8_t));
+  ptrdiff_t *pq_heap = (ptrdiff_t *)malloc((size_t)n * sizeof(ptrdiff_t));
+  ptrdiff_t *pq_back = (ptrdiff_t *)malloc((size_t)n * sizeof(ptrdiff_t));
+  float *neg_area = (float *)malloc((size_t)n * sizeof(float));
+  for (ptrdiff_t i = 0; i < n; i++) pq_back[i] = -1;
+  PriorityQueue pq = pq_create(n, pq_heap, pq_back, neg_area, 0);
+
+  inserted[0] = 1;
+  inserted[n - 1] = 1;
+  for (ptrdiff_t k = 1; k < n - 1; k++) {
+    prv_kept[k] = 0;
+    nxt_kept[k] = n - 1;
+    float a = seg_tri_area(track_i[0], track_j[0], track_i[k], track_j[k],
+                           track_i[n - 1], track_j[n - 1]);
+    pq_insert(&pq, k, -a);
+  }
+
+  while (!pq_isempty(&pq)) {
+    ptrdiff_t k = pq_deletemin(&pq);
+    float area = -pq.priorities[k];
+    if (area < tolerance) break;
+
+    inserted[k] = 1;
+    ptrdiff_t p = prv_kept[k], nx = nxt_kept[k];
+
+    for (ptrdiff_t qi = p + 1; qi < k; qi++) {
+      if (!inserted[qi]) {
+        nxt_kept[qi] = k;
+        float new_a =
+            seg_tri_area(track_i[prv_kept[qi]], track_j[prv_kept[qi]],
+                         track_i[qi], track_j[qi], track_i[k], track_j[k]);
+        float new_prio = -new_a;
+        if (new_prio < pq.priorities[qi])
+          pq_decrease_key(&pq, qi, new_prio);
+        else if (new_prio > pq.priorities[qi])
+          pq_increase_key(&pq, qi, new_prio);
+      }
+    }
+    for (ptrdiff_t qi = k + 1; qi < nx; qi++) {
+      if (!inserted[qi]) {
+        prv_kept[qi] = k;
+        float new_a =
+            seg_tri_area(track_i[k], track_j[k], track_i[qi], track_j[qi],
+                         track_i[nxt_kept[qi]], track_j[nxt_kept[qi]]);
+        float new_prio = -new_a;
+        if (new_prio < pq.priorities[qi])
+          pq_decrease_key(&pq, qi, new_prio);
+        else if (new_prio > pq.priorities[qi])
+          pq_increase_key(&pq, qi, new_prio);
+      }
+    }
+  }
+
+  ptrdiff_t cnt = 0;
+  for (ptrdiff_t k = 0; k < n; k++)
+    if (inserted[k]) {
+      out_i[cnt] = track_i[k];
+      out_j[cnt] = track_j[k];
+      cnt++;
+    }
+  free(prv_kept);
+  free(nxt_kept);
+  free(inserted);
+  free(pq_heap);
+  free(pq_back);
+  free(neg_area);
+  return cnt;
+}
+
+ptrdiff_t simplify_line(float *out_i, float *out_j, const float *track_i,
+                        const float *track_j, ptrdiff_t n_points,
+                        float tolerance, int method) {
+  if (n_points <= 2) {
+    for (ptrdiff_t k = 0; k < n_points; k++) {
+      out_i[k] = track_i[k];
+      out_j[k] = track_j[k];
+    }
+    return n_points;
+  }
+
+  ptrdiff_t n = n_points;
+
+  if (method == 0)
+    return simplify_fixed_n(out_i, out_j, track_i, track_j, n, tolerance);
+  if (method == 1) return simplify_kneedle(out_i, out_j, track_i, track_j, n);
+  if (method == 2)
+    return simplify_vw_area(out_i, out_j, track_i, track_j, n, tolerance);
+  return 0;
 }

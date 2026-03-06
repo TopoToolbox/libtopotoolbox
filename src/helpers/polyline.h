@@ -12,12 +12,11 @@
 
   Internal helpers (used by swaths.c):
     point_to_segment_distance  — signed perpendicular distance, point→segment
-    compute_local_tangent      — PCA tangent at a track point
     bresenham_d8 / bresenham_d4 — integer rasterisation, D8 and D4
 
   Public API (also declared in topotoolbox.h):
     thin_rasterised_line_to_D8
-    sample_points_between_refs
+    rasterize_path
     simplify_line
 */
 
@@ -27,12 +26,6 @@
 float point_to_segment_distance(float px, float py, float ax, float ay,
                                 float bx, float by, float *proj_x,
                                 float *proj_y, float *lambda);
-
-// Local tangent direction at track point pt via PCA over a window of
-// n_points_regression neighbours.  Output: unit vector (*ti, *tj).
-void compute_local_tangent(const float *track_i, const float *track_j,
-                           ptrdiff_t n_track_points, ptrdiff_t pt,
-                           ptrdiff_t n_points_regression, float *ti, float *tj);
 
 // Bresenham D8 rasterisation: one pixel per step (diagonal or cardinal).
 // skip_first: if nonzero, the start pixel is not written.
