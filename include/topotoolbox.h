@@ -2427,7 +2427,7 @@ void lowerenv(float *elevation, uint8_t *knickpoints, float *distance,
    @param[out] best_abs Absolute pixel-unit distance. FLT_MAX = unvisited.
                Must be caller-allocated, size dims[0]*dims[1].
    @param[out] signed_dist Signed pixel-unit distance from the track segment.
-               Positive when pixel is to the left of the directed track, 
+               Positive when pixel is to the left of the directed track,
                negative to the right. Pass NULL to omit.
    @param[out] nearest_point Index of nearest track point. -1 = unvisited.
                Pass NULL to omit.
@@ -2466,7 +2466,7 @@ void swath_boundary_dijkstra(float *dist_out, const int8_t *swath_mask,
 
    @param[out] centre_line_i  Fast-dim coords of ridge pixels (float).
    @param[out] centre_line_j  Slow-dim coords of ridge pixels (float).
-   @param[out] centre_width   Local width at each ridge pixel 
+   @param[out] centre_width   Local width at each ridge pixel
    (same units than cellsize).
    @param[in]  dist_pos  Positive-side boundary DT (pixel units,
    FLT_MAX=unvisited).
@@ -2615,10 +2615,8 @@ ptrdiff_t swath_get_point_pixels(
 */
 TOPOTOOLBOX_API
 ptrdiff_t rasterize_path(ptrdiff_t *out_i, ptrdiff_t *out_j,
-                                     const ptrdiff_t *ref_i,
-                                     const ptrdiff_t *ref_j, ptrdiff_t n_refs,
-                                     int close_loop, int use_d4);
-
+                         const ptrdiff_t *ref_i, const ptrdiff_t *ref_j,
+                         ptrdiff_t n_refs, int close_loop, int use_d4);
 
 /**
    @brief Simplify a polyline using the Iterative End-Point Fit (IEF) engine.
