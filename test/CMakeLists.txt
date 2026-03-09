@@ -69,6 +69,18 @@ add_test(NAME filters COMMAND filters)
 set_tests_properties(filters PROPERTIES ENVIRONMENT_MODIFICATION
 "PATH=path_list_prepend:$<$<BOOL:${WIN32}>:$<TARGET_FILE_DIR:topotoolbox>>")
 
+# TEST: polyline
+#
+# Tests rasterize_path, thin_rasterised_line_to_D8, and simplify_line.
+add_executable(polyline polyline.cpp)
+
+target_link_libraries(polyline PRIVATE topotoolbox)
+
+add_test(NAME polyline COMMAND polyline)
+
+set_tests_properties(polyline PROPERTIES ENVIRONMENT_MODIFICATION
+"PATH=path_list_prepend:$<$<BOOL:${WIN32}>:$<TARGET_FILE_DIR:topotoolbox>>")
+
 # TEST: snapshots
 #
 # Runs the snapshot tests from available snapshot data
