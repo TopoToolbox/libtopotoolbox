@@ -20,5 +20,11 @@ jobs:
           chmod 700 ~/.ssh
       - name: Checkout repository
         uses: actions/checkout@v4
+      - name: Cache snapshot data snapshot data cache
+        id: cache-snapshots
+        uses: actions/cache@v5
+        with:
+          path: test/snapshots
+          key: snapshots-${{ env.snapshot_version }}
       - name: Run metrics script
-        run: sh .github/script/metrics.sh
+        run: sh .github/scripts/metrics.sh
