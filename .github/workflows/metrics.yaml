@@ -1,0 +1,24 @@
+name: Generate build and test time metrics
+
+env:
+  snapshot_version: v1.7.0
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  update_metrics:
+    if: github.repository == 'TopoToolbox/libtopotoolbox'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add ssh key
+        run: |
+          mkdir ~/.ssh
+          echo "${{ secrets.METRICS_DEPLOY_KEY }}" > ~/.ssh/id_metrics
+          chmod 600 ~/.ssh/id_metrics
+          chmod 700 ~/.ssh
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Run metrics script
+        run: sh .github/script/metrics.sh
