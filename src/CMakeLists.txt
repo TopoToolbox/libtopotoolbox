@@ -11,8 +11,12 @@ add_library(topotoolbox
   reconstruct.c
   excesstopography.c
   graphflood/gf_utils.c
+  graphflood/gf_utils.h
   graphflood/sfgraph.c
+  graphflood/pq_maxheap.h
+  graphflood/pq_priority_flood.h
   graphflood/priority_flood_standalone.c
+  graphflood/queue_pit.h
   graphflood/gf_flowacc.c
   graphflood/graphflood.c
   flow_routing.c
@@ -23,10 +27,15 @@ add_library(topotoolbox
   knickpoints.c
   swaths.c
   helpers/priority_queue.c
+  helpers/priority_queue.h
   helpers/dijkstra.c
+  helpers/dijkstra.h
   helpers/polyline.c
+  helpers/polyline.h
   helpers/stat_func.c
+  helpers/stat_func.h
   helpers/deque.c
+  helpers/deque.h
 )
 
 # Define the include directory

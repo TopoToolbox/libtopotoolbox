@@ -10,15 +10,6 @@ on:
     branches: ["main"]
 
 jobs:
-  format-check:
-    name: Format check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Run clang-format style check for C/C++ programs
-        uses: jidicula/clang-format-action@v4.11.0
-        with:
-          clang-format-version: '14'
   debug-build:
     runs-on: ubuntu-latest
     steps:
@@ -38,9 +29,9 @@ jobs:
           pip install -r ${{github.workspace}}/docs/requirements.txt
       - name: Restore snapshot data cache
         id: restore-cache-snapshots-debug
-        uses: actions/cache/restore@v4
+        uses: actions/cache@v4
         with:
-          path: test/snapshots
+          path: ${{github.workspace}}/test/snapshots
           key: snapshots-${{ env.snapshot_version }}
       - name: Configure
         run: >
@@ -53,13 +44,6 @@ jobs:
           -DTT_SANITIZE=ON
           -DTT_BUILD_DOCS=ON
           -DTT_DOWNLOAD_SNAPSHOTS=1
-      - name: Save snapshot data cache
-        if: steps.restore-cache-snapshots-debug.outputs.cache-hit != 'true'
-        id: save-cache-snapshots-debug
-        uses: actions/cache/save@v4
-        with:
-          path: ${{github.workspace}}/build/debug/test/snapshots/
-          key: snapshots-${{ env.snapshot_version }}
       - name: Build library
         run: cmake --build ${{github.workspace}}/build/debug --config Debug
       - name: Test
@@ -127,11 +111,10 @@ jobs:
           echo "CMAKE_GENERATOR=Ninja" >> "$env:GITHUB_ENV" &&
           echo "CMAKE_CONFIGURATION_TYPES=Release" >> "$env:GITHUB_ENV"
       - name: Restore snapshot data cache
-        if: matrix.os == 'ubuntu-latest'
         id: restore-cache-snapshots-release
-        uses: actions/cache/restore@v4
+        uses: actions/cache@v4
         with:
-          path: test/snapshots
+          path: ${{github.workspace}}/test/snapshots
           key: snapshots-${{ env.snapshot_version }}
       - name: Configure static library
         run: >
@@ -144,13 +127,6 @@ jobs:
           --profiling-format=google-trace
           --profiling-output ${{matrix.os}}_${{matrix.c_compiler}}_config_profile.json
           -DTT_DOWNLOAD_SNAPSHOTS=1
-      - name: Save snapshot data cache
-        if: matrix.os == 'ubuntu-latest' && steps.restore-cache-snapshots-release.outputs.cache-hit != 'true'
-        id: save-cache-snapshots-release
-        uses: actions/cache/save@v4
-        with:
-          path: ${{github.workspace}}/build/static/test/snapshots/
-          key: snapshots-${{ env.snapshot_version }}
       - name: Build static library
         run: cmake --build ${{github.workspace}}/build/static --config Release
       - name: Test static library

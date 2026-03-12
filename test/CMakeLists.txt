@@ -15,7 +15,7 @@ OPTION(TT_SANITIZE "Build with AddressSanitizer" OFF)
 
 # add_executable defines the executable program that CTest will run.
 # Include any necessary files that must be compiled in this command.
-add_executable(versioninfo versioninfo.cpp utils.c)
+add_executable(versioninfo versioninfo.cpp)
 
 # Link the executable to topotoolbox.
 target_link_libraries(versioninfo PRIVATE topotoolbox)
@@ -31,7 +31,7 @@ set_tests_properties(versioninfo PROPERTIES ENVIRONMENT_MODIFICATION
 # TEST : random_dem
 #
 # Runs libtopotoolbox functions on randomly generated DEMs.
-add_executable(random_dem random_dem.cpp utils.c)
+add_executable(random_dem random_dem.cpp utils.c utils.h profiler.h)
 if(TT_SANITIZE AND NOT MSVC)
   # Set up the AddressSanitizer flags.
   target_compile_options(random_dem PRIVATE "$<$<CONFIG:DEBUG>:-fsanitize=address>")
@@ -45,7 +45,7 @@ set_tests_properties(random_dem PROPERTIES ENVIRONMENT_MODIFICATION
 # TEST : excesstopography
 #
 # Runs the excesstopography functions on randomly generated DEMs.
-add_executable(excesstopography excesstopography.cpp utils.c)
+add_executable(excesstopography excesstopography.cpp utils.c utils.h)
 if(TT_SANITIZE AND NOT MSVC)
   # Set up the AddressSanitizer flags.
   target_compile_options(excesstopography PRIVATE "$<$<CONFIG:DEBUG>:-fsanitize=address>")
@@ -123,7 +123,7 @@ elseif(TT_DOWNLOAD_SNAPSHOTS)
     snapshot_data
     URL https://github.com/TopoToolbox/snapshot_data/releases/download/${TT_SNAPSHOT_VERSION}/snapshot_data.tar.gz
     URL_HASH SHA256=${TT_SNAPSHOT_HASH}
-    SOURCE_DIR snapshots/data/
+    SOURCE_DIR ${TT_SNAPSHOT_DATA_PATH}
     DOWNLOAD_EXTRACT_TIMESTAMP false)
   FetchContent_MakeAvailable(snapshot_data)
   set(TT_SNAPSHOT_DIR ${snapshot_data_SOURCE_DIR})
@@ -138,7 +138,7 @@ endif()
 
 include(FindGDAL)
 if(GDAL_FOUND AND TT_SNAPSHOT_DIR)
-  add_executable(snapshot snapshot.cpp utils.c)
+  add_executable(snapshot snapshot.cpp utils.c utils.h profiler.h)
   if(TT_SANITIZE AND NOT MSVC)
     # Set up the AddressSanitizer flags.
     target_compile_options(snapshot PRIVATE "$<$<CONFIG:DEBUG>:-fsanitize=address>")
@@ -148,4 +148,48 @@ if(GDAL_FOUND AND TT_SNAPSHOT_DIR)
   add_test(NAME snapshot COMMAND snapshot ${TT_SNAPSHOT_DIR})
   set_tests_properties(snapshot PROPERTIES ENVIRONMENT_MODIFICATION
                        "PATH=path_list_prepend:$<$<BOOL:${WIN32}>:$<TARGET_FILE_DIR:topotoolbox>>")
+endif()
+
+# TEST: clang-format
+#
+# Runs clang format to verify formatting of code
+
+OPTION(TT_FORMAT_CHECK "Check code formatting with clang-format" ON)
+
+find_program(CLANG_FORMAT_EXE clang-format)
+if (TT_FORMAT_CHECK AND CLANG_FORMAT_EXE)
+  message(STATUS "Found clang-format at ${CLANG_FORMAT_EXE}")
+
+  set(FORMAT_TARGETS
+    topotoolbox
+    versioninfo
+    random_dem
+    excesstopography
+    filters
+    swaths
+    polyline)
+
+  if (TARGET snapshot)
+    list(APPEND FORMAT_TARGETS snapshot)
+  endif()
+
+  set(ALL_SOURCES)
+
+  foreach(FORMAT_TARGET ${FORMAT_TARGETS})
+    get_target_property(TARGET_SOURCES ${FORMAT_TARGET} SOURCES)
+    get_target_property(TARGET_SOURCE_DIR ${FORMAT_TARGET} SOURCE_DIR)
+    foreach (source ${TARGET_SOURCES})
+      if(IS_ABSOLUTE ${source})
+	list(APPEND ALL_SOURCES ${source})
+      else()
+	list(APPEND ALL_SOURCES ${TARGET_SOURCE_DIR}/${source})
+      endif()
+    endforeach()
+  endforeach()
+  list(REMOVE_DUPLICATES ALL_SOURCES)
+
+  add_test(NAME clang-format
+    COMMAND ${CLANG_FORMAT_EXE} -n -Werror ${ALL_SOURCES} ${CMAKE_SOURCE_DIR}/include/topotoolbox.h
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+  )
 endif()
