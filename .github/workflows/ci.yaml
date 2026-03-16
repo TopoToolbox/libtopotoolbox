@@ -13,7 +13,7 @@ jobs:
   debug-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           submodules: true
       - name: Install OpenMP
@@ -29,7 +29,7 @@ jobs:
           pip install -r ${{github.workspace}}/docs/requirements.txt
       - name: Restore snapshot data cache
         id: restore-cache-snapshots-debug
-        uses: actions/cache@v4
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
         with:
           path: ${{github.workspace}}/test/snapshots
           key: snapshots-${{ env.snapshot_version }}
@@ -50,7 +50,7 @@ jobs:
         run: ctest --test-dir ${{github.workspace}}/build/debug -C Debug --output-on-failure
       - name: Upload test snapshot artifacts
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: snapshot_test_output
           path: ${{github.workspace}}/build/debug/test/snapshots/
@@ -83,7 +83,7 @@ jobs:
           - os: ubuntu-latest
             c_compiler: cl
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           submodules: true
       - name: Install OpenMP on Ubuntu
@@ -99,9 +99,6 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt update && sudo apt install libgdal-dev
         ## TODO: Install GDAL on Windows and macos
-      - name: Install ninja on windows
-        uses: seanmiddleditch/gha-setup-ninja@master
-        if: matrix.os == 'windows-latest'
       - name: Set up MSVC
         uses: ilammy/msvc-dev-cmd@v1
         if: matrix.os == 'windows-latest'
@@ -112,7 +109,7 @@ jobs:
           echo "CMAKE_CONFIGURATION_TYPES=Release" >> "$env:GITHUB_ENV"
       - name: Restore snapshot data cache
         id: restore-cache-snapshots-release
-        uses: actions/cache@v4
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
         with:
           path: ${{github.workspace}}/test/snapshots
           key: snapshots-${{ env.snapshot_version }}
@@ -145,7 +142,7 @@ jobs:
       - name: Build shared library
         run: cmake --build ${{github.workspace}}/build/shared --config Release
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: ${{matrix.os}}_${{matrix.c_compiler}}_cmake_profiles
           path: ${{matrix.os}}_${{matrix.c_compiler}}_config_profile.json
