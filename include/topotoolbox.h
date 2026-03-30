@@ -2651,4 +2651,483 @@ ptrdiff_t simplify_line(float *out_i, float *out_j, const float *track_i,
                         const float *track_j, ptrdiff_t n_points,
                         float tolerance, int method);
 
+/**
+   @brief Count edges in a bitmap edge set
+
+   @param[in]  bitmap The input bitmap
+   @parblock
+
+   The input bitmap is an array of uint8_t. Each of the 8 bits
+   corresponds to an outgoing edge from that pixel starting with the
+   least significant bit representing the edge to the right and moving
+   counterclockwise.
+
+   @endparblock
+
+   @param[in]  dims The dimensions of the bitmap
+   @parblock
+   A pair of ptrdiff_t, fastest changing dimension first.
+   @endparblock
+
+   @return Number of edges in the edge set
+*/
+TOPOTOOLBOX_API
+ptrdiff_t edgeset_count(uint8_t *bitmap, ptrdiff_t dims[2]);
+
+/**
+   @brief Determine edge weight offsets in a bitmap edge set
+
+   @details A bitmap edge set stores the edge weights in a packed
+   array of floats sorted by the source pixel. Since each pixel may
+   have a different number of outgoing edges, the offset into the
+   weights array corresponding to the first edge leaving a source
+   pixel depends on the number of edges leaving the pixels preceding
+   the source. This is computed with a prefix sum (a scan) of the
+   bitmap array.
+
+   @param[out] scan The edge weight offsets
+   @parblock
+
+   An array of ptrdiff_t of the same size as the bitmap. The value at
+   pixel (i, j) is the offset into the weights array at which the
+   first outgoing edge of pixel (i, j) can be found if it is
+   present. Subsequent edges are stored contiguously.
+
+   @endparblock
+
+   @param[in]  bitmap The input bitmap
+   @parblock
+
+   The input bitmap is an array of uint8_t. Each of the 8 bits
+   corresponds to an outgoing edge from that pixel starting with the
+   least significant bit representing the edge to the right and moving
+   counterclockwise.
+
+   @endparblock
+
+   @param[in]  dims The dimensions of the bitmap
+   @parblock
+   A pair of ptrdiff_t, fastest changing dimension first.
+   @endparblock
+
+   @return Number of edges in the edge set
+ */
+TOPOTOOLBOX_API
+ptrdiff_t edgeset_scan(ptrdiff_t *scan, uint8_t *bitmap, ptrdiff_t dims[2]);
+
+/**
+   @brief Count edges in a merged bitmap edge set
+
+   @details To merge two bitmap edge sets one takes the bitwise or of
+   corresponding pixels in the two bitmaps. This function computes the
+   number of edges that will result from merging two input
+   bitmaps. This is necessary to preallocate the edge weight array
+   before merging.
+
+   @param[in]  b1 The first input bitmap
+   @parblock
+
+   The input bitmap is an array of uint8_t. Each of the 8 bits
+   corresponds to an outgoing edge from that pixel starting with the
+   least significant bit representing the edge to the right and moving
+   counterclockwise.
+
+   @endparblock
+
+   @param[in]  b2 The second input bitmap
+   @parblock
+
+   The input bitmap is an array of uint8_t. Each of the 8 bits
+   corresponds to an outgoing edge from that pixel starting with the
+   least significant bit representing the edge to the right and moving
+   counterclockwise.
+
+   @endparblock
+
+   @param[in]  dims The dimensions of the bitmap
+   @parblock
+   A pair of ptrdiff_t, fastest changing dimension first.
+   @endparblock
+
+   @return Number of edges in the edge set
+*/
+TOPOTOOLBOX_API
+ptrdiff_t edgeset_count_merged(uint8_t *b1, uint8_t *b2, ptrdiff_t dims[2]);
+
+/**
+   @brief Merge two bitmap edge sets
+
+   @details To merge two bitmap edge sets one takes the bitwise or of
+   corresponding pixels in the two bitmaps and sorts the edge weights
+   appropriately.
+
+   @param[out] w0 The output edge weight array
+   @parblock
+
+   An array of floats containing the edge weights of the merged edge
+   set. This array should be preallocated with a size of at least the
+   number of edges returned by edgeset_count_merged.
+
+   @endparblock
+
+   @param[out] s0 The output offset array
+   @parblock
+
+   An array of ptrdiff_t containing the offsets in the edge weight
+   array of the first outgoing edge for each pixel, if it exists. This
+   can also be computed after the merge with edgeset_scan.
+
+   @endparblock
+
+   @param[inout]  b1 The first input bitmap
+   @parblock
+
+   The input bitmap is an array of uint8_t. Each of the 8 bits
+   corresponds to an outgoing edge from that pixel starting with the
+   least significant bit representing the edge to the right and moving
+   counterclockwise.
+
+   The first input bitmap will be updated with edges from the second
+   input bitmap.
+
+   @endparblock
+
+   @param[in]  b2 The second input bitmap
+   @parblock
+
+   The input bitmap is an array of uint8_t. Each of the 8 bits
+   corresponds to an outgoing edge from that pixel starting with the
+   least significant bit representing the edge to the right and moving
+   counterclockwise.
+
+   @endparblock
+
+   @param[in]  dims The dimensions of the bitmap
+   @parblock
+   A pair of ptrdiff_t, fastest changing dimension first.
+   @endparblock
+
+   @return Number of edges in the edge set
+*/
+TOPOTOOLBOX_API
+ptrdiff_t edgeset_merge(float *w0, ptrdiff_t *s0, uint8_t *b1, float *w1,
+                        uint8_t *b2, float *w2, ptrdiff_t dims[2]);
+
+/**
+   @brief Topologically sort a set of edges
+
+   @details flow_routing_tsort performs a topological sort of the
+   edges stored in a bitmap edge set. This is a necessary step in
+   creation of a TopoToolbox Flow object. This function can be used
+   with any flow routing algorithm that outputs an edge set.
+
+   @param[out] stream The topologically sorted list of nodes
+   @parblock
+
+   This is an array of ptrdiff_t that will be filled with the linear
+   indices of nodes in topological order. It should be preallocated
+   with a size equal to the number of pixels in the DEM.
+
+   @endparblock
+
+   @param[out] source The topologically sorted list of source pixels
+   @parblock
+
+   An array of ptrdiff_t that will be filled with the source indices
+   for each edge in the flow network. Topologically sorted so that all
+   incoming edges to a pixel occur before any outgoing pixels. This
+   array should be preallocated with a size equal to the number of
+   edges in the edge set as returned by any of the edgeset functions.
+
+   @endparblock
+
+   @param[out] target The topologically sorted list of target pixels
+   @parblock
+
+   An array of ptrdiff_t that will be filled with the target indices
+   for each edge in the flow network. Topologically sorted so that all
+   incoming edges to a pixel occur before any outgoing pixels. This
+   array should be preallocated with a size equal to the number of
+   edges in the edge set as returned by any of the edgeset functions.
+
+   @endparblock
+
+   @param[out] sorted_weight The topologically sorted list of edge weights
+   @parblock
+
+   An array of floats that will be filled with the edge weights for
+   each edge in the flow network. The order of the weights in this
+   array corresponds to the source and target arrays. This array
+   should be preallocated with a size equal to the number of edges in
+   the edge set as returned by any of the edgeset functions.
+
+   @endparblock
+
+   @param[in] stack A stack used for the graph traversal
+   @parblock
+
+   An array of ptrdiff_t that is used as a stack of node indices
+   during the graph traversal. This is a temporary array only needed
+   by this function. It should be preallocated with a size equal to
+   the number of pixels in the DEM.
+
+   @endparblock
+
+   @param[in] stackdir A stack used for the graph traversal
+   @parblock
+
+   An array of uint8_t that is used as a stack of edge directions
+   during the graph traversal. This is a temporary array only needed
+   by this function. It should be preallocated with a size equal to
+   the number of pixels in the DEM.
+
+   @endparblock
+
+   @param[in] direction The input bitmap edge set
+   @parblock
+
+   The input bitmap is an array of uint8_t. Each of the 8 bits
+   corresponds to an outgoing edge from that pixel starting with the
+   least significant bit representing the edge to the right and moving
+   counterclockwise.
+
+   @endparblock
+
+   @param[in] weight The edge weight array
+   @parblock
+
+   An array of floats containing the edge weights for each edge. The
+   edge weights are densely packed and ordered by the source pixel
+   then by the edge index as described in edgeset_scan.
+
+   @endparblock
+
+   @param[in] weightscan The array of offsets into the edge weight array
+   @parblock
+
+   An array of ptrdiff_t containing the offsets of the weight of the
+   first outgoing edge for each pixel in the weight array. This should
+   be generated by edgeset_scan or edgeset_merge.
+
+   @endparblock
+
+   @param[in] visited A marker array for the graph traversal
+   @parblock
+
+   An array of uint8_t that is used to mark visited pixels during the
+   graph traversal. This is a temporary array only needed by this
+   function. It should be preallocated with a size equal to the number
+   of pixels in the DEM.
+
+   @endparblock
+
+   @param[in] edge_count The number of edges in the edge set
+   @parblock
+
+   This can be obtained as the return value from any of the edgeset
+   functions.
+
+   @endparblock
+
+   @param[in]  dims The dimensions of the bitmap
+   @parblock
+   A pair of ptrdiff_t, fastest changing dimension first.
+   @endparblock
+
+   @param[in] order The memory order of the underlying arrays
+   @parblock
+   0 for column-major, 1 for row-major
+   @endparblock
+ */
+TOPOTOOLBOX_API
+void flow_routing_tsort(ptrdiff_t *stream, ptrdiff_t *source, ptrdiff_t *target,
+                        float *sorted_weight, ptrdiff_t *stack,
+                        uint8_t *stackdir, uint8_t *direction, float *weight,
+                        ptrdiff_t *weightscan, uint8_t *visited,
+                        ptrdiff_t edge_count, ptrdiff_t dims[2], int order);
+
+/**
+   @brief Compute flow directions using the D-inf method of Tarboton (1997)
+
+   @details D-inf chooses up to two downstream neighbors based on the
+   steepest downward slope of 8 triangular facets surrounding a center
+   pixel and apportions flow between the two pixels according to the
+   angle of the downward slope vector.
+
+   Tarboton, D. G. (1997), A new method for the determination of flow
+   directions and upslope areas in grid digital elevation models,
+   Water Resour. Res., 33(2), 309–319, doi:10.1029/96WR03137.
+
+   @param[out] direction A bitmap edge set
+   @parblock
+
+   A uint8_t array of the same size as the DEM. Each of the 8 bits of
+   each pixel corresponds to an outgoing edge.
+
+   @endparblock
+
+   @param[out] prop Flow proportion towards the first outgoing edge
+   @parblock
+
+   A float array of the same size as the DEM. This is the proportion
+   of flow that is routed towards the first outgoing edge from each
+   pixel.
+
+   @endparblock
+
+   @param[in] dem The input DEM
+   @parblock
+
+   A float array with size dims[0] x dims[1].
+
+   @endparblock
+
+   @param[in]  dims The dimensions of the DEM
+   @parblock
+   A pair of ptrdiff_t, fastest changing dimension first.
+   @endparblock
+
+   @param[in] order The memory order of the underlying arrays
+   @parblock
+   0 for column-major, 1 for row-major
+   @endparblock
+ */
+TOPOTOOLBOX_API
+void flow_routing_dinf_directions(uint8_t *direction, float *prop, float *dem,
+                                  ptrdiff_t dims[2], int order);
+
+/**
+   @brief Compute and store the D-inf edge weights
+
+   @details Once the flow directions and flow proportions have been
+   computed, the edge weights need to be stored in an array in an
+   order that will be used by functions like flow_routing_tsort.
+
+   @param[out] weight The weight array
+   @parblock
+
+   An array of floats that will be filled with the edge weights. This
+   should be preallocated with a size equal to the number of edges in
+   the direction bitmap. This size can be computed using
+   edgeset_count.
+
+   @endparblock
+
+   @param[in] direction The input direction bitmap
+   @parblock
+
+   An array of uint8_t that should come from the direction argument of
+   flow_routing_dinf_directions. This is a bitmap edge set encoded as
+   described elsewhere.
+
+   @endparblock
+
+   @param[in] prop The input flow proportions
+   @parblock
+
+   An array of floats that should come from the prop argument of
+   flow_routing_dinf_directions. This is the proportion of flow routed
+   to the first outgoing edge of each pixel.
+
+   @endparblock
+
+   @param[in]  dims The dimensions of the DEM
+   @parblock
+   A pair of ptrdiff_t, fastest changing dimension first.
+   @endparblock
+ */
+TOPOTOOLBOX_API
+void flow_routing_dinf_weights(float *weight, uint8_t *direction, float *prop,
+                               ptrdiff_t dims[2]);
+
+/**
+   @brief Resolve flats using a shortest path algorithm
+
+   @details This flat resolution algorithm flows flats along the
+   shortest path to sills. Sills are resolved pixels with the same
+   elevation as neighboring flats. The flat pixels neighboring sills
+   are resolved to flow into their neighboring sill. The remaining
+   flats are then resolved to flow along the shortest path to a sill.
+
+   Uses Dijkstra's algorithm with a preallocated priority queue.
+
+   @param[out] direction The output direction bitmap
+   @param[in] resolved   nonzero for pixels that have resolved directions
+   @parblock
+
+   An array of uint8_t flagging unresolved pixels with a zero. Only
+   pixels with a zero in this array will be resolved by the shortest
+   path algorithm.
+
+   @endparblock
+
+   @param path_distance A temporary array used by the shortest path algorithm
+   @parblock
+
+   An array of floats of size dims[0] x dims[1].
+   @endparblock
+
+   @param heap A temporary array used by the shortest path algorithm
+   @parblock
+
+   An array of ptrdiff_t of size dims[0] x dims[1].
+
+   @endparblock
+
+   @param back A temporary array used by the shortest path algorithm
+   @parblock
+
+   An array of ptrdiff_t of size dims[0] x dims[1].
+
+   @endparblock
+
+   @param[in] dem The input dem
+   @parblock
+
+   This is used to make sure that the pixels only flow to neighbors of
+   the same elevation.
+
+   @endparblock
+
+   @param[in]  dims The dimensions of the DEM
+   @parblock
+   A pair of ptrdiff_t, fastest changing dimension first.
+   @endparblock
+
+   @param[in] order The memory order of the underlying arrays
+   @parblock
+   0 for column-major, 1 for row-major
+   @endparblock
+ */
+TOPOTOOLBOX_API
+void resolve_flats_shortest_path(uint8_t *direction, uint8_t *resolved,
+                                 float *path_distance, ptrdiff_t *heap,
+                                 ptrdiff_t *back, float *dem, ptrdiff_t dims[2],
+                                 int order);
+
+/**
+   @brief Compute the weights of the shortest path flat resolution
+   algorithm
+
+   @details The weights are all 1. This function is provided for
+   consistency with other flat resolution implementations.
+
+   @param[out] weight The array of edge weights
+   @parblock
+
+   An array of floats preallocated with a size count.
+
+   @endparblock
+
+   @param[in] count The number of edges
+   @parblock
+
+   This can be computed from the output direction bitmap of
+   resolve_flats_shortest_path using edgeset_count.
+
+   @endparblock
+ */
+TOPOTOOLBOX_API
+void resolve_flats_shortest_path_weights(float *weight, ptrdiff_t count);
+
 #endif  // TOPOTOOLBOX_H

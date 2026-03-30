@@ -97,7 +97,8 @@ endif()
 target_link_libraries(polyline PRIVATE topotoolbox)
 add_test(NAME polyline COMMAND polyline)
 set_tests_properties(polyline PROPERTIES ENVIRONMENT_MODIFICATION
-                     "PATH=path_list_prepend:$<$<BOOL:${WIN32}>:$<TARGET_FILE_DIR:topotoolbox>>")
+  "PATH=path_list_prepend:$<$<BOOL:${WIN32}>:$<TARGET_FILE_DIR:topotoolbox>>")
+
 
 # TEST : snapshots
 #
@@ -150,8 +151,22 @@ if(GDAL_FOUND AND TT_SNAPSHOT_DIR)
   target_link_libraries(snapshot PRIVATE topotoolbox GDAL::GDAL)
   add_test(NAME snapshot COMMAND snapshot ${TT_SNAPSHOT_DIR})
   set_tests_properties(snapshot PROPERTIES ENVIRONMENT_MODIFICATION
-                       "PATH=path_list_prepend:$<$<BOOL:${WIN32}>:$<TARGET_FILE_DIR:topotoolbox>>")
+    "PATH=path_list_prepend:$<$<BOOL:${WIN32}>:$<TARGET_FILE_DIR:topotoolbox>>")
+
+  # TEST : dinf
+  #
+  add_executable(dinf dinf.c utils.c grid.c flow.c)
+  if(TT_SANITIZE AND NOT MSVC)
+    target_compile_options(dinf PRIVATE "$<$<CONFIG:DEBUG>:-fsanitize=address>")
+    target_link_options(dinf PRIVATE "$<$<CONFIG:DEBUG>:-fsanitize=address>")
+  endif()
+  target_link_libraries(dinf PRIVATE topotoolbox GDAL::GDAL)
+  add_test(NAME dinf COMMAND dinf ${TT_SNAPSHOT_DIR})
+  set_tests_properties(dinf PROPERTIES ENVIRONMENT_MODIFICATION
+    "PATH=path_list_prepend:$<$<BOOL:${WIN32}>:$<TARGET_FILE_DIR:topotoolbox>>")
 endif()
+
+		   
 
 # TEST: clang-format
 #
