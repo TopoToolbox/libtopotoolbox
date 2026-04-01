@@ -31,16 +31,20 @@ set_tests_properties(versioninfo PROPERTIES ENVIRONMENT_MODIFICATION
 # TEST : random_dem
 #
 # Runs libtopotoolbox functions on randomly generated DEMs.
-add_executable(random_dem random_dem.cpp utils.c utils.h profiler.h)
-if(TT_SANITIZE AND NOT MSVC)
-  # Set up the AddressSanitizer flags.
-  target_compile_options(random_dem PRIVATE "$<$<CONFIG:DEBUG>:-fsanitize=address>")
-  target_link_options(random_dem PRIVATE "$<$<CONFIG:DEBUG>:-fsanitize=address>")
+include(FindGDAL)
+
+if (GDAL_FOUND)
+  add_executable(random_dem random_dem.cpp utils.c utils.h profiler.h grid.c flow.c)
+  if(TT_SANITIZE AND NOT MSVC)
+    # Set up the AddressSanitizer flags.
+    target_compile_options(random_dem PRIVATE "$<$<CONFIG:DEBUG>:-fsanitize=address>")
+    target_link_options(random_dem PRIVATE "$<$<CONFIG:DEBUG>:-fsanitize=address>")
+  endif()
+  target_link_libraries(random_dem PRIVATE topotoolbox GDAL::GDAL)
+  add_test(NAME random_dem COMMAND random_dem)
+  set_tests_properties(random_dem PROPERTIES ENVIRONMENT_MODIFICATION
+    "PATH=path_list_prepend:$<$<BOOL:${WIN32}>:$<TARGET_FILE_DIR:topotoolbox>>")
 endif()
-target_link_libraries(random_dem PRIVATE topotoolbox)
-add_test(NAME random_dem COMMAND random_dem)
-set_tests_properties(random_dem PROPERTIES ENVIRONMENT_MODIFICATION
-                     "PATH=path_list_prepend:$<$<BOOL:${WIN32}>:$<TARGET_FILE_DIR:topotoolbox>>")
 
 # TEST : excesstopography
 #
@@ -136,7 +140,6 @@ else()
   message(STATUS "Could not find snapshot data. Snapshot tests will not be run")
 endif()
 
-include(FindGDAL)
 if(GDAL_FOUND AND TT_SNAPSHOT_DIR)
   add_executable(snapshot snapshot.cpp utils.c utils.h profiler.h)
   if(TT_SANITIZE AND NOT MSVC)

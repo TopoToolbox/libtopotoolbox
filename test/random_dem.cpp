@@ -10,8 +10,8 @@
 #include <utility>
 #include <vector>
 
-// Include topotoolbox.h in its own namespace to help prevent naming
-// conflicts in the global scope.
+// Include topotoolbox in its own namespace to help prevent
+// naming conflicts in the global scope.
 namespace tt {
 extern "C" {
 #include "topotoolbox.h"
@@ -19,6 +19,8 @@ extern "C" {
 }  // namespace tt
 
 extern "C" {
+#include "flow.h"
+#include "grid.h"
 #include "utils.h"
 }
 
@@ -32,13 +34,10 @@ Profiler prof;  // Global Profiler that our test functions can access
   Each pixel of the filled DEM should be greater than or equal to
   the corresponding pixel in the original DEM.
  */
-int32_t test_fillsinks_ge(float *original_dem, float *filled_dem,
-                          ptrdiff_t dims[2]) {
-  for (ptrdiff_t j = 0; j < dims[1]; j++) {
-    for (ptrdiff_t i = 0; i < dims[0]; i++) {
-      assert(filled_dem[i + dims[0] * j] >= original_dem[i + dims[0] * j]);
-    }
-  }
+int32_t test_fillsinks_ge(Grid original, Grid filled) {
+  Grid sub = GridSubtract(filled, original);
+  assert(GridAllNonnegative(sub));
+  GridFree(&sub);
   return 0;
 }
 
@@ -46,30 +45,10 @@ int32_t test_fillsinks_ge(float *original_dem, float *filled_dem,
   No pixel in the filled DEM should be completely surrounded by pixels higher
   than it.
  */
-int32_t test_fillsinks_filled(float *filled_dem, ptrdiff_t dims[2]) {
-  ptrdiff_t j_offset[8] = {-1, -1, -1, 0, 1, 1, 1, 0};
-  ptrdiff_t i_offset[8] = {1, 0, -1, -1, -1, 0, 1, 1};
-
-  for (ptrdiff_t j = 0; j < dims[1]; j++) {
-    for (ptrdiff_t i = 0; i < dims[0]; i++) {
-      float z = filled_dem[i + dims[0] * j];
-      ptrdiff_t up_neighbor_count = 0;
-      for (int32_t neighbor = 0; neighbor < 8; neighbor++) {
-        ptrdiff_t neighbor_i = i + i_offset[neighbor];
-        ptrdiff_t neighbor_j = j + j_offset[neighbor];
-
-        if (neighbor_i < 0 || neighbor_i >= dims[0] || neighbor_j < 0 ||
-            neighbor_j >= dims[1]) {
-          continue;
-        }
-
-        if (filled_dem[neighbor_i + dims[0] * neighbor_j] > z) {
-          up_neighbor_count++;
-        }
-      }
-      assert(up_neighbor_count != 8);
-    }
-  }
+int32_t test_fillsinks_filled(Grid filled) {
+  Grid sinks = GridLabelSinks(filled);
+  assert(GridAny(sinks) == 0);
+  GridFree(&sinks);
   return 0;
 }
 
@@ -78,15 +57,19 @@ int32_t test_fillsinks_filled(float *filled_dem, ptrdiff_t dims[2]) {
   8 higher neighbors should be labeled a flat. Likewise, every flat
   should have no lower neighbors and fewer than 8 higher neighbors.
  */
-int32_t test_identifyflats_flats(int32_t *flats, float *dem,
-                                 ptrdiff_t dims[2]) {
+int32_t test_identifyflats_flats(Grid flats, Grid dem) {
   ptrdiff_t col_offset[8] = {-1, -1, -1, 0, 1, 1, 1, 0};
   ptrdiff_t row_offset[8] = {1, 0, -1, -1, -1, 0, 1, 1};
 
+  int32_t *flat_data = (int32_t *)flats.data;
+  float *dem_data = (float *)dem.data;
+
+  ptrdiff_t dims[2] = {dem.dims[0], dem.dims[1]};
+
   for (ptrdiff_t j = 0; j < dims[1]; j++) {
     for (ptrdiff_t i = 0; i < dims[0]; i++) {
-      float z = dem[i + dims[0] * j];
-      int32_t flat = flats[i + dims[0] * j];
+      float z = dem_data[i + dims[0] * j];
+      int32_t flat = flat_data[i + dims[0] * j];
 
       int32_t up_neighbor_count = 0;
       int32_t down_neighbor_count = 0;
@@ -99,7 +82,7 @@ int32_t test_identifyflats_flats(int32_t *flats, float *dem,
           continue;
         }
 
-        float neighbor_height = dem[neighbor_i + dims[0] * neighbor_j];
+        float neighbor_height = dem_data[neighbor_i + dims[0] * neighbor_j];
 
         if (neighbor_height > z) {
           up_neighbor_count++;
@@ -122,15 +105,19 @@ int32_t test_identifyflats_flats(int32_t *flats, float *dem,
   Every pixel that has a lower neighbor, borders a flat, and has the
   same elevation as a flat that it touches should be labeled a sill.
 */
-int32_t test_identifyflats_sills(int32_t *flats, float *dem,
-                                 ptrdiff_t dims[2]) {
+int32_t test_identifyflats_sills(Grid flats, Grid dem) {
   ptrdiff_t j_offset[8] = {-1, -1, -1, 0, 1, 1, 1, 0};
   ptrdiff_t i_offset[8] = {1, 0, -1, -1, -1, 0, 1, 1};
 
+  int32_t *flat_data = (int32_t *)flats.data;
+  float *dem_data = (float *)dem.data;
+
+  ptrdiff_t dims[2] = {dem.dims[0], dem.dims[1]};
+
   for (ptrdiff_t j = 0; j < dims[1]; j++) {
     for (ptrdiff_t i = 0; i < dims[0]; i++) {
-      float z = dem[i + j * dims[0]];
-      int32_t flat = flats[i + j * dims[0]];
+      float z = dem_data[i + j * dims[0]];
+      int32_t flat = flat_data[i + j * dims[0]];
 
       int32_t down_neighbor_count = 0;
       int32_t equal_neighbor_flats = 0;
@@ -147,8 +134,8 @@ int32_t test_identifyflats_sills(int32_t *flats, float *dem,
           continue;
         }
 
-        float neighbor_height = dem[neighbor_i + dims[0] * neighbor_j];
-        int32_t neighbor_flat = flats[neighbor_i + dims[0] * neighbor_j];
+        float neighbor_height = dem_data[neighbor_i + dims[0] * neighbor_j];
+        int32_t neighbor_flat = flat_data[neighbor_i + dims[0] * neighbor_j];
 
         if (neighbor_height < z) {
           down_neighbor_count++;
@@ -170,15 +157,19 @@ int32_t test_identifyflats_sills(int32_t *flats, float *dem,
   Every pixel that is a flat and borders a sill of the same
   height should be labeled a presill
 */
-int32_t test_identifyflats_presills(int32_t *flats, float *dem,
-                                    ptrdiff_t dims[2]) {
+int32_t test_identifyflats_presills(Grid flats, Grid dem) {
   ptrdiff_t j_offset[8] = {-1, -1, -1, 0, 1, 1, 1, 0};
   ptrdiff_t i_offset[8] = {1, 0, -1, -1, -1, 0, 1, 1};
 
+  int32_t *flat_data = (int32_t *)flats.data;
+  float *dem_data = (float *)dem.data;
+
+  ptrdiff_t dims[2] = {dem.dims[0], dem.dims[1]};
+
   for (ptrdiff_t j = 0; j < dims[1]; j++) {
     for (ptrdiff_t i = 0; i < dims[0]; i++) {
-      float z = dem[i + j * dims[0]];
-      int32_t flat = flats[i + j * dims[0]];
+      float z = dem_data[i + j * dims[0]];
+      int32_t flat = flat_data[i + j * dims[0]];
 
       int32_t equal_neighbor_sills = 0;
 
@@ -191,8 +182,8 @@ int32_t test_identifyflats_presills(int32_t *flats, float *dem,
           continue;
         }
 
-        float neighbor_height = dem[neighbor_i + dims[0] * neighbor_j];
-        int32_t neighbor_flat = flats[neighbor_i + dims[0] * neighbor_j];
+        float neighbor_height = dem_data[neighbor_i + dims[0] * neighbor_j];
+        int32_t neighbor_flat = flat_data[neighbor_i + dims[0] * neighbor_j];
 
         if (((neighbor_flat & 2) > 0) && (neighbor_height == z)) {
           equal_neighbor_sills++;
@@ -209,11 +200,11 @@ int32_t test_identifyflats_presills(int32_t *flats, float *dem,
 /*
   Costs should be zero on nonflats and positive on flats.
  */
-int32_t test_gwdt_costs(float *costs, int32_t *flats, ptrdiff_t dims[2]) {
-  for (ptrdiff_t j = 0; j < dims[1]; j++) {
-    for (ptrdiff_t i = 0; i < dims[0]; i++) {
-      float cost = costs[i + dims[0] * j];
-      int32_t flat = flats[i + dims[0] * j];
+int32_t test_gwdt_costs(Grid costs, Grid flats) {
+  for (ptrdiff_t j = 0; j < flats.dims[1]; j++) {
+    for (ptrdiff_t i = 0; i < flats.dims[0]; i++) {
+      float cost = ((float *)costs.data)[i + costs.dims[0] * j];
+      int32_t flat = ((int32_t *)flats.data)[i + flats.dims[0] * j];
 
       assert((cost >= 0) && (((flat & 1) > 0) == (cost > 0)));
     }
@@ -226,15 +217,15 @@ int32_t test_gwdt_costs(float *costs, int32_t *flats, ptrdiff_t dims[2]) {
   Flats neighboring other flats should all have the same nonzero
   connected component label
  */
-int32_t test_gwdt_conncomps(ptrdiff_t *conncomps, int32_t *flats,
-                            ptrdiff_t dims[2]) {
+int32_t test_gwdt_conncomps(Grid conncomps, Grid flats) {
   ptrdiff_t j_offset[8] = {-1, -1, -1, 0, 1, 1, 1, 0};
   ptrdiff_t i_offset[8] = {1, 0, -1, -1, -1, 0, 1, 1};
 
-  for (ptrdiff_t j = 0; j < dims[1]; j++) {
-    for (ptrdiff_t i = 0; i < dims[0]; i++) {
-      ptrdiff_t label = conncomps[i + dims[0] * j];
-      int32_t flat = flats[i + dims[0] * j];
+  for (ptrdiff_t j = 0; j < flats.dims[1]; j++) {
+    for (ptrdiff_t i = 0; i < flats.dims[0]; i++) {
+      ptrdiff_t label =
+          ((ptrdiff_t *)conncomps.data)[i + conncomps.dims[0] * j];
+      int32_t flat = ((int32_t *)flats.data)[i + flats.dims[0] * j];
 
       if (!(flat & 1)) {
         continue;
@@ -244,13 +235,16 @@ int32_t test_gwdt_conncomps(ptrdiff_t *conncomps, int32_t *flats,
         ptrdiff_t neighbor_i = i + i_offset[neighbor];
         ptrdiff_t neighbor_j = j + j_offset[neighbor];
 
-        if (neighbor_i < 0 || neighbor_i >= dims[0] || neighbor_j < 0 ||
-            neighbor_j >= dims[1]) {
+        if (neighbor_i < 0 || neighbor_i >= flats.dims[0] || neighbor_j < 0 ||
+            neighbor_j >= flats.dims[1]) {
           continue;
         }
 
-        int32_t neighbor_flat = flats[neighbor_i + dims[0] * neighbor_j];
-        ptrdiff_t neighbor_label = conncomps[neighbor_i + dims[0] * neighbor_j];
+        int32_t neighbor_flat =
+            ((int32_t *)flats.data)[neighbor_i + flats.dims[0] * neighbor_j];
+        ptrdiff_t neighbor_label =
+            ((ptrdiff_t *)
+                 conncomps.data)[neighbor_i + conncomps.dims[0] * neighbor_j];
         if (neighbor_flat & 1) {
           assert(neighbor_label == label);
         }
@@ -269,12 +263,13 @@ int32_t test_gwdt_conncomps(ptrdiff_t *conncomps, int32_t *flats,
   4. equal to the distance to the parent pixel plus the geodesic distance
   between the parent and the current pixel.
  */
-int32_t test_gwdt(float *dist, ptrdiff_t *prev, float *costs, int32_t *flats,
-                  ptrdiff_t dims[2]) {
+int32_t test_gwdt(Grid dist, Grid prev, Grid costs, Grid flats) {
+  ptrdiff_t dims[2] = {dist.dims[0], dist.dims[1]};
+
   for (ptrdiff_t j = 0; j < dims[1]; j++) {
     for (ptrdiff_t i = 0; i < dims[0]; i++) {
-      float d = dist[i + j * dims[0]];
-      int32_t flat = flats[i + j * dims[0]];
+      float d = ((float *)dist.data)[j * dims[0] + i];
+      int32_t flat = ((int32_t *)flats.data)[j * dims[0] + i];
 
       assert(d >= 0);
 
@@ -283,13 +278,15 @@ int32_t test_gwdt(float *dist, ptrdiff_t *prev, float *costs, int32_t *flats,
       } else if (flat & 1) {
         assert(d > 1.0);
 
-        ptrdiff_t parent = prev[i + j * dims[0]];
+        ptrdiff_t parent = ((ptrdiff_t *)prev.data)[j * dims[0] + i];
         ptrdiff_t parent_j = parent / dims[0];
         ptrdiff_t parent_i = parent % dims[0];
         float chamfer = (parent_j != j) && (parent_i != i) ? SQRT2f : 1.0f;
-        float proposed_dist =
-            dist[parent] +
-            chamfer * (costs[i + j * dims[0]] + costs[parent]) / 2;
+        float proposed_dist = ((float *)dist.data)[parent] +
+                              chamfer *
+                                  (((float *)costs.data)[j * dims[0] + i] +
+                                   ((float *)costs.data)[parent]) /
+                                  2;
         assert(proposed_dist == d);
       }
     }
@@ -301,13 +298,18 @@ int32_t test_gwdt(float *dist, ptrdiff_t *prev, float *costs, int32_t *flats,
   For each cell, the saved gradient should be greater than or equal to
   the signed gradient to all 8 neighboring cells.
 */
-int32_t test_gradient8(float *gradient, float *dem, float cellsize,
-                       ptrdiff_t dims[2]) {
+int32_t test_gradient8(Grid gradient, Grid dem) {
   ptrdiff_t i_offset[8] = {0, 1, 1, 1, 0, -1, -1, -1};
   ptrdiff_t j_offset[8] = {1, 1, 0, -1, -1, -1, 0, 1};
+
+  ptrdiff_t dims[2] = {dem.dims[0], dem.dims[1]};
+
+  float *gradient_data = (float *)gradient.data;
+  float *dem_data = (float *)dem.data;
+
   for (ptrdiff_t j = 0; j < dims[1]; j++) {
     for (ptrdiff_t i = 0; i < dims[0]; i++) {
-      float max_gradient = gradient[j * dims[0] + i];
+      float max_gradient = gradient_data[j * dims[0] + i];
 
       // Iterate over all 8 neighboring cells
       for (int k = 0; k < 8; k++) {
@@ -321,11 +323,11 @@ int32_t test_gradient8(float *gradient, float *dem, float cellsize,
           float vertical_dist;
           float local_gradient;
 
-          horizontal_dist = cellsize;
+          horizontal_dist = dem.cellsize;
           horizontal_dist *= neighbor_i != i && neighbor_j != j ? SQRT2 : 1.0f;
 
-          vertical_dist =
-              dem[j * dims[0] + i] - dem[neighbor_j * dims[0] + neighbor_i];
+          vertical_dist = dem_data[j * dims[0] + i] -
+                          dem_data[neighbor_j * dims[0] + neighbor_i];
 
           local_gradient = vertical_dist / horizontal_dist;
           assert(max_gradient >= local_gradient);
@@ -338,38 +340,35 @@ int32_t test_gradient8(float *gradient, float *dem, float cellsize,
 /*
   Computing the gradient8 using OpenMP should yield the same result as without.
 */
-int32_t test_gradient8_mp(float *gradient, float *gradient_mp,
-                          ptrdiff_t dims[2]) {
-  for (ptrdiff_t j = 0; j < dims[1]; j++) {
-    for (ptrdiff_t i = 0; i < dims[0]; i++) {
-      ptrdiff_t position = j * dims[0] + i;
-      assert(gradient[position] == gradient_mp[position]);
-    }
-  }
+int32_t test_gradient8_mp(Grid gradient, Grid gradient_mp) {
+  assert(GridEq(gradient, gradient_mp));
   return 0;
 }
 /*
   Flow direction should point downstream or across flats
  */
-int32_t test_routeflowd8_direction(uint8_t *direction, float *filled_dem,
-                                   float *dist, int32_t *flats,
-                                   ptrdiff_t dims[2]) {
+int32_t test_routeflowd8_direction(Grid direction, Grid filled_dem) {
   // 1<<5 1<<6  1<<7
   // 1<<4    0  1<<0
   // 1<<3 1<<2  1<<1
   ptrdiff_t i_offset[8] = {0, 1, 1, 1, 0, -1, -1, -1};
   ptrdiff_t j_offset[8] = {1, 1, 0, -1, -1, -1, 0, 1};
 
+  ptrdiff_t dims[2] = {direction.dims[0], direction.dims[1]};
+
+  uint8_t *direction_data = (uint8_t *)direction.data;
+  float *filled_data = (float *)filled_dem.data;
+
   for (ptrdiff_t j = 0; j < dims[1]; j++) {
     for (ptrdiff_t i = 0; i < dims[0]; i++) {
-      uint8_t flowdir = direction[j * dims[0] + i];
+      uint8_t flowdir = direction_data[j * dims[0] + i];
 
       if (flowdir == 0) {
         // Pixel is a sink
         continue;
       }
 
-      float z = filled_dem[j * dims[0] + i];
+      float z = filled_data[j * dims[0] + i];
       uint8_t v = flowdir;
       uint8_t r = 0;
       while (v >>= 1) {
@@ -387,71 +386,41 @@ int32_t test_routeflowd8_direction(uint8_t *direction, float *filled_dem,
 
       // Neighbor elevation should be less than or equal to the
       // current elevation
-      assert(filled_dem[neighbor_j * dims[0] + neighbor_i] <= z);
+      assert(filled_data[neighbor_j * dims[0] + neighbor_i] <= z);
     }
   }
   return 0;
 }
 
-/*
-  source should be a topological sort of the
-  graph defined by direction.
- */
-int32_t test_routeflowd8_tsort(uint8_t *marks, ptrdiff_t *source,
-                               uint8_t *direction, ptrdiff_t dims[2]) {
-  // 1<<5 1<<6  1<<7
-  // 1<<4    0  1<<0
-  // 1<<3 1<<2  1<<1
-  ptrdiff_t i_offset[8] = {0, 1, 1, 1, 0, -1, -1, -1};
-  ptrdiff_t j_offset[8] = {1, 1, 0, -1, -1, -1, 0, 1};
+int32_t test_tsort(Flow fd) {
+  // source and target arrays should be topologically sorted. All
+  // incoming edges to a node must occur before any outgoing edges.
 
-  for (ptrdiff_t j = 0; j < dims[1]; j++) {
-    for (ptrdiff_t i = 0; i < dims[0]; i++) {
-      ptrdiff_t src = source[j * dims[0] + i];
-      ptrdiff_t src_i = src % dims[0];
-      ptrdiff_t src_j = src / dims[0];
+  int32_t flag = 0;
 
-      uint8_t flowdir = direction[src];
+  Grid outdegree = GridCreate(GridU8, NULL, fd.cellsize, fd.dims);
+  for (ptrdiff_t e = 0; e < fd.count; e++) {
+    ptrdiff_t u = fd.source[e];
+    ptrdiff_t v = fd.target[e];
 
-      if (flowdir == 0) {
-        // src is a sink
-        continue;
-      }
+    ((uint8_t *)outdegree.data)[u] += 1;
 
-      uint8_t v = flowdir;
-      uint8_t r = 0;
-      while (v >>= 1) {
-        r++;
-      }
-      ptrdiff_t neighbor_i = src_i + i_offset[r];
-      ptrdiff_t neighbor_j = src_j + j_offset[r];
-
-      ptrdiff_t neighbor_src = neighbor_j * dims[0] + neighbor_i;
-      // Check that we haven't seen neighbor in the topological sort yet
-      assert(marks[neighbor_src] != 0xff);
-
-      marks[src] = 0xff;
+    if (((uint8_t *)outdegree.data)[v] > 0) {
+      flag = 1;
     }
   }
-  return 0;
+  assert(flag == 0);
+  GridFree(&outdegree);
+  return flag;
 }
 
-int32_t test_flow_accumulation_max(float *acc, ptrdiff_t dims[2]) {
-  for (ptrdiff_t j = 0; j < dims[1]; j++) {
-    for (ptrdiff_t i = 0; i < dims[0]; i++) {
-      assert(acc[j * dims[0] + i] <= (dims[0] * dims[1]));
-    }
-  }
-  return 0;
-}
+int32_t test_flow_accumulation_max(Grid acc) {
+  Grid max = GridFill(acc.dims[0] * acc.dims[1], acc.cellsize, acc.dims);
+  Grid sub = GridSubtract(max, acc);
+  assert(GridAllNonnegative(sub));
 
-int32_t test_flow_accumulation_multimethod(float *acc1, float *acc2,
-                                           ptrdiff_t dims[2]) {
-  for (ptrdiff_t j = 0; j < dims[1]; j++) {
-    for (ptrdiff_t i = 0; i < dims[0]; i++) {
-      assert(acc1[j * dims[0] + i] == acc2[j * dims[0] + i]);
-    }
-  }
+  GridFree(&sub);
+  GridFree(&max);
   return 0;
 }
 
@@ -529,7 +498,7 @@ int32_t test_stream_distance(float *node_distance, ptrdiff_t *stream_grid,
   A source pixel and its downstream neighbor should be part of the
   same basin, which should have an index greater than 0.
  */
-int32_t test_drainagebasins(ptrdiff_t *basins, ptrdiff_t *source,
+int32_t test_drainagebasins(uint32_t *basins, ptrdiff_t *source,
                             ptrdiff_t *target, ptrdiff_t edge_count,
                             ptrdiff_t dims[2]) {
   for (ptrdiff_t e = 0; e < edge_count; e++) {
@@ -579,9 +548,8 @@ int32_t test_lowerenv_convex(float *g, float *z, float *d, uint8_t *knickpoints,
 
 // drainagebasins should return the same drainage basins computed
 // using an appropriately initialized traverse_up_u32_or_and.
-int32_t test_db_traverse(ptrdiff_t *basins, ptrdiff_t *source,
-                         ptrdiff_t *target, ptrdiff_t edge_count,
-                         ptrdiff_t dims[2]) {
+int32_t test_db_traverse(uint32_t *basins, ptrdiff_t *source, ptrdiff_t *target,
+                         ptrdiff_t edge_count, ptrdiff_t dims[2]) {
   std::vector<uint32_t> ones(edge_count, 0xffffffff);           // Edge weights
   std::vector<uint32_t> traverse_basins(dims[0] * dims[1], 0);  // Basin labels
   std::vector<uint8_t> indegree(dims[0] * dims[1], 0);
@@ -616,45 +584,38 @@ struct FlowRoutingData {
   float cellsize;
 
   // input data
-  std::vector<float> dem;
-  std::vector<uint8_t> bc;
-  std::vector<float> fraction;
+  Grid dem;
+  Grid bc;
+  Grid fraction;
 
   // fillsinks
-  std::vector<float> filled_dem;
-  // fillsinks_hybrid
-  std::vector<ptrdiff_t> queue;
+  Grid filled_dem;
 
   // identifyflats
-  std::vector<int32_t> flats;
+  Grid flats;
 
   // gwdt_compute_costs
-  std::vector<ptrdiff_t> conncomps;
-  std::vector<float> costs;
+  Grid costs;
+  Grid conncomps;
 
   // gwdt
-  std::vector<float> dist;
-  std::vector<ptrdiff_t> heap;
-  std::vector<ptrdiff_t> back;
-  std::vector<ptrdiff_t> prev;
+  Grid dist;
+  Grid heap;
+  Grid back;
+  Grid prev;
 
   // gradient8
-  std::vector<float> gradient;
-  std::vector<float> gradient_mp;
+  Grid gradient;
+  Grid gradient_mp;
 
   // flow_routing_d8_carve
-  std::vector<ptrdiff_t> nodes;
-  std::vector<uint8_t> direction;
-  std::vector<uint8_t> marks;
+  Grid direction;
 
   // flow_routing_targets
-  std::vector<ptrdiff_t> source;
-  std::vector<ptrdiff_t> target;
-  ptrdiff_t edge_count;
+  Flow fd;
 
   // flow_accumulation
-  std::vector<float> accum;
-  std::vector<float> accum2;
+  Grid accum;
 
   // stream network
   std::vector<ptrdiff_t> stream_source;
@@ -662,112 +623,114 @@ struct FlowRoutingData {
   std::vector<float> stream_weight;
   std::vector<ptrdiff_t> stream_grid;
   ptrdiff_t stream_node_count;
-  std::vector<ptrdiff_t> basins;
+
+  Grid basins;
 
   FlowRoutingData(ptrdiff_t input_dims[2], float cs, uint32_t seed)
       : dims({input_dims[0], input_dims[1]}),
         cellsize(cs),
-        dem(dims[0] * dims[1]),
-        bc(dims[0] * dims[1]),
-        fraction(dims[0] * dims[1]),
-        filled_dem(dims[0] * dims[1]),
-        queue(dims[0] * dims[1]),
-        flats(dims[0] * dims[1]),
-        conncomps(dims[0] * dims[1]),
-        costs(dims[0] * dims[1]),
-        dist(dims[0] * dims[1]),
-        heap(dims[0] * dims[1]),
-        back(dims[0] * dims[1]),
-        prev(dims[0] * dims[1]),
-        gradient(dims[0] * dims[1]),
-        gradient_mp(dims[0] * dims[1]),
-        nodes(dims[0] * dims[1]),
-        direction(dims[0] * dims[1]),
-        marks(dims[0] * dims[1]),
-        source(dims[0] * dims[1]),
-        target(dims[0] * dims[1]),
-        accum(dims[0] * dims[1]),
-        accum2(dims[0] * dims[1]),
-        stream_grid(dims[0] * dims[1]),
-        basins(dims[0] * dims[1]) {
+        stream_grid(dims[0] * dims[1]) {
     // Initialize DEM, boundary conditions for fillsinks and fraction
-    for (uint32_t col = 0; col < dims[1]; col++) {
-      for (uint32_t row = 0; row < dims[0]; row++) {
-        dem[col * dims[0] + row] = 100.0f * pcg4d(row, col, seed, 1);
+    dem = GridRandom(seed, cellsize, dims.data());
+    bc = GridCreate(GridU8, NULL, cellsize, dims.data());
+    fraction = GridFill(1.0f, cellsize, dims.data());
 
+    for (ptrdiff_t col = 0; col < dims[1]; col++) {
+      for (ptrdiff_t row = 0; row < dims[0]; row++) {
         if (row == 0 || row == dims[0] - 1 || col == 0 || col == dims[1] - 1) {
-          bc[col * dims[0] + row] = 1;
+          ((uint8_t *)bc.data)[col * dims[0] + row] = 1;
         } else {
-          bc[col * dims[0] + row] = 0;
+          ((uint8_t *)bc.data)[col * dims[0] + row] = 0;
         }
-
-        fraction[col * dims[0] + row] = 1.0f;
       }
     }
   }
 
-  void route_flow() {
-    ProfileFunction(prof);
-
-    tt::fillsinks(filled_dem.data(), dem.data(), bc.data(), dims.data());
-
-    tt::identifyflats(flats.data(), filled_dem.data(), dims.data());
-
-    tt::gwdt_computecosts(costs.data(), conncomps.data(), flats.data(),
-                          dem.data(), filled_dem.data(), dims.data());
-
-    tt::gwdt(dist.data(), prev.data(), costs.data(), flats.data(), heap.data(),
-             back.data(), dims.data());
-
-    tt::flow_routing_d8_carve(nodes.data(), direction.data(), filled_dem.data(),
-                              dist.data(), flats.data(), dims.data(), 0);
-
-    edge_count =
-        tt::flow_routing_d8_edgelist(source.data(), target.data(), nodes.data(),
-                                     direction.data(), dims.data(), 0);
-
-    tt::flow_accumulation_edgelist(accum2.data(), source.data(), target.data(),
-                                   fraction.data(), NULL, edge_count,
-                                   dims.data());
-
-    // Close timer
+  ~FlowRoutingData() {
+    GridFree(&dem);
+    GridFree(&bc);
+    GridFree(&fraction);
+    GridFree(&filled_dem);
+    GridFree(&flats);
+    GridFree(&costs);
+    GridFree(&conncomps);
+    GridFree(&dist);
+    GridFree(&prev);
+    GridFree(&back);
+    GridFree(&heap);
+    GridFree(&gradient);
+    GridFree(&gradient_mp);
+    GridFree(&direction);
+    GridFree(&accum);
+    GridFree(&basins);
+    FlowFree(&fd);
   }
 
-  void route_flow_hybrid() {
+  void fillsinks_hybrid() {
+    ProfileFunction(prof);
+    filled_dem = GridFillsinks(dem);
+  }
+
+  void fillsinks() {
+    ProfileFunction(prof);
+    filled_dem = GridCreate(GridF32, NULL, dem.cellsize, dem.dims);
+
+    tt::fillsinks((float *)filled_dem.data, (float *)dem.data,
+                  (uint8_t *)bc.data, dims.data());
+  }
+
+  void route_flow(bool hybrid) {
     ProfileFunction(prof);
 
-    tt::fillsinks_hybrid(filled_dem.data(), queue.data(), dem.data(), bc.data(),
-                         dims.data());
+    if (hybrid) {
+      fillsinks_hybrid();
+    } else {
+      fillsinks();
+    }
 
-    tt::identifyflats(flats.data(), filled_dem.data(), dims.data());
+    flats = GridIdentifyFlats(filled_dem);
 
-    tt::gwdt_computecosts(costs.data(), conncomps.data(), flats.data(),
-                          dem.data(), filled_dem.data(), dims.data());
+    costs = GridZerosLike(dem);
+    conncomps = GridCreate(GridIdx, NULL, dem.cellsize, dem.dims);
 
-    tt::gwdt(dist.data(), prev.data(), costs.data(), flats.data(), heap.data(),
-             back.data(), dims.data());
+    tt::gwdt_computecosts((float *)costs.data, (ptrdiff_t *)conncomps.data,
+                          (int32_t *)flats.data, (float *)dem.data,
+                          (float *)filled_dem.data, dims.data());
 
-    tt::flow_routing_d8_carve(nodes.data(), direction.data(), filled_dem.data(),
-                              dist.data(), flats.data(), dims.data(), 0);
+    dist = GridZerosLike(costs);
+    prev = GridCreate(GridIdx, NULL, dist.cellsize, dist.dims);
+    heap = GridCreate(GridIdx, NULL, dist.cellsize, dist.dims);
+    back = GridCreate(GridIdx, NULL, dist.cellsize, dist.dims);
+    tt::gwdt((float *)dist.data, (ptrdiff_t *)prev.data, (float *)costs.data,
+             (int32_t *)flats.data, (ptrdiff_t *)heap.data,
+             (ptrdiff_t *)back.data, dims.data());
 
-    edge_count =
-        tt::flow_routing_d8_edgelist(source.data(), target.data(), nodes.data(),
-                                     direction.data(), dims.data(), 0);
+    fd = FlowInit(dem);
 
-    tt::flow_accumulation_edgelist(accum2.data(), source.data(), target.data(),
-                                   fraction.data(), NULL, edge_count,
-                                   dims.data());
+    direction = GridCreate(GridU8, NULL, dem.cellsize, dem.dims);
+    tt::flow_routing_d8_carve((ptrdiff_t *)fd.stream, (uint8_t *)direction.data,
+                              (float *)filled_dem.data, (float *)dist.data,
+                              (int32_t *)flats.data, dims.data(), 0);
+
+    fd.count = tt::flow_routing_d8_edgelist(
+        (ptrdiff_t *)fd.source, (ptrdiff_t *)fd.target, (ptrdiff_t *)fd.stream,
+        (uint8_t *)direction.data, dims.data(), 0);
+
+    for (ptrdiff_t e = 0; e < fd.count; e++) {
+      fd.fraction[e] = 1.0;
+    }
+
+    accum = FlowAccumulation(fd);
   }
 
   void gradient8() {
     ProfileFunction(prof);
-    tt::gradient8(gradient.data(), dem.data(), cellsize, 0, dims.data());
+    gradient = GridGradient8(dem, 0);
   }
 
   void gradient8_mp() {
     ProfileFunction(prof);
-
-    tt::gradient8(gradient_mp.data(), dem.data(), cellsize, 1, dims.data());
+    gradient_mp = GridGradient8(dem, 1);
   }
 
   void streamnetwork(float threshold) {
@@ -779,8 +742,8 @@ struct FlowRoutingData {
     // the node attribute list.
     for (ptrdiff_t j = 0; j < dims[1]; j++) {
       for (ptrdiff_t i = 0; i < dims[0]; i++) {
-        ptrdiff_t u = nodes[j * dims[0] + i];
-        if (accum2[u] >= threshold) {
+        ptrdiff_t u = ((ptrdiff_t *)fd.stream)[j * dims[0] + i];
+        if (((float *)accum.data)[u] >= threshold) {
           // Pixel u is in the stream network
           stream_grid[u] = node_index++;
         } else {
@@ -790,9 +753,9 @@ struct FlowRoutingData {
     }
 
     // Find edges that are part of the stream network
-    for (ptrdiff_t e = 0; e < edge_count; e++) {
-      ptrdiff_t u = source[e];
-      ptrdiff_t v = target[e];
+    for (ptrdiff_t e = 0; e < fd.count; e++) {
+      ptrdiff_t u = fd.source[e];
+      ptrdiff_t v = fd.target[e];
 
       // Compute distance between source and target pixels. If the
       // difference between u and v is 1 or dims[0], then they are
@@ -801,7 +764,7 @@ struct FlowRoutingData {
                     ? 1.0f * cellsize
                     : SQRT2f * cellsize;
 
-      if (accum2[u] >= threshold) {
+      if (((float *)accum.data)[u] >= threshold) {
         // Pixel u is in the stream network
 
         // Add this edge to the stream network, but map u and v to
@@ -817,58 +780,46 @@ struct FlowRoutingData {
   void drainagebasins() {
     ProfileFunction(prof);
 
-    tt::drainagebasins(basins.data(), source.data(), target.data(), edge_count,
-                       dims.data());
+    basins = FlowDrainageBasins(fd);
   }
 
   void runtests(bool hybrid) {
-    if (hybrid) {
-      route_flow_hybrid();
-    } else {
-      route_flow();
-    }
+    route_flow(hybrid);
 
-    test_fillsinks_ge(dem.data(), filled_dem.data(), dims.data());
-    test_fillsinks_filled(filled_dem.data(), dims.data());
+    test_fillsinks_ge(dem, filled_dem);
+    test_fillsinks_filled(filled_dem);
 
-    test_identifyflats_flats(flats.data(), filled_dem.data(), dims.data());
-    test_identifyflats_sills(flats.data(), filled_dem.data(), dims.data());
-    test_identifyflats_presills(flats.data(), filled_dem.data(), dims.data());
+    test_identifyflats_flats(flats, filled_dem);
+    test_identifyflats_sills(flats, filled_dem);
+    test_identifyflats_presills(flats, filled_dem);
 
-    test_gwdt_costs(costs.data(), flats.data(), dims.data());
-    test_gwdt_conncomps(conncomps.data(), flats.data(), dims.data());
+    test_gwdt_costs(costs, flats);
+    test_gwdt_conncomps(conncomps, flats);
+
+    test_gwdt(dist, prev, costs, flats);
 
     // route_flow and route_flow_hybrid do not compute gradients
     gradient8();
     gradient8_mp();
 
-    test_gradient8(gradient.data(), dem.data(), cellsize, dims.data());
-    test_gradient8_mp(gradient.data(), gradient_mp.data(), dims.data());
+    test_gradient8(gradient, dem);
+    test_gradient8_mp(gradient, gradient_mp);
 
-    test_routeflowd8_direction(direction.data(), filled_dem.data(), dist.data(),
-                               flats.data(), dims.data());
-    test_routeflowd8_tsort(marks.data(), nodes.data(), direction.data(),
-                           dims.data());
+    test_routeflowd8_direction(direction, filled_dem);
 
-    test_flow_routing_targets(target.data(), source.data(), direction.data(),
-                              edge_count, dims.data());
+    test_tsort(fd);
+
+    test_flow_routing_targets((ptrdiff_t *)fd.target, (ptrdiff_t *)fd.source,
+                              (uint8_t *)direction.data, fd.count, dims.data());
 
     // Compute and test drainage basins
     drainagebasins();
-    test_drainagebasins(basins.data(), source.data(), target.data(), edge_count,
-                        dims.data());
-    test_db_traverse(basins.data(), source.data(), target.data(), edge_count,
-                     dims.data());
+    test_drainagebasins((uint32_t *)basins.data, (ptrdiff_t *)fd.source,
+                        (ptrdiff_t *)fd.target, fd.count, dims.data());
+    test_db_traverse((uint32_t *)basins.data, (ptrdiff_t *)fd.source,
+                     (ptrdiff_t *)fd.target, fd.count, dims.data());
 
-    // route_flow and route_flow_hybrid only run the edgelist variant
-    // of flow_accumulation, so we must run it explicitly.
-    tt::flow_accumulation(accum.data(), nodes.data(), direction.data(), NULL,
-                          dims.data());
-
-    test_flow_accumulation_max(accum.data(), dims.data());
-
-    test_flow_accumulation_multimethod(accum.data(), accum2.data(),
-                                       dims.data());
+    test_flow_accumulation_max(accum);
 
     // Generate stream network
     streamnetwork(dims[0] * dims[1] / 20.0f);
@@ -880,8 +831,8 @@ struct FlowRoutingData {
                              stream_source.data(), stream_target.data(),
                              stream_weight.data(), stream_source.size());
     test_stream_distance(integral.data(), stream_grid.data(), distance.data(),
-                         source.data(), target.data(), cellsize, source.size(),
-                         dims.data());
+                         (ptrdiff_t *)fd.source, (ptrdiff_t *)fd.target,
+                         cellsize, fd.count, dims.data());
 
     std::vector<float> pvF32(stream_node_count, 0.0f);
     std::vector<double> pvF64(stream_node_count, 0.0);
@@ -935,7 +886,7 @@ struct FlowRoutingData {
       for (ptrdiff_t i = 0; i < dims[0]; i++) {
         ptrdiff_t node = j * dims[0] + i;
         if (stream_grid[node] >= 0) {
-          z[stream_grid[node]] = dem[node];
+          z[stream_grid[node]] = ((float *)dem.data)[node];
           d[stream_grid[node]] = distance[node];
         }
       }
