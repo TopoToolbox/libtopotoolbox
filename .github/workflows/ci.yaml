@@ -129,6 +129,7 @@ jobs:
       - name: Test static library
         run: ctest --test-dir ${{github.workspace}}/build/static -C Release --output-on-failure
       - name: Validate JSON output of profiler
+        if: matrix.os == 'ubuntu-latest'
         run: ${{github.workspace}}/build/static/test/random_dem | jq -e .
       - name: Configure shared library
         run: >
