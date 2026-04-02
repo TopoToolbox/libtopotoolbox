@@ -166,7 +166,6 @@ if (TT_FORMAT_CHECK AND CLANG_FORMAT_EXE)
   set(FORMAT_TARGETS
     topotoolbox
     versioninfo
-    random_dem
     excesstopography
     filters
     swaths
@@ -174,6 +173,10 @@ if (TT_FORMAT_CHECK AND CLANG_FORMAT_EXE)
 
   if (TARGET snapshot)
     list(APPEND FORMAT_TARGETS snapshot)
+  endif()
+
+  if (TARGET random_dem)
+    list(APPEND FORMAT_TARGETS random_dem)
   endif()
 
   set(ALL_SOURCES)
