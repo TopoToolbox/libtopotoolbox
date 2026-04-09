@@ -2792,6 +2792,14 @@ ptrdiff_t edgeset_count_merged(uint8_t *b1, uint8_t *b2, ptrdiff_t dims[2]);
 
    @endparblock
 
+   @param[inout]  w1 The first input weight array
+   @parblock
+
+   An array of floats stored in the packed weight format corresponding
+   to the first input bitmap.
+
+   @endparblock
+
    @param[in]  b2 The second input bitmap
    @parblock
 
@@ -2799,6 +2807,14 @@ ptrdiff_t edgeset_count_merged(uint8_t *b1, uint8_t *b2, ptrdiff_t dims[2]);
    corresponds to an outgoing edge from that pixel starting with the
    least significant bit representing the edge to the right and moving
    counterclockwise.
+
+   @endparblock
+
+   @param[in] w2 The second input weight array
+   @parblock
+
+   An array of floats stored in the packed weight format corresponding
+   to the second input bitmap.
 
    @endparblock
 
