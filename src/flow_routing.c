@@ -5,7 +5,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "helpers/priority_queue.h"
 #include "topotoolbox.h"
+
+#define SQRT2 1.41421356237309504880f
 
 // Compute the steepest descent flow direction from the DEM with flow
 // routed over flat regions by the auxiliary topography in dist.
@@ -306,4 +309,207 @@ ptrdiff_t flow_routing_d8_edgelist(ptrdiff_t *source, ptrdiff_t *target,
     }
   }
   return edge_count;
+}
+
+///////////////////////////////////
+// Topological sorting of edge sets
+
+static uint8_t next_neighbor(uint8_t d) {
+  uint8_t n = 0;
+  while (d >>= 1) {
+    n++;
+  }
+  return n;
+}
+
+TOPOTOOLBOX_API
+void flow_routing_tsort(ptrdiff_t *stream, ptrdiff_t *source, ptrdiff_t *target,
+                        float *sorted_weight, ptrdiff_t *stack,
+                        uint8_t *stackdir, uint8_t *direction, float *weight,
+                        ptrdiff_t *weightscan, uint8_t *visited,
+                        ptrdiff_t edge_count, ptrdiff_t dims[2], int order) {
+  ptrdiff_t e[2][8] = {{0, -1, -1, -1, 0, 1, 1, 1},
+                       {1, 1, 0, -1, -1, -1, 0, 1}};
+
+  for (ptrdiff_t j = 0; j < dims[1]; j++) {
+    for (ptrdiff_t i = 0; i < dims[0]; i++) {
+      visited[j * dims[0] + i] = 0;
+    }
+  }
+
+  ptrdiff_t stack_top = 0;
+  ptrdiff_t next_node = dims[0] * dims[1];
+
+  for (ptrdiff_t j = 0; j < dims[1]; j++) {
+    for (ptrdiff_t i = 0; i < dims[0]; i++) {
+      ptrdiff_t idx = j * dims[0] + i;
+
+      if (visited[idx]) continue;
+
+      visited[idx] = 1;
+
+      stack[stack_top] = idx;
+      stackdir[stack_top++] = direction[idx];
+
+      while (stack_top > 0) {
+        while (stackdir[stack_top - 1]) {
+          // We still have neighbors left to check
+          ptrdiff_t node = stack[stack_top - 1];
+          ptrdiff_t iu = node % dims[0];
+          ptrdiff_t ju = node / dims[0];
+
+          uint8_t n = next_neighbor(stackdir[stack_top - 1]);
+          stackdir[stack_top - 1] ^= (1 << n);
+
+          ptrdiff_t in = iu + e[order & 1][n];
+          ptrdiff_t jn = ju + e[(order ^ 1) & 1][n];
+
+          if (!visited[jn * dims[0] + in]) {
+            visited[jn * dims[0] + in] = 1;
+
+            // Push the neighbor and its outgoing edges on the stack
+            stack[stack_top] = jn * dims[0] + in;
+            stackdir[stack_top++] = direction[jn * dims[0] + in];
+          } else if (visited[jn * dims[0] + in] == 1) {
+            // This is a cycle. The neighbor is already on the stack
+            assert(0 && "flow_routing_tsort detected a cycle. This is a bug.");
+          }
+        }
+        // Pop the stack.
+        ptrdiff_t node = stack[--stack_top];
+        ptrdiff_t iu = node % dims[0];
+        ptrdiff_t ju = node / dims[0];
+
+        visited[node] = 2;
+
+        if (next_node <= 0) {
+          assert(0 && "flow_routing_tsort ran out of nodes. This is a bug.");
+        }
+        stream[--next_node] = node;
+
+        ptrdiff_t offset = weightscan[node];
+
+        // Add its edges to source and target
+        for (int n = 0; n < 8; n++) {
+          if (direction[node] & (1 << n)) {
+            ptrdiff_t in = iu + e[order & 1][n];
+            ptrdiff_t jn = ju + e[(order ^ 1) & 1][n];
+
+            if (edge_count <= 0) {
+              assert(0 &&
+                     "flow_routing_tsort ran out of nodes. This is a bug.");
+            }
+            source[--edge_count] = node;
+            target[edge_count] = jn * dims[0] + in;
+
+            sorted_weight[edge_count] = weight[offset++];
+          }
+        }
+      }
+    }
+  }
+}
+
+static uint8_t get_direction(ptrdiff_t i, ptrdiff_t j, int order) {
+  uint8_t e[2][9] = {{8, 16, 32, 4, 0, 64, 2, 1, 128},
+                     {8, 4, 2, 16, 0, 1, 32, 64, 128}};
+
+  return e[order][(j + 1) * 3 + (i + 1)];
+}
+
+TOPOTOOLBOX_API
+void resolve_flats_shortest_path(uint8_t *direction, uint8_t *resolved,
+                                 float *path_distance, ptrdiff_t *heap,
+                                 ptrdiff_t *back, float *dem, ptrdiff_t dims[2],
+                                 int order) {
+  ptrdiff_t e[2][8] = {{0, -1, -1, -1, 0, 1, 1, 1},
+                       {1, 1, 0, -1, -1, -1, 0, 1}};
+  float chamfer[8] = {1.0f, SQRT2, 1.0f, SQRT2, 1.0f, SQRT2, 1.0f, SQRT2};
+
+  PriorityQueue pq = pq_create(dims[0] * dims[1], heap, back, path_distance, 0);
+
+  // Initialize distances based on the resolved array.
+  for (ptrdiff_t j = 0; j < dims[1]; j++) {
+    for (ptrdiff_t i = 0; i < dims[0]; i++) {
+      ptrdiff_t idx = j * dims[0] + i;
+      if (resolved[idx] == 0) {
+        pq_insert(&pq, idx, INFINITY);
+      } else {
+        path_distance[idx] = -INFINITY;
+      }
+    }
+  }
+  // Identify presills, flats that border a resolved pixel with the same
+  // elevation
+  for (ptrdiff_t j = 0; j < dims[1]; j++) {
+    for (ptrdiff_t i = 0; i < dims[0]; i++) {
+      ptrdiff_t idx = j * dims[0] + i;
+      if (resolved[idx]) {
+        continue;
+      }
+      float z = dem[idx];
+      for (ptrdiff_t n = 0; n < 8; n++) {
+        ptrdiff_t in = i + e[order & 1][n];
+        ptrdiff_t jn = j + e[(order ^ 1) & 1][n];
+
+        if (in < 0 || in >= dims[0] || jn < 0 || jn >= dims[1]) {
+          // Pixel is on the boundary, call it a presill
+          pq_decrease_key(&pq, idx, 0.0);
+          break;
+        }
+
+        ptrdiff_t idxn = jn * dims[0] + in;
+
+        if (resolved[idxn] && z == dem[idxn]) {
+          // These are the presills, so their distance is 0
+          pq_decrease_key(&pq, idx, 0.0);
+
+          // Flow the presill towards the neighbor
+          direction[idx] = get_direction(in - i, jn - j, order);
+          break;
+        }
+      }
+    }
+  }
+
+  while (!pq_isempty(&pq)) {
+    ptrdiff_t idx = pq_deletemin(&pq);
+    float d = pq_get_priority(&pq, idx);
+
+    ptrdiff_t j = idx / dims[0];
+    ptrdiff_t i = idx % dims[0];
+
+    float z = dem[idx];
+
+    for (ptrdiff_t n = 0; n < 8; n++) {
+      ptrdiff_t in = i + e[order & 1][n];
+      ptrdiff_t jn = j + e[(order ^ 1) & 1][n];
+
+      // Skip any neighboring pixels that are outside the domain, are
+      // resolved or are not equal in elevation. The weird elevation
+      // comparison is in case the neighboring pixel is a NaN, in
+      // which case !(neighbor_z <= z) is true and we skip the pixel.
+      if (in < 0 || in >= dims[0] || jn < 0 || jn >= dims[1] ||
+          resolved[jn * dims[0] + in] || !(dem[jn * dims[0] + in] == z)) {
+        continue;
+      }
+      float proposal = d + chamfer[n];
+
+      if (proposal < pq_get_priority(&pq, jn * dims[0] + in)) {
+        pq_decrease_key(&pq, jn * dims[0] + in, proposal);
+
+        // Save the flow direction to the current pixel as the neighbor's flow
+        // direction
+        direction[jn * dims[0] + in] = get_direction(i - in, j - jn, order);
+      }
+    }
+  }
+}
+
+// Weights are 1 for shortest path flat resolution
+TOPOTOOLBOX_API
+void resolve_flats_shortest_path_weights(float *weight, ptrdiff_t count) {
+  for (ptrdiff_t e = 0; e < count; e++) {
+    weight[e] = 1.0;
+  }
 }

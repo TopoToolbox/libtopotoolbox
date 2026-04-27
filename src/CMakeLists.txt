@@ -36,6 +36,8 @@ add_library(topotoolbox
   helpers/stat_func.h
   helpers/deque.c
   helpers/deque.h
+  helpers/edgeset.c
+  dinf.c
 )
 
 # Define the include directory

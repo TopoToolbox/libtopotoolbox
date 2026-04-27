@@ -79,6 +79,7 @@ Grid FlowAccumulation(Flow f) {
 
 Grid Outlets(Flow f) {
   Grid outlets = GridCreate(GridU8, NULL, f.cellsize, f.dims);
+
   if (outlets.data && f.count > 0) {
     uint8_t *outletdata = outlets.data;
 
@@ -101,6 +102,7 @@ Grid Outlets(Flow f) {
       GridFree(&outdegree);
     }
   }
+
   return outlets;
 }
 
@@ -139,5 +141,6 @@ Grid FlowDrainageBasins(Flow f) {
       free(weights);
     }
   }
+
   return basins;
 }

@@ -7,6 +7,8 @@
 
 // TODO: no tests with real 3d SEs performed!
 
+#undef NDEBUG
+
 #include <cassert>
 #include <cmath>
 #include <cstddef>

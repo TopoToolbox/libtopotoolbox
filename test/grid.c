@@ -13,7 +13,7 @@ void GridFree(Grid *g) {
   free(g->data);
   g->data = NULL;
   g->dims[0] = 0;
-  g->dims[0] = 0;
+  g->dims[1] = 0;
   g->cellsize = 0.0;
 }
 
