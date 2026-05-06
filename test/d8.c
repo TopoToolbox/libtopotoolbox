@@ -213,35 +213,94 @@ int test_sum_edge_weights(Flow fd) {
   return res;
 }
 
-Flow d8_carve_flow(Grid dem, int order) {
+int test_one_neighbor(Flow fd) {
+  // D8 networks should have a maximum of one downstream neighbor.
+
+  int res = 1;
+  Grid neighbors = GridCreate(GridU8, NULL, fd.cellsize, fd.dims);
+
+  for (ptrdiff_t e = 0; e < fd.count; e++) {
+    ptrdiff_t u = fd.source[e];
+
+    if (((uint8_t *)neighbors.data)[u] > 0) {
+      res = 0;
+    }
+    ((uint8_t *)neighbors.data)[u] += 1;
+  }
+
+  GridFree(&neighbors);
+  return res;
+}
+
+Flow d8_flow(Grid dem, int order) {
   Flow fd = {0};
+
+  Grid direction = GridCreate(GridU8, NULL, dem.cellsize, dem.dims);
+  flow_routing_d8_directions(direction.data, dem.data, dem.dims, order);
+
+  ptrdiff_t count = edgeset_count(direction.data, direction.dims);
+  float *weight = calloc(count, sizeof *weight);
+  flow_routing_d8_weights(weight, count);
 
   Grid demf = GridFillsinks(dem);
   Grid flats = GridIdentifyFlats(dem);
   Grid costs = GridGWDTComputeCosts(flats, dem, demf);
-  Grid dist = GridGWDT(costs, flats);
+  Grid aux = GridGWDT(costs, flats);
+
+  Grid rdirection = GridCreate(GridU8, NULL, dem.cellsize, dem.dims);
+  Grid resolved = GridCreate(GridU8, NULL, dem.cellsize, dem.dims);
+
+  // Resolved pixels are either NaNs, or they have a flow direction
+  for (ptrdiff_t j = 0; j < dem.dims[1]; j++) {
+    for (ptrdiff_t i = 0; i < dem.dims[0]; i++) {
+      if (isnan(((float *)dem.data)[j * dem.dims[0] + i])) {
+        // If DEM is a NaN, treat the flow direction as resolved
+        ((uint8_t *)resolved.data)[j * dem.dims[0] + i] = 0xff;
+      } else if (isinf(((float *)aux.data)[j * dem.dims[0] + i])) {
+        // If aux is infinite, this is a sink/flat that has no sills.
+        ((uint8_t *)resolved.data)[j * dem.dims[0] + i] = 0xff;
+      } else {
+        ((uint8_t *)resolved.data)[j * dem.dims[0] + i] =
+            ((uint8_t *)direction.data)[j * dem.dims[0] + i] ? 0xff : 0;
+      }
+    }
+  }
+
+  resolve_flats_lcat(rdirection.data, resolved.data, aux.data, demf.data,
+                     dem.dims, order);
+
+  ptrdiff_t rcount = edgeset_count(rdirection.data, rdirection.dims);
+  float *rweight = calloc(rcount, sizeof *rweight);
+
+  resolve_flats_lcat_weights(rweight, rcount);
+
+  ptrdiff_t merged_count =
+      edgeset_count_merged(direction.data, rdirection.data, direction.dims);
+
+  float *merged_weights = calloc(merged_count, sizeof *merged_weights);
+  Grid mergedscan = GridCreate(GridIdx, NULL, dem.cellsize, dem.dims);
+
+  edgeset_merge(merged_weights, mergedscan.data, direction.data, weight,
+                rdirection.data, rweight, direction.dims);
 
   Grid stream = GridCreate(GridIdx, NULL, dem.cellsize, dem.dims);
-  Grid direction = GridCreate(GridU8, NULL, dem.cellsize, dem.dims);
+  ptrdiff_t *source = calloc(merged_count, sizeof *source);
+  ptrdiff_t *target = calloc(merged_count, sizeof *target);
+  float *sorted_weight = calloc(merged_count, sizeof *sorted_weight);
 
-  flow_routing_d8_carve(stream.data, direction.data, dem.data, dist.data,
-                        flats.data, dem.dims, order);
-
-  ptrdiff_t *source = calloc(GridElementCount(dem), sizeof *source);
-  ptrdiff_t *target = calloc(GridElementCount(dem), sizeof *target);
-  ptrdiff_t edge_count = flow_routing_d8_edgelist(
-      source, target, stream.data, direction.data, dem.dims, order);
-
-  float *weight = calloc(edge_count, sizeof *weight);
-  for (ptrdiff_t e = 0; e < edge_count; e++) {
-    weight[e] = 1.0;
-  }
+  Grid stack = GridCreate(GridIdx, NULL, dem.cellsize, dem.dims);
+  Grid stackdir = GridCreate(GridU8, NULL, dem.cellsize, dem.dims);
+  Grid visited = GridCreate(GridU8, NULL, dem.cellsize, dem.dims);
+  flow_routing_tsort(stream.data, source, target, sorted_weight, stack.data,
+                     stackdir.data, direction.data, merged_weights,
+                     mergedscan.data, visited.data, merged_count, dem.dims,
+                     order);
 
   fd.stream = stream.data;
   fd.source = source;
   fd.target = target;
-  fd.fraction = weight;
-  fd.count = edge_count;
+  fd.fraction = sorted_weight;
+  fd.count = merged_count;
   fd.cellsize = dem.cellsize;
   fd.dims[0] = dem.dims[0];
   fd.dims[1] = dem.dims[1];
@@ -249,7 +308,21 @@ Flow d8_carve_flow(Grid dem, int order) {
   GridFree(&demf);
   GridFree(&flats);
   GridFree(&costs);
-  GridFree(&dist);
+  GridFree(&aux);
+  GridFree(&resolved);
+
+  GridFree(&visited);
+  GridFree(&stackdir);
+  GridFree(&stack);
+
+  free(merged_weights);
+  GridFree(&mergedscan);
+
+  free(rweight);
+  GridFree(&rdirection);
+
+  free(weight);
+
   GridFree(&direction);
 
   return fd;
@@ -269,7 +342,7 @@ int main(int argc, char *argv[]) {
       ptrdiff_t dims[2] = {3, 3};
       float data[9] = {2, 2, 2, 1, 1, 1, 0, 0, 0};
       Grid dem = GridCreate(GridF32, data, 1.0, dims);
-      Flow fd = d8_carve_flow(dem, 0);
+      Flow fd = d8_flow(dem, 0);
 
       if (!test_node_once(fd)) test_fail;
       if (!test_tsort_node(fd)) test_fail;
@@ -278,6 +351,7 @@ int main(int argc, char *argv[]) {
       if (!test_no_boundary_edges(fd)) test_fail;
       if (!test_outlets(fd)) test_fail;
       if (!test_sum_edge_weights(fd)) test_fail;
+      if (!test_one_neighbor(fd)) test_fail;
 
       FlowFree(&fd);
     }
@@ -287,7 +361,7 @@ int main(int argc, char *argv[]) {
       float data[25] = {4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 2, 2, 2,
                         2, 2, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0};
       Grid dem = GridCreate(GridF32, data, 1.0, dims);
-      Flow fd = d8_carve_flow(dem, 0);
+      Flow fd = d8_flow(dem, 0);
 
       if (!test_node_once(fd)) test_fail;
       if (!test_tsort_node(fd)) test_fail;
@@ -296,6 +370,7 @@ int main(int argc, char *argv[]) {
       if (!test_no_boundary_edges(fd)) test_fail;
       if (!test_outlets(fd)) test_fail;
       if (!test_sum_edge_weights(fd)) test_fail;
+      if (!test_one_neighbor(fd)) test_fail;
 
       FlowFree(&fd);
     }
@@ -304,7 +379,7 @@ int main(int argc, char *argv[]) {
       ptrdiff_t dims[2] = {3, 3};
       float data[9] = {2, 3, 4, 1, 2, 3, 0, 1, 2};
       Grid dem = GridCreate(GridF32, data, 1.0, dims);
-      Flow fd = d8_carve_flow(dem, 0);
+      Flow fd = d8_flow(dem, 0);
 
       if (!test_node_once(fd)) test_fail;
       if (!test_tsort_node(fd)) test_fail;
@@ -313,6 +388,7 @@ int main(int argc, char *argv[]) {
       if (!test_no_boundary_edges(fd)) test_fail;
       if (!test_outlets(fd)) test_fail;
       if (!test_sum_edge_weights(fd)) test_fail;
+      if (!test_one_neighbor(fd)) test_fail;
 
       FlowFree(&fd);
     }
@@ -321,7 +397,7 @@ int main(int argc, char *argv[]) {
       ptrdiff_t dims[2] = {3, 3};
       float data[9] = {2, 2, 2, 2, 1, 2, 2, 2, 2};
       Grid dem = GridCreate(GridF32, data, 1.0, dims);
-      Flow fd = d8_carve_flow(dem, 0);
+      Flow fd = d8_flow(dem, 0);
 
       if (!test_node_once(fd)) test_fail;
       if (!test_tsort_node(fd)) test_fail;
@@ -330,12 +406,13 @@ int main(int argc, char *argv[]) {
       if (!test_no_boundary_edges(fd)) test_fail;
       if (!test_outlets(fd)) test_fail;
       if (!test_sum_edge_weights(fd)) test_fail;
+      if (!test_one_neighbor(fd)) test_fail;
 
       FlowFree(&fd);
     }
 
     test("Outward sloping cone") {
-      ptrdiff_t dims[2] = {16, 16};
+      ptrdiff_t dims[2] = {17, 17};
       float cellsize = 150.0 / (dims[0] - 1);
       Grid dem = GridCreate(GridF32, NULL, cellsize, dims);
       for (ptrdiff_t j = 0; j < dims[1]; j++) {
@@ -346,7 +423,7 @@ int main(int argc, char *argv[]) {
         }
       }
 
-      Flow fd = d8_carve_flow(dem, 0);
+      Flow fd = d8_flow(dem, 0);
 
       if (!test_node_once(fd)) test_fail;
       if (!test_tsort_node(fd)) test_fail;
@@ -355,13 +432,14 @@ int main(int argc, char *argv[]) {
       if (!test_no_boundary_edges(fd)) test_fail;
       if (!test_outlets(fd)) test_fail;
       if (!test_sum_edge_weights(fd)) test_fail;
+      if (!test_one_neighbor(fd)) test_fail;
 
       FlowFree(&fd);
       GridFree(&dem);
     }
 
     test("Outward sloping cone with flats") {
-      ptrdiff_t dims[2] = {16, 16};
+      ptrdiff_t dims[2] = {17, 17};
       float cellsize = 150.0 / (dims[0] - 1);
       Grid dem = GridCreate(GridF32, NULL, cellsize, dims);
       for (ptrdiff_t j = 0; j < dims[1]; j++) {
@@ -373,7 +451,7 @@ int main(int argc, char *argv[]) {
         }
       }
 
-      Flow fd = d8_carve_flow(dem, 0);
+      Flow fd = d8_flow(dem, 0);
 
       if (!test_node_once(fd)) test_fail;
       if (!test_tsort_node(fd)) test_fail;
@@ -382,6 +460,7 @@ int main(int argc, char *argv[]) {
       if (!test_no_boundary_edges(fd)) test_fail;
       if (!test_outlets(fd)) test_fail;
       if (!test_sum_edge_weights(fd)) test_fail;
+      if (!test_one_neighbor(fd)) test_fail;
 
       FlowFree(&fd);
       GridFree(&dem);
@@ -399,7 +478,7 @@ int main(int argc, char *argv[]) {
         Grid dem = GridFromFile(path);
         free(path);
         Grid demf = GridFillsinks(dem);
-        Flow fd = d8_carve_flow(demf, 0);
+        Flow fd = d8_flow(demf, 0);
 
         if (!test_node_once(fd)) test_fail;
         if (!test_tsort_node(fd)) test_fail;
@@ -408,6 +487,7 @@ int main(int argc, char *argv[]) {
         if (!test_no_boundary_edges(fd)) test_fail;
         if (!test_outlets(fd)) test_fail;
         if (!test_sum_edge_weights(fd)) test_fail;
+        if (!test_one_neighbor(fd)) test_fail;
 
         FlowFree(&fd);
         GridFree(&demf);
@@ -425,7 +505,7 @@ int main(int argc, char *argv[]) {
         Grid dem = GridFromFile(path);
         free(path);
         Grid demf = GridFillsinks(dem);
-        Flow fd = d8_carve_flow(demf, 0);
+        Flow fd = d8_flow(demf, 0);
 
         if (!test_node_once(fd)) test_fail;
         if (!test_tsort_node(fd)) test_fail;
@@ -434,6 +514,7 @@ int main(int argc, char *argv[]) {
         if (!test_no_boundary_edges(fd)) test_fail;
         if (!test_outlets(fd)) test_fail;
         if (!test_sum_edge_weights(fd)) test_fail;
+        if (!test_one_neighbor(fd)) test_fail;
 
         FlowFree(&fd);
         GridFree(&demf);
@@ -451,7 +532,7 @@ int main(int argc, char *argv[]) {
         Grid dem = GridFromFile(path);
         free(path);
         Grid demf = GridFillsinks(dem);
-        Flow fd = d8_carve_flow(demf, 0);
+        Flow fd = d8_flow(demf, 0);
 
         if (!test_node_once(fd)) test_fail;
         if (!test_tsort_node(fd)) test_fail;
@@ -460,6 +541,7 @@ int main(int argc, char *argv[]) {
         if (!test_no_boundary_edges(fd)) test_fail;
         if (!test_outlets(fd)) test_fail;
         if (!test_sum_edge_weights(fd)) test_fail;
+        if (!test_one_neighbor(fd)) test_fail;
 
         FlowFree(&fd);
         GridFree(&demf);
@@ -477,7 +559,7 @@ int main(int argc, char *argv[]) {
         Grid dem = GridFromFile(path);
         free(path);
         Grid demf = GridFillsinks(dem);
-        Flow fd = d8_carve_flow(demf, 0);
+        Flow fd = d8_flow(demf, 0);
 
         if (!test_node_once(fd)) test_fail;
         if (!test_tsort_node(fd)) test_fail;
@@ -486,6 +568,7 @@ int main(int argc, char *argv[]) {
         if (!test_no_boundary_edges(fd)) test_fail;
         if (!test_outlets(fd)) test_fail;
         if (!test_sum_edge_weights(fd)) test_fail;
+        if (!test_one_neighbor(fd)) test_fail;
 
         FlowFree(&fd);
         GridFree(&demf);
@@ -503,7 +586,7 @@ int main(int argc, char *argv[]) {
         Grid dem = GridFromFile(path);
         free(path);
         Grid demf = GridFillsinks(dem);
-        Flow fd = d8_carve_flow(demf, 0);
+        Flow fd = d8_flow(demf, 0);
 
         if (!test_node_once(fd)) test_fail;
         if (!test_tsort_node(fd)) test_fail;
@@ -512,6 +595,7 @@ int main(int argc, char *argv[]) {
         if (!test_no_boundary_edges(fd)) test_fail;
         if (!test_outlets(fd)) test_fail;
         if (!test_sum_edge_weights(fd)) test_fail;
+        if (!test_one_neighbor(fd)) test_fail;
 
         FlowFree(&fd);
         GridFree(&demf);
@@ -529,7 +613,7 @@ int main(int argc, char *argv[]) {
         Grid dem = GridFromFile(path);
         free(path);
         Grid demf = GridFillsinks(dem);
-        Flow fd = d8_carve_flow(demf, 0);
+        Flow fd = d8_flow(demf, 0);
 
         if (!test_node_once(fd)) test_fail;
         if (!test_tsort_node(fd)) test_fail;
@@ -538,6 +622,7 @@ int main(int argc, char *argv[]) {
         if (!test_no_boundary_edges(fd)) test_fail;
         if (!test_outlets(fd)) test_fail;
         if (!test_sum_edge_weights(fd)) test_fail;
+        if (!test_one_neighbor(fd)) test_fail;
 
         FlowFree(&fd);
         GridFree(&demf);
@@ -556,7 +641,7 @@ int main(int argc, char *argv[]) {
         free(path);
 
         Grid demf = GridFillsinks(dem);
-        Flow fd = d8_carve_flow(demf, 0);
+        Flow fd = d8_flow(demf, 0);
 
         if (!test_node_once(fd)) test_fail;
         if (!test_tsort_node(fd)) test_fail;
@@ -565,6 +650,7 @@ int main(int argc, char *argv[]) {
         if (!test_no_boundary_edges(fd)) test_fail;
         if (!test_outlets(fd)) test_fail;
         if (!test_sum_edge_weights(fd)) test_fail;
+        if (!test_one_neighbor(fd)) test_fail;
 
         FlowFree(&fd);
         GridFree(&demf);
@@ -586,7 +672,7 @@ int main(int argc, char *argv[]) {
       }
       ((float *)dem.data)[2 * dims[0] + 2] = NAN;
 
-      Flow fd = d8_carve_flow(dem, 0);
+      Flow fd = d8_flow(dem, 0);
 
       if (!test_node_once(fd)) test_fail;
       if (!test_tsort_node(fd)) test_fail;
@@ -595,6 +681,7 @@ int main(int argc, char *argv[]) {
       if (!test_no_boundary_edges(fd)) test_fail;
       if (!test_outlets(fd)) test_fail;
       if (!test_sum_edge_weights(fd)) test_fail;
+      if (!test_one_neighbor(fd)) test_fail;
 
       FlowFree(&fd);
       GridFree(&dem);
@@ -619,8 +706,8 @@ int main(int argc, char *argv[]) {
       Grid cdemf = GridFillsinks(cdem);
       GridFree(&cdem);
 
-      Flow cfd = d8_carve_flow(cdemf, 1);
-      Flow ffd = d8_carve_flow(fdemf, 0);
+      Flow cfd = d8_flow(cdemf, 1);
+      Flow ffd = d8_flow(fdemf, 0);
 
       Grid cacc = FlowAccumulation(cfd);
       Grid facc = FlowAccumulation(ffd);
@@ -631,11 +718,12 @@ int main(int argc, char *argv[]) {
       GridFree(&caccT);
       GridFree(&cacc);
       GridFree(&facc);
+
+      FlowFree(&cfd);
+      FlowFree(&ffd);
+
       GridFree(&fdemf);
       GridFree(&cdemf);
-
-      FlowFree(&ffd);
-      FlowFree(&cfd);
     }
 
     test("Memory order saddle (ties)") {
@@ -647,8 +735,8 @@ int main(int argc, char *argv[]) {
       Grid fdem = GridCreate(GridF32, fdem_buffer, 1.0, fdims);
       Grid cdem = GridTranspose(fdem);
 
-      Flow cfd = d8_carve_flow(cdem, 1);
-      Flow ffd = d8_carve_flow(fdem, 0);
+      Flow cfd = d8_flow(cdem, 1);
+      Flow ffd = d8_flow(fdem, 0);
 
       Grid cacc = FlowAccumulation(cfd);
       Grid facc = FlowAccumulation(ffd);
@@ -659,10 +747,11 @@ int main(int argc, char *argv[]) {
       GridFree(&caccT);
       GridFree(&cacc);
       GridFree(&facc);
-      GridFree(&cdem);
 
-      FlowFree(&ffd);
       FlowFree(&cfd);
+      FlowFree(&ffd);
+
+      GridFree(&cdem);
     }
 
     test("Memory order random") {
@@ -677,12 +766,11 @@ int main(int argc, char *argv[]) {
       Grid cdemf = GridFillsinks(cdem);
       GridFree(&cdem);
 
-      Flow cfd = d8_carve_flow(cdemf, 1);
-      Flow ffd = d8_carve_flow(fdemf, 0);
+      Flow cfd = d8_flow(cdem, 1);
+      Flow ffd = d8_flow(fdem, 0);
 
       Grid cacc = FlowAccumulation(cfd);
       Grid facc = FlowAccumulation(ffd);
-
       Grid caccT = GridTranspose(cacc);
 
       if (!GridAllClose(caccT, facc, 1e-5)) test_fail;
@@ -691,8 +779,8 @@ int main(int argc, char *argv[]) {
       GridFree(&cacc);
       GridFree(&facc);
 
-      FlowFree(&ffd);
       FlowFree(&cfd);
+      FlowFree(&ffd);
 
       GridFree(&fdemf);
       GridFree(&cdemf);

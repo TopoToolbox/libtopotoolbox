@@ -3146,4 +3146,143 @@ void resolve_flats_shortest_path(uint8_t *direction, uint8_t *resolved,
 TOPOTOOLBOX_API
 void resolve_flats_shortest_path_weights(float *weight, ptrdiff_t count);
 
+/**
+   @brief Compute flow directions using the D8 method
+
+   @details D8 chooses the steepest downstream neighbor of the 8
+   pixels surrounding the center pixel.
+
+   @param[out] direction A bitmap edge set
+   @parblock
+
+   A uint8_t array of the same size as the DEM. Each of the 8 bits of
+   each pixel corresponds to an outgoing edge.
+
+   @endparblock
+
+   @param[in] dem The input DEM
+   @parblock
+
+   A float array with size dims[0] x dims[1].
+
+   @endparblock
+
+   @param[in]  dims The dimensions of the DEM
+   @parblock
+   A pair of ptrdiff_t, fastest changing dimension first.
+   @endparblock
+
+   @param[in] order The memory order of the underlying arrays
+   @parblock
+   0 for column-major, 1 for row-major
+   @endparblock
+ */
+TOPOTOOLBOX_API
+void flow_routing_d8_directions(uint8_t *direction, float *dem,
+                                ptrdiff_t dims[2], int order);
+
+/**
+   @brief Compute and store the D8 edge weights
+
+   @details Once the flow directions have been computed, the edge
+   weights need to be stored in an array in an order that will be used
+   by functions like flow_routing_tsort. The weights for D8 are all
+   equal to 1, so this function can be replaced in applications by
+   filling an appropriately sized array with ones.
+
+   @param[out] weight The weight array
+   @parblock
+
+   An array of floats that will be filled with the edge weights. This
+   should be preallocated with a size equal to the number of edges in
+   the direction bitmap. This size can be computed using
+   edgeset_count.
+
+   @endparblock
+
+   @param[in]  count The number of edges in the weight array
+ */
+TOPOTOOLBOX_API
+void flow_routing_d8_weights(float *weight, ptrdiff_t count);
+
+/**
+   @brief Resolve flats using least cost auxiliary topography carving.
+
+   @details This flat resolution algorithm uses the auxiliary
+   topography in `aux` to carve a path through flat areas and sinks.
+
+   See
+
+   Schwanghart, W., Groom, G., Kuhn, N.J. and Heckrath, G. (2013),
+   Flow network derivation from a high resolution DEM in a low relief,
+   agrarian landscape. Earth Surf. Process. Landforms, 38:
+   1576-1586. https://doi.org/10.1002/esp.3452
+
+   and references therein for more details.
+
+   @param[out] direction The output direction bitmap
+   @param[in] resolved   nonzero for pixels that have resolved directions
+   @parblock
+
+   An array of uint8_t flagging unresolved pixels with a zero. Only
+   pixels with a zero in this array will be resolved by the shortest
+   path algorithm.
+
+   @endparblock
+
+   @param aux The auxiliary topography
+   @parblock
+
+   An array of floats of size dims[0] x dims[1].
+
+   This should be generated using `gwdt_computecosts` and `gwdt`.
+   @endparblock
+
+   @param[in] dem The input dem
+   @parblock
+
+   This is used to make sure that flat pixels only flow to neighbors
+   of the same elevation.
+
+   @endparblock
+
+   @param[in]  dims The dimensions of the DEM
+   @parblock
+   A pair of ptrdiff_t, fastest changing dimension first.
+   @endparblock
+
+   @param[in] order The memory order of the underlying arrays
+   @parblock
+   0 for column-major, 1 for row-major
+   @endparblock
+ */
+TOPOTOOLBOX_API
+void resolve_flats_lcat(uint8_t *direction, uint8_t *resolved, float *aux,
+                        float *dem, ptrdiff_t dims[2], int order);
+
+/**
+   @brief Compute the weights of the least cost auxiliary topography
+   flat resolution algorithm
+
+   @details The weights are all 1. This function is provided for
+   consistency with other flat resolution implementations.
+
+   @param[out] weight The array of edge weights
+   @parblock
+
+   An array of floats preallocated with a size count.
+
+   @endparblock
+
+   @param[in] count The number of edges
+   @parblock
+
+   This can be computed from the output direction bitmap of
+   resolve_flats_shortest_path using edgeset_count.
+
+   @endparblock
+ */
+TOPOTOOLBOX_API
+void resolve_flats_lcat_weights(float *weight, ptrdiff_t count);
+
 #endif  // TOPOTOOLBOX_H

@@ -38,6 +38,8 @@ add_library(topotoolbox
   helpers/deque.h
   helpers/edgeset.c
   dinf.c
+  d8.c
+  lcat.c
 )
 
 # Define the include directory
