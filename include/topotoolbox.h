@@ -1235,6 +1235,110 @@ TOPOTOOLBOX_API
 void traverse_down_u32_or_and(uint32_t *output, uint32_t *input,
                               ptrdiff_t *source, ptrdiff_t *target,
                               ptrdiff_t edge_count);
+
+/**
+   @brief Upstream traversal in the (or, and) semiring
+
+   Traverses the stream network in the upstream direction,
+   accumulating the values in `output` with edge weights given by the
+   `weights` array. The weights are applied with a bitwise and and
+   accumulated with a bitwise or.
+
+   ```
+   for (e = (u,v) in edges:
+     output[u] = output[u] | (output[v] & input[e]);
+   ```
+
+   @param[out] output The accumulated output
+   @parblock
+   A pointer to a `uint8_t` array representing a node attribute list
+
+   This array should have a length equal to the number of nodes in the
+   stream network.  This value must not be less than the largest value
+   in either the `source` or `target` arrays.
+   @endparblock
+
+   @param[in] weights The edge weights
+   @parblock
+   A pointer to a `uint8_t` array of size `edge_count`
+   @endparblock
+
+   @param[in] source The source node of each edge in the stream
+                     network
+   @parblock
+   A pointer to a `ptrdiff_t` array of size `edge_count`
+
+   This array should have length `edge_count`.
+
+   The source nodes must be in topological order. The labels must
+   correspond to the 0-based indices of the node-attribute list
+   `output`
+   @endparblock
+
+   @param[in] target The target nodes of each edge in the stream
+                     network
+   @parblock
+   A pointer to a `ptrdiff_t` array of size `edge_count`
+
+   The labels must correspond to the 0-based indices of the
+   node-attribute lists `output`
+   @endparblock
+
+   @param[in] edge_count The number of edges in the stream network
+ */
+TOPOTOOLBOX_API
+void traverse_up_u8_or_and(uint8_t *output, uint8_t *weights, ptrdiff_t *source,
+                           ptrdiff_t *target, ptrdiff_t edge_count);
+
+/**
+   @brief Downstream traversal in the Boolean ({0,1}, or, and) semiring
+
+   Accumulates the input node attribute list downstream using bitwise or
+   with multiplication given by bitwise and:
+
+   for e = (u=>v) in edges:
+     output[v] = output[v] | output[u] & input[e];
+
+   @param[out] output The accumulated output
+   @parblock
+   A pointer to a `uint8_t` array representing a node attribute list
+
+   This array should have a length equal to the number of nodes in the
+   stream network.  This value must not be less than the largest value
+   in either the `source` or `target` arrays.
+   @endparblock
+
+   @param[in] input The edge weights
+   @parblock
+   A pointer to a `uint8_t` array of size `edge_count`
+   @endparblock
+
+   @param[in] source The source node of each edge in the stream
+                     network
+   @parblock
+   A pointer to a `ptrdiff_t` array of size `edge_count`
+
+   The source nodes must be in topological order. The labels must
+   correspond to the 0-based indices of the node-attribute list
+
+   `output`.
+   @endparblock
+
+   @param[in] target The target nodes of each edge in the stream
+                     network
+   @parblock
+   A pointer to a `ptrdiff_t` array of size `edge_count`
+
+   The labels must correspond to the 0-based indices of the
+   node-attribute list `output`.
+   @endparblock
+
+   @param[in] edge_count The number of edges in the stream network
+ */
+TOPOTOOLBOX_API
+void traverse_down_u8_or_and(uint8_t *output, uint8_t *input, ptrdiff_t *source,
+                             ptrdiff_t *target, ptrdiff_t edge_count);
+
 /**
    @brief Downstream traversal with max-plus
 
