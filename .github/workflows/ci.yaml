@@ -13,7 +13,7 @@ jobs:
   debug-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: TopoToolbox/actions/checkout@main
         with:
           submodules: true
       - name: Install OpenMP
@@ -50,7 +50,7 @@ jobs:
         run: ctest --test-dir ${{github.workspace}}/build/debug -C Debug --output-on-failure
       - name: Upload test snapshot artifacts
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        uses: TopoToolbox/actions/upload-artifact@main
         with:
           name: snapshot_test_output
           path: ${{github.workspace}}/build/debug/test/snapshots/
@@ -83,7 +83,7 @@ jobs:
           - os: ubuntu-latest
             c_compiler: cl
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: TopoToolbox/actions/checkout@main
         with:
           submodules: true
       - name: Install OpenMP on Ubuntu
@@ -101,7 +101,7 @@ jobs:
         ## TODO: Install GDAL on Windows and macos
       - name: Restore snapshot data cache
         id: restore-cache-snapshots-release
-        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        uses: TopoToolbox/actions/cache@main
         with:
           path: ${{github.workspace}}/test/snapshots
           key: snapshots-${{ env.snapshot_version }}
@@ -135,7 +135,7 @@ jobs:
       - name: Build shared library
         run: cmake --build ${{github.workspace}}/build/shared --config Release
       - name: Upload build artifacts
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        uses: TopoToolbox/actions/upload-artifact@main
         with:
           name: ${{matrix.os}}_${{matrix.c_compiler}}_cmake_profiles
           path: ${{matrix.os}}_${{matrix.c_compiler}}_config_profile.json
