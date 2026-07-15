@@ -10,7 +10,6 @@ This file contains routine to accumulate flow downstream, a way or another
 #include <stdint.h>
 
 #include "gf_utils.h"
-#include "graphflood/define_types.h"
 #include "topotoolbox.h"
 
 /*

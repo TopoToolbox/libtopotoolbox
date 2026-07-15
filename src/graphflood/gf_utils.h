@@ -8,8 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "graphflood/define_types.h"
-// #include "topotoolbox.h"
+#include "topotoolbox.h"
 
 /*
 Offset helpers:

@@ -13,7 +13,7 @@ B.G.
 #include <stdint.h>
 #include <stdlib.h>
 
-#include "graphflood/define_types.h"
+#include "topotoolbox.h"
 
 // Define the queue structure
 typedef struct {

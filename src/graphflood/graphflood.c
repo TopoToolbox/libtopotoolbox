@@ -6,7 +6,6 @@
 #include <stdio.h>
 
 #include "gf_utils.h"
-#include "graphflood/define_types.h"
 #include "pq_maxheap.h"
 #include "topotoolbox.h"
 

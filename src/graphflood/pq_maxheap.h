@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "graphflood/define_types.h"
+#include "topotoolbox.h"
 
 // Define the element structure in the max-heap priority queue
 typedef struct {
