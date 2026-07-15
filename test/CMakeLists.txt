@@ -173,7 +173,7 @@ if(GDAL_FOUND AND TT_SNAPSHOT_DIR)
     target_link_options(d8 PRIVATE "$<$<CONFIG:DEBUG>:-fsanitize=address>")
   endif()
   target_link_libraries(d8 PRIVATE topotoolbox GDAL::GDAL)
-  add_test(NAME d8 COMMAND dinf ${TT_SNAPSHOT_DIR})
+  add_test(NAME d8 COMMAND d8 ${TT_SNAPSHOT_DIR})
   set_tests_properties(d8 PROPERTIES ENVIRONMENT_MODIFICATION
     "PATH=path_list_prepend:$<$<BOOL:${WIN32}>:$<TARGET_FILE_DIR:topotoolbox>>")
 endif()
