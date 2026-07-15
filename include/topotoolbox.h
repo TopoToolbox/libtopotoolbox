@@ -2022,7 +2022,9 @@ TOPOTOOLBOX_API void propagatevaluesupstream_i64(int64_t *data,
   Graphflood
 */
 
-#include "graphflood/define_types.h"
+#define GF_UINT size_t
+#define GF_INT ptrdiff_t
+#define GF_FLOAT double
 
 /**
    @brief Computes a single flow graph:
