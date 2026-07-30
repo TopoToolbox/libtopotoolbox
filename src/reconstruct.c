@@ -193,6 +193,7 @@ ptrdiff_t backward_scan(float *marker, PixelQueue *queue, float *mask,
               // to repeat the scan because the queue filled up.
               return -1;
             };
+            break;
           }
         }
       }
