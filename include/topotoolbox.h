@@ -3391,4 +3391,108 @@ void resolve_flats_lcat(uint8_t *direction, uint8_t *resolved, float *aux,
 TOPOTOOLBOX_API
 void resolve_flats_lcat_weights(float *weight, ptrdiff_t count);
 
+/**
+   @brief Compute multiple flow directions
+
+   @details MFD distributes flow to all downstream neighbors with
+   weights proportional to the gradient.
+
+   @param[out] direction A bitmap edge set
+   @parblock
+
+   A uint8_t array of the same size as the DEM. Each of the 8 bits of
+   each pixel corresponds to an outgoing edge.
+
+   @endparblock
+
+   @param[out] totalgradient Sum of downslope gradients
+   @parblock
+
+   A float array of the same size as the DEM. This is the sum of the
+   gradients from each pixel to its downslope neighbors. This is not
+   particularly useful, but it is needed to normalize the weights and it
+   is easy to compute during the first pass.
+
+   @endparblock
+
+   @param[in] dem The input DEM
+   @parblock
+
+   A float array with size dims[0] x dims[1].
+
+   @endparblock
+
+   @param[in]  dims The dimensions of the DEM
+   @parblock
+   A pair of ptrdiff_t, fastest changing dimension first.
+   @endparblock
+
+   @param[in] order The memory order of the underlying arrays
+   @parblock
+   0 for column-major, 1 for row-major
+   @endparblock
+ */
+TOPOTOOLBOX_API
+void flow_routing_mfd_directions(uint8_t *direction, float *totalgradient,
+                                 float *dem, ptrdiff_t dims[2], int order);
+
+/**
+   @brief Compute and store the MFD edge weights
+
+   @details Once the flow directions and flow proportions have been
+   computed, the edge weights need to be stored in an array in an
+   order that will be used by functions like flow_routing_tsort.
+
+   @param[out] weight The weight array
+   @parblock
+
+   An array of floats that will be filled with the edge weights. This
+   should be preallocated with a size equal to the number of edges in
+   the direction bitmap. This size can be computed using
+   edgeset_count.
+
+   @endparblock
+
+   @param[in] direction The input direction bitmap
+   @parblock
+
+   An array of uint8_t that should come from the direction argument of
+   flow_routing_dinf_directions. This is a bitmap edge set encoded as
+   described elsewhere.
+
+   @endparblock
+
+   @param[out] totalgradient Sum of downslope gradients
+   @parblock
+
+   A float array of the same size as the DEM. This should come from
+   flow_routing_mfd_directions. It is the sum of the gradients from
+   each pixel to its downslope neighbors. It is temporary and can be
+   discarded after the weights are computed.
+
+   @endparblock
+
+
+   @param[in] dem The input DEM
+   @parblock
+
+   A float array with size dims[0] x dims[1].
+
+   @endparblock
+
+   @param[in]  dims The dimensions of the DEM
+   @parblock
+   A pair of ptrdiff_t, fastest changing dimension first.
+   @endparblock
+
+   @param[in] order The memory order of the underlying arrays
+   @parblock
+   0 for column-major, 1 for row-major
+   @endparblock
+ */
+TOPOTOOLBOX_API
+void flow_routing_mfd_weights(float *weight, float *totalgradient,
+                              uint8_t *direction, float *dem, ptrdiff_t dims[2],
+                              int order);
+
 #endif  // TOPOTOOLBOX_H

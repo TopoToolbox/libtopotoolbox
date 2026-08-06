@@ -40,6 +40,7 @@ add_library(topotoolbox
   dinf.c
   d8.c
   lcat.c
+  mfd.c
 )
 
 # Define the include directory

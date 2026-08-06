@@ -176,6 +176,18 @@ if(GDAL_FOUND AND TT_SNAPSHOT_DIR)
   add_test(NAME d8 COMMAND d8 ${TT_SNAPSHOT_DIR})
   set_tests_properties(d8 PROPERTIES ENVIRONMENT_MODIFICATION
     "PATH=path_list_prepend:$<$<BOOL:${WIN32}>:$<TARGET_FILE_DIR:topotoolbox>>")
+
+  # TEST : mfd
+  #
+  add_executable(mfd mfd.c utils.c grid.c flow.c)
+  if(TT_SANITIZE AND NOT MSVC)
+    target_compile_options(mfd PRIVATE "$<$<CONFIG:DEBUG>:-fsanitize=address>")
+    target_link_options(mfd PRIVATE "$<$<CONFIG:DEBUG>:-fsanitize=address>")
+  endif()
+  target_link_libraries(mfd PRIVATE topotoolbox GDAL::GDAL)
+  add_test(NAME mfd COMMAND mfd ${TT_SNAPSHOT_DIR})
+  set_tests_properties(mfd PROPERTIES ENVIRONMENT_MODIFICATION
+    "PATH=path_list_prepend:$<$<BOOL:${WIN32}>:$<TARGET_FILE_DIR:topotoolbox>>")
 endif()
 
 		   
