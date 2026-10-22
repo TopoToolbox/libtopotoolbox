@@ -155,7 +155,7 @@ Grid GridRandom(uint64_t seed, float cellsize, ptrdiff_t dims[2]) {
   }
 
   uint32_t c = seed >> 32;
-  uint32_t d = seed & ((1UL << 32) - 1);
+  uint32_t d = seed & ((1ULL << 32) - 1);
   for (ptrdiff_t j = 0; j < dims[1]; j++) {
     for (ptrdiff_t i = 0; i < dims[0]; i++) {
       buffer[j * dims[0] + i] = 100.0f * pcg4d(i, j, c, d);
