@@ -99,6 +99,20 @@ add_test(NAME polyline COMMAND polyline)
 set_tests_properties(polyline PROPERTIES ENVIRONMENT_MODIFICATION
   "PATH=path_list_prepend:$<$<BOOL:${WIN32}>:$<TARGET_FILE_DIR:topotoolbox>>")
 
+# TEST : traverse
+#
+# Tests traverse_down_f32_add and traverse_down_f64_add on a network
+# drawn by hand and on random networks against traverse_down_*_add_mul.
+add_executable(traverse traverse.c)
+if(TT_SANITIZE AND NOT MSVC)
+  target_compile_options(traverse PRIVATE "$<$<CONFIG:DEBUG>:-fsanitize=address>")
+  target_link_options(traverse PRIVATE "$<$<CONFIG:DEBUG>:-fsanitize=address>")
+endif()
+target_link_libraries(traverse PRIVATE topotoolbox)
+add_test(NAME traverse COMMAND traverse)
+set_tests_properties(traverse PROPERTIES ENVIRONMENT_MODIFICATION
+  "PATH=path_list_prepend:$<$<BOOL:${WIN32}>:$<TARGET_FILE_DIR:topotoolbox>>")
+
 
 # TEST : snapshots
 #
@@ -196,7 +210,8 @@ if (TT_FORMAT_CHECK AND CLANG_FORMAT_EXE)
     excesstopography
     filters
     swaths
-    polyline)
+    polyline
+    traverse)
 
   if (TARGET snapshot)
     list(APPEND FORMAT_TARGETS snapshot)

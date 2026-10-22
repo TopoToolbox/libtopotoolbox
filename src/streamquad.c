@@ -190,6 +190,28 @@ void traverse_down_f64_add_mul(double *output, double *input, ptrdiff_t *source,
 }
 
 TOPOTOOLBOX_API
+void traverse_down_f32_add(float *output, ptrdiff_t *source, ptrdiff_t *target,
+                           ptrdiff_t edge_count) {
+  for (ptrdiff_t e = 0; e < edge_count; e++) {
+    ptrdiff_t u = source[e];
+    ptrdiff_t v = target[e];
+
+    output[v] = output[v] + output[u];
+  }
+}
+
+TOPOTOOLBOX_API
+void traverse_down_f64_add(double *output, ptrdiff_t *source, ptrdiff_t *target,
+                           ptrdiff_t edge_count) {
+  for (ptrdiff_t e = 0; e < edge_count; e++) {
+    ptrdiff_t u = source[e];
+    ptrdiff_t v = target[e];
+
+    output[v] = output[v] + output[u];
+  }
+}
+
+TOPOTOOLBOX_API
 void traverse_down_f32_strahler(float *output, float *input, ptrdiff_t *source,
                                 ptrdiff_t *target, ptrdiff_t edge_count) {
   for (ptrdiff_t e = 0; e < edge_count; e++) {
